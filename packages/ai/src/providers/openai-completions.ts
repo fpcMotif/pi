@@ -34,8 +34,6 @@ import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
 import { parseStreamingJson } from "../utils/json-parse.js";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.js";
-import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.js";
-import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
 import { buildBaseOptions } from "./simple-options.js";
 import { transformMessages } from "./transform-messages.js";
 
@@ -437,7 +435,7 @@ export const streamSimpleOpenAICompletions: StreamFunction<"openai-completions",
 
 function createClient(
 	model: Model<"openai-completions">,
-	context: Context,
+	_context: Context,
 	apiKey?: string,
 	optionsHeaders?: Record<string, string>,
 	sessionId?: string,
@@ -453,14 +451,6 @@ function createClient(
 	}
 
 	const headers = { ...model.headers };
-	if (model.provider === "github-copilot") {
-		const hasImages = hasCopilotVisionInput(context.messages);
-		const copilotHeaders = buildCopilotDynamicHeaders({
-			messages: context.messages,
-			hasImages,
-		});
-		Object.assign(headers, copilotHeaders);
-	}
 
 	if (sessionId && compat.sendSessionAffinityHeaders) {
 		headers.session_id = sessionId;
@@ -473,20 +463,11 @@ function createClient(
 		Object.assign(headers, optionsHeaders);
 	}
 
-	const defaultHeaders =
-		model.provider === "cloudflare-ai-gateway"
-			? {
-					...headers,
-					Authorization: headers.Authorization ?? null,
-					"cf-aig-authorization": `Bearer ${apiKey}`,
-				}
-			: headers;
-
 	return new OpenAI({
 		apiKey,
-		baseURL: isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model) : model.baseUrl,
+		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
-		defaultHeaders,
+		defaultHeaders: headers,
 	});
 }
 
@@ -597,17 +578,6 @@ function buildParams(
 	// OpenRouter provider routing preferences
 	if (model.baseUrl.includes("openrouter.ai") && model.compat?.openRouterRouting) {
 		(params as any).provider = model.compat.openRouterRouting;
-	}
-
-	// Vercel AI Gateway provider routing preferences
-	if (model.baseUrl.includes("ai-gateway.vercel.sh") && model.compat?.vercelGatewayRouting) {
-		const routing = model.compat.vercelGatewayRouting;
-		if (routing.only || routing.order) {
-			const gatewayOptions: Record<string, string[]> = {};
-			if (routing.only) gatewayOptions.only = routing.only;
-			if (routing.order) gatewayOptions.order = routing.order;
-			(params as any).providerOptions = { gateway: gatewayOptions };
-		}
 	}
 
 	return params;
@@ -1106,7 +1076,6 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 						? "openrouter"
 						: "openai",
 		openRouterRouting: {},
-		vercelGatewayRouting: {},
 		zaiToolStream: false,
 		supportsStrictMode: !isMoonshot && !isTogether && !isCloudflareAiGateway,
 		cacheControlFormat,
@@ -1138,7 +1107,6 @@ function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletion
 			detected.requiresReasoningContentOnAssistantMessages,
 		thinkingFormat: model.compat.thinkingFormat ?? detected.thinkingFormat,
 		openRouterRouting: model.compat.openRouterRouting ?? {},
-		vercelGatewayRouting: model.compat.vercelGatewayRouting ?? detected.vercelGatewayRouting,
 		zaiToolStream: model.compat.zaiToolStream ?? detected.zaiToolStream,
 		supportsStrictMode: model.compat.supportsStrictMode ?? detected.supportsStrictMode,
 		cacheControlFormat: model.compat.cacheControlFormat ?? detected.cacheControlFormat,

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Breaking Changes
+
+- **Supported provider set narrowed from 28 to 3** (ADR-0003, ADR-0006 phase 2): OpenAI, OpenAI Codex Responses, OpenRouter. `defaultModelPerProvider` shrinks accordingly (default-model entries for Anthropic, Bedrock, Google, Vertex, Azure, DeepSeek, GitHub Copilot, xAI, Groq, Cerebras, Vercel Gateway, Z.AI, Mistral, MiniMax, Moonshot, Hugging Face, Fireworks, Together, OpenCode, Kimi-for-Coding, Cloudflare Workers AI, Cloudflare AI Gateway, Xiaomi MiMo and its regional plans are removed). `BUILT_IN_PROVIDER_DISPLAY_NAMES` is similarly narrowed. `pi --help` no longer lists env-var docs for removed providers. The `src/bun/register-bedrock.ts` startup hook and the `custom-provider-gitlab-duo` example extension are deleted. Users on Anthropic/Bedrock/Vertex/etc. keys need to migrate to OpenAI or OpenRouter; Claude is still reachable via OpenRouter.
+
 ### Added
 
 - Added Together AI to built-in provider setup, `/login` API-key auth, and default model resolution ([#3624](https://github.com/earendil-works/pi-mono/pull/3624) by [@Nutlope](https://github.com/Nutlope)).

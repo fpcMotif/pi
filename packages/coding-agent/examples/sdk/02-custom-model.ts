@@ -12,9 +12,9 @@ const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
 
 // Option 1: Find a specific built-in model by provider/id
-const opus = getModel("anthropic", "claude-opus-4-5");
-if (opus) {
-	console.log(`Found model: ${opus.provider}/${opus.id}`);
+const flagship = getModel("openai", "gpt-5.4");
+if (flagship) {
+	console.log(`Found model: ${flagship.provider}/${flagship.id}`);
 }
 
 // Option 2: Find model via registry (includes custom models from models.json)

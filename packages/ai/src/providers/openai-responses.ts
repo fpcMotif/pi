@@ -16,8 +16,6 @@ import type {
 } from "../types.js";
 import { AssistantMessageEventStream } from "../utils/event-stream.js";
 import { headersToRecord } from "../utils/headers.js";
-import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.js";
-import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.js";
 import { convertResponsesMessages, convertResponsesTools, processResponsesStream } from "./openai-responses-shared.js";
 import { buildBaseOptions } from "./simple-options.js";
 
@@ -161,7 +159,7 @@ export const streamSimpleOpenAIResponses: StreamFunction<"openai-responses", Sim
 
 function createClient(
 	model: Model<"openai-responses">,
-	context: Context,
+	_context: Context,
 	apiKey?: string,
 	optionsHeaders?: Record<string, string>,
 	sessionId?: string,
@@ -177,14 +175,6 @@ function createClient(
 
 	const compat = getCompat(model);
 	const headers = { ...model.headers };
-	if (model.provider === "github-copilot") {
-		const hasImages = hasCopilotVisionInput(context.messages);
-		const copilotHeaders = buildCopilotDynamicHeaders({
-			messages: context.messages,
-			hasImages,
-		});
-		Object.assign(headers, copilotHeaders);
-	}
 
 	if (sessionId) {
 		if (compat.sendSessionIdHeader) {
@@ -198,20 +188,11 @@ function createClient(
 		Object.assign(headers, optionsHeaders);
 	}
 
-	const defaultHeaders =
-		model.provider === "cloudflare-ai-gateway"
-			? {
-					...headers,
-					Authorization: headers.Authorization ?? null,
-					"cf-aig-authorization": `Bearer ${apiKey}`,
-				}
-			: headers;
-
 	return new OpenAI({
 		apiKey,
-		baseURL: isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model) : model.baseUrl,
+		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
-		defaultHeaders,
+		defaultHeaders: headers,
 	});
 }
 

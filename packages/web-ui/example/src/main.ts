@@ -169,7 +169,7 @@ Available tools:
 - Artifacts: Create interactive HTML, SVG, Markdown, and text artifacts
 
 Feel free to use these tools when needed to provide accurate and helpful responses.`,
-			model: getModel("anthropic", "claude-sonnet-4-5-20250929"),
+			model: getModel("openai", "gpt-5.4"),
 			thinkingLevel: "off",
 			messages: [],
 			tools: [],

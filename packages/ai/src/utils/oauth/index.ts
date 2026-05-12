@@ -1,22 +1,11 @@
 /**
  * OAuth credential management for AI providers.
  *
- * This module handles login, token refresh, and credential storage
- * for OAuth-based providers:
- * - Anthropic (Claude Pro/Max)
- * - GitHub Copilot
+ * After ADR-0003 the only OAuth flow that survives is OpenAI Codex (ChatGPT
+ * OAuth). Anthropic Claude Pro/Max and GitHub Copilot OAuth flows were
+ * removed with their providers.
  */
 
-// Anthropic
-export { anthropicOAuthProvider, loginAnthropic, refreshAnthropicToken } from "./anthropic.js";
-// GitHub Copilot
-export {
-	getGitHubCopilotBaseUrl,
-	githubCopilotOAuthProvider,
-	loginGitHubCopilot,
-	normalizeDomain,
-	refreshGitHubCopilotToken,
-} from "./github-copilot.js";
 // OpenAI Codex (ChatGPT OAuth)
 export { loginOpenAICodex, openaiCodexOAuthProvider, refreshOpenAICodexToken } from "./openai-codex.js";
 
@@ -26,16 +15,10 @@ export * from "./types.js";
 // Provider Registry
 // ============================================================================
 
-import { anthropicOAuthProvider } from "./anthropic.js";
-import { githubCopilotOAuthProvider } from "./github-copilot.js";
 import { openaiCodexOAuthProvider } from "./openai-codex.js";
 import type { OAuthCredentials, OAuthProviderId, OAuthProviderInfo, OAuthProviderInterface } from "./types.js";
 
-const BUILT_IN_OAUTH_PROVIDERS: OAuthProviderInterface[] = [
-	anthropicOAuthProvider,
-	githubCopilotOAuthProvider,
-	openaiCodexOAuthProvider,
-];
+const BUILT_IN_OAUTH_PROVIDERS: OAuthProviderInterface[] = [openaiCodexOAuthProvider];
 
 const oauthProviderRegistry = new Map<string, OAuthProviderInterface>(
 	BUILT_IN_OAUTH_PROVIDERS.map((provider) => [provider.id, provider]),

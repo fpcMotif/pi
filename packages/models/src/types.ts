@@ -4,16 +4,11 @@
 // provider-specific compatibility hints. No runtime / streaming concerns
 // live here — those stay in `@earendil-works/pi-ai`'s `types.ts`.
 
-export type KnownApi =
-	| "openai-completions"
-	| "mistral-conversations"
-	| "openai-responses"
-	| "azure-openai-responses"
-	| "openai-codex-responses"
-	| "anthropic-messages"
-	| "bedrock-converse-stream"
-	| "google-generative-ai"
-	| "google-vertex";
+// Narrowed to the three providers pi-mono supports after ADR-0003:
+// OpenAI (via Completions or Responses), OpenAI Codex Responses, and
+// OpenRouter (which uses the OpenAI-compatible Completions API with an
+// OpenRouter base URL).
+export type KnownApi = "openai-completions" | "openai-responses" | "openai-codex-responses";
 
 export type Api = KnownApi | (string & {});
 
@@ -21,39 +16,7 @@ export type KnownImagesApi = "openrouter-images";
 
 export type ImagesApi = KnownImagesApi | (string & {});
 
-export type KnownProvider =
-	| "amazon-bedrock"
-	| "anthropic"
-	| "google"
-	| "google-vertex"
-	| "openai"
-	| "azure-openai-responses"
-	| "openai-codex"
-	| "deepseek"
-	| "github-copilot"
-	| "xai"
-	| "groq"
-	| "cerebras"
-	| "openrouter"
-	| "vercel-ai-gateway"
-	| "zai"
-	| "mistral"
-	| "minimax"
-	| "minimax-cn"
-	| "moonshotai"
-	| "moonshotai-cn"
-	| "huggingface"
-	| "fireworks"
-	| "together"
-	| "opencode"
-	| "opencode-go"
-	| "kimi-coding"
-	| "cloudflare-workers-ai"
-	| "cloudflare-ai-gateway"
-	| "xiaomi"
-	| "xiaomi-token-plan-cn"
-	| "xiaomi-token-plan-ams"
-	| "xiaomi-token-plan-sgp";
+export type KnownProvider = "openai" | "openai-codex" | "openrouter";
 export type Provider = KnownProvider | string;
 
 export type KnownImagesProvider = "openrouter";
@@ -114,8 +77,6 @@ export interface OpenAICompletionsCompat {
 	thinkingFormat?: "openai" | "openrouter" | "deepseek" | "together" | "zai" | "qwen" | "qwen-chat-template";
 	/** OpenRouter-specific routing preferences. Only used when baseUrl points to OpenRouter. */
 	openRouterRouting?: OpenRouterRouting;
-	/** Vercel AI Gateway routing preferences. Only used when baseUrl points to Vercel AI Gateway. */
-	vercelGatewayRouting?: VercelGatewayRouting;
 	/** Whether z.ai supports top-level `tool_stream: true` for streaming tool call deltas. Default: false. */
 	zaiToolStream?: boolean;
 	/** Whether the provider supports the `strict` field in tool definitions. Default: true. */
@@ -134,36 +95,6 @@ export interface OpenAIResponsesCompat {
 	sendSessionIdHeader?: boolean;
 	/** Whether the provider supports `prompt_cache_retention: "24h"`. Default: true. */
 	supportsLongCacheRetention?: boolean;
-}
-
-/** Compatibility settings for Anthropic Messages-compatible APIs. */
-export interface AnthropicMessagesCompat {
-	/**
-	 * Whether the provider accepts per-tool `eager_input_streaming`.
-	 * When false, the Anthropic provider omits `tools[].eager_input_streaming`
-	 * and sends the legacy `fine-grained-tool-streaming-2025-05-14` beta header
-	 * for tool-enabled requests.
-	 * Default: true.
-	 */
-	supportsEagerToolInputStreaming?: boolean;
-	/** Whether the provider supports Anthropic long cache retention (`cache_control.ttl: "1h"`). Default: true. */
-	supportsLongCacheRetention?: boolean;
-	/**
-	 * Whether to send the `x-session-affinity` header from `options.sessionId`
-	 * when caching is enabled. Required for providers like Fireworks that use
-	 * session affinity for prompt cache routing (requests to the same replica
-	 * maximize cache hits).
-	 * Default: false.
-	 */
-	sendSessionAffinityHeaders?: boolean;
-	/**
-	 * Whether the provider supports Anthropic-style `cache_control` markers on
-	 * tool definitions. When false, `cache_control` is omitted from tool params.
-	 * Some Anthropic-compatible providers (e.g., Fireworks) do not support this
-	 * field on tools and may reject or ignore it.
-	 * Default: true.
-	 */
-	supportsCacheControlOnTools?: boolean;
 }
 
 /**
@@ -241,18 +172,6 @@ export interface OpenRouterRouting {
 		  };
 }
 
-/**
- * Vercel AI Gateway routing preferences.
- * Controls which upstream providers the gateway routes requests to.
- * @see https://vercel.com/docs/ai-gateway/models-and-providers/provider-options
- */
-export interface VercelGatewayRouting {
-	/** List of provider slugs to exclusively use for this request (e.g., ["bedrock", "anthropic"]). */
-	only?: string[];
-	/** List of provider slugs to try in order (e.g., ["anthropic", "openai"]). */
-	order?: string[];
-}
-
 // Model interface for the unified model system
 export interface Model<TApi extends Api> {
 	id: string;
@@ -281,9 +200,7 @@ export interface Model<TApi extends Api> {
 		? OpenAICompletionsCompat
 		: TApi extends "openai-responses"
 			? OpenAIResponsesCompat
-			: TApi extends "anthropic-messages"
-				? AnthropicMessagesCompat
-				: never;
+			: never;
 }
 
 export interface ImagesModel<TApi extends ImagesApi>
