@@ -1,0 +1,7 @@
+# Adopt @effect/ai; narrow supported providers to OpenAI + OpenRouter + OpenAI Codex
+
+The rewrite drops `pi-ai`'s bespoke provider abstraction (`Api` discriminator, custom `AssistantMessageEventStream`, in-repo per-provider implementations) and adopts `@effect/ai` with `AiLanguageModel` / `AiResponse` / `AiTool` as the canonical types. Supported providers shrink from 28+ to three: `@effect/ai-openai`, `@effect/ai-openrouter`, and OpenAI Codex Responses (re-implemented as an in-repo Effect provider, since `@effect/ai` does not ship it). Removed: native Anthropic, Amazon Bedrock, Google direct, Google Vertex, DeepSeek, xAI, Mistral, Cerebras, Groq, Hugging Face, Fireworks, Together, Cloudflare Workers AI, Cloudflare AI Gateway, Vercel AI Gateway, Azure OpenAI Responses, GitHub Copilot, OpenCode (Zen/Go), Moonshot AI / Kimi-Coding, MiniMax (incl. CN), Xiaomi MiMo and its token-plan variants. Consequences: the default model changes away from `claude-opus-4-7` (Anthropic native); Claude is still reachable via OpenRouter but loses native `cache_control`, full thinking-block fidelity, and beta features; enterprise Bedrock/Vertex flows are no longer supported; China-region providers (MiniMax-CN, Moonshot-CN, Xiaomi token-plan CN/AMS/SGP) and Kimi-for-Coding are no longer supported; the `models.generated.ts` model registry with per-provider cost and context-window data shrinks accordingly; existing users' Anthropic/Google/Bedrock/Vertex/etc. API keys stop working after the migration.
+
+## Status
+
+accepted
