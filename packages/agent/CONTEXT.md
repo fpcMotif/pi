@@ -12,7 +12,7 @@
 
 ## Status — Effect rewrite tracer bullets
 
-Thirteen tracer bullets (22 test cases), all GREEN, all without an API key:
+Fifteen tracer bullets (26 test cases), all GREEN, all without an API key:
 
 1. **`stubLanguageModel({ text })`** — Layer that bypasses providers entirely; `LanguageModel.generateText` resolves to canned text. Proves the v4 runtime and `@effect/ai` API surface work.
 2. **`stubOpenAiClient({ text })` + `OpenAiLanguageModel.layer({ model })`** — Layer composition that exercises the real provider path (`OpenAiLanguageModel.make` calls `client.createResponse`, parses the OpenAI Responses-API body shape, builds the `GenerateTextResponse`). Proves the OpenAI integration path works without an API key.
@@ -33,6 +33,30 @@ Thirteen tracer bullets (22 test cases), all GREEN, all without an API key:
     - `AgentError` = `LlmError | ToolError | SchemaError | CancellationError` (`Schema.TaggedErrorClass`-derived). Yieldable in `Effect.gen`; propagates through the error channel.
     - 6 test cases: tag-discrimination, _tag literals, Schema.encode/decode roundtrip for a `LlmPart`, decode failure on unknown `_tag`, error-channel propagation per AgentError variant.
     Future variants (`SkillInvoked`, `CompactionApplied`, `RetryRequested`, `SessionMeta`, `CompactionError`, `AuthError` if it splits from `LlmError`) are deferred until their slices need them.
+
+14.   **`Session.empty` + `Session.send` wired to `LanguageModel.streamText`** (12b/c — combined). `effect/session.ts` exposes:
+
+
+    - `Session` interface with `send: (prompt: string) => Stream<AgentEvent, LlmError, LanguageModel>`.
+    - `Session.empty: Effect<Session>` builder (stateless for now; mirrors `Chat.empty` so a stateful variant can land later without changing call sites).
+    The `send` Stream wraps `LanguageModel.streamText({ prompt })`: `Stream.map` each `Response.AnyPart` to an `LlmPart` event, `Stream.mapError` each upstream `AiError` to our pi-defined `LlmError`, and `Stream.concat` a trailing `Finish` event. 2 tests in `test/effect/session.test.ts`:
+    - `Session.empty` resolves to a Session with `send` (smoke test).
+    - `send("hello")` against `stubOpenAiClientStreaming({ text, chunkCount })` yields N `LlmPart` events whose unwrapped `text-delta` parts concatenate back to the canned text, followed by exactly one `Finish`.
+
+    **Deferred to later slices** (each its own tracer bullet): the `Input = NewPrompt | Continue | Retry` discriminated union, multi-turn history inside `Session`, `Session.state: SubscriptionRef<SessionState>` for snapshot reads, token/cost accounting on `Finish`, compaction triggers, retry on transient errors, skill-block parsing, `Effect.withSpan` telemetry, cancellation via `Fiber.interrupt`.
+
+15.   **Tool events in `Session.send`** (slice 12d — `ToolDispatched` / `ToolCompleted`). Extended `session.ts` to `Stream.flatMap` each upstream `Response.AnyPart` through a `liftPart(part)` helper:
+
+
+    - `tool-call` part → `[LlmPart, ToolDispatched({ toolName, toolCallId, params })]`
+    - `tool-result` part → `[LlmPart, ToolCompleted({ toolName, toolCallId, isFailure, result })]`
+    - every other part → `[LlmPart]`
+
+    Verified by a new `stubLanguageModelStream(parts: ReadonlyArray<unknown>)` test-support helper that satisfies `LanguageModel.LanguageModel` directly (bypassing the OpenAI provider layer) with a caller-supplied canned `Response.StreamPart` sequence. 2 tests in `test/effect/session-tool-events.test.ts`:
+    - Canned parts `[text-delta, tool-call, tool-result]` produce the exact sequence `[LlmPart, LlmPart, ToolDispatched, LlmPart, ToolCompleted, Finish]` with all fields preserved.
+    - A `tool-result` with `isFailure: true` round-trips that flag into `ToolCompleted.isFailure` along with the failure-shaped `result`.
+
+    The lifted events appear **alongside** the raw `LlmPart` (not replacing it) so consumers can pick the abstraction level they want: raw provider parts via `LlmPart`, or higher-level orchestration via `ToolDispatched` / `ToolCompleted`.
 
 ## Architecture stance (Effect rewrite)
 
