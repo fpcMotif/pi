@@ -14,10 +14,20 @@
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "vitest --run",
+		"test:coverage": "vitest --run --coverage",
+		"test:coverage:100": "vitest --run --coverage --coverage.thresholds.lines=100 --coverage.thresholds.statements=100 --coverage.thresholds.functions=100 --coverage.thresholds.branches=100",
+		"test:effect": "vitest --run test/effect",
+		"test:coverage:effect": "vitest --run test/effect --coverage",
+		"check:effect": "tsgo -p tsconfig.build.json --noEmit",
+		"lint:effect": "oxlint test-support test/effect",
+		"fmt:effect": "oxfmt test-support test/effect CONTEXT.md",
+		"fmt:effect:check": "oxfmt --check test-support test/effect CONTEXT.md",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
 		"@earendil-works/pi-ai": "^0.74.0",
+		"@effect/ai-openai": "4.0.0-beta.65",
+		"effect": "4.0.0-beta.65",
 		"ignore": "^7.0.5",
 		"typebox": "^1.1.24",
 		"yaml": "^2.8.2"
@@ -40,7 +50,10 @@
 		"node": ">=20.0.0"
 	},
 	"devDependencies": {
+		"@effect/vitest": "4.0.0-beta.65",
 		"@types/node": "^24.3.0",
+		"oxfmt": "^0.49.0",
+		"oxlint": "1.42.0",
 		"typescript": "^5.7.3",
 		"vitest": "^3.2.4"
 	}

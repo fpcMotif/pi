@@ -1,0 +1,4 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"include": ["effect/**/*.ts", "test-support/**/*.ts", "test/effect/**/*.ts"]
+}
