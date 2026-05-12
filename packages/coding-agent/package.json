@@ -35,12 +35,14 @@
 		"copy-assets": "shx mkdir -p dist/modes/interactive/theme && shx cp src/modes/interactive/theme/*.json dist/modes/interactive/theme/ && shx mkdir -p dist/modes/interactive/assets && shx cp src/modes/interactive/assets/*.png dist/modes/interactive/assets/ && shx mkdir -p dist/core/export-html/vendor && shx cp src/core/export-html/template.html src/core/export-html/template.css src/core/export-html/template.js dist/core/export-html/ && shx cp src/core/export-html/vendor/*.js dist/core/export-html/vendor/",
 		"copy-binary-assets": "shx cp package.json dist/ && shx cp README.md dist/ && shx cp CHANGELOG.md dist/ && shx mkdir -p dist/theme && shx cp src/modes/interactive/theme/*.json dist/theme/ && shx mkdir -p dist/assets && shx cp src/modes/interactive/assets/*.png dist/assets/ && shx mkdir -p dist/export-html/vendor && shx cp src/core/export-html/template.html dist/export-html/ && shx cp src/core/export-html/vendor/*.js dist/export-html/vendor/ && shx cp -r docs dist/ && shx cp -r examples dist/ && shx cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm dist/",
 		"test": "vitest --run",
+		"test:effect": "vitest --run test/effect",
 		"prepublishOnly": "npm run clean && npm run build"
 	},
 	"dependencies": {
 		"@earendil-works/pi-agent-core": "^0.74.0",
 		"@earendil-works/pi-ai": "^0.74.0",
 		"@earendil-works/pi-tui": "^0.74.0",
+		"effect": "4.0.0-beta.65",
 		"@silvia-odwyer/photon-node": "^0.3.4",
 		"chalk": "^5.5.0",
 		"cli-highlight": "^2.1.11",
@@ -70,6 +72,7 @@
 		"@mariozechner/clipboard": "^0.3.5"
 	},
 	"devDependencies": {
+		"@effect/vitest": "4.0.0-beta.65",
 		"@types/diff": "^7.0.2",
 		"@types/hosted-git-info": "^3.0.5",
 		"@types/ms": "^2.1.0",
