@@ -17,7 +17,7 @@
 - Always ask before removing functionality or code that appears to be intentional
 - Do not preserve backward compatibility unless the user explicitly asks for it
 - Never hardcode key checks with, eg. `matchesKey(keyData, "ctrl+x")`. All keybindings must be configurable. Add default to matching object (`DEFAULT_EDITOR_KEYBINDINGS` or `DEFAULT_APP_KEYBINDINGS`)
-- NEVER modify `packages/ai/src/models.generated.ts` directly. Update `packages/ai/scripts/generate-models.ts` instead.
+- NEVER modify `packages/models/src/models.generated.ts` or `packages/models/src/image-models.generated.ts` directly. Update `packages/ai/scripts/generate-models.ts` / `packages/ai/scripts/generate-image-models.ts` instead (the generators live in `packages/ai/scripts/` because they use pi-ai's provider SDKs, but they write into `packages/models/src/` after the ADR-0005 / ADR-0006 phase 1 carve-out).
 
 ## Commands
 
@@ -245,3 +245,17 @@ git pull --rebase && git push
 ### User override
 
 If the user instructions conflict with rules set out here, ask for confirmation that they want to override the rules. Only then execute their instructions.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in GitHub Issues at `github.com/fpcMotif/pi`; use the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Five canonical roles mapped to default label strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Multi-context layout — one `CONTEXT.md` per package under `packages/`, plus root-level `CONTEXT-MAP.md` and `docs/adr/` for cross-package decisions. See `docs/agents/domain.md`.

@@ -19,7 +19,9 @@ import {
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const packageRoot = join(__dirname, "..");
+// Generator lives in packages/ai/scripts/ (uses pi-ai's provider SDKs); output
+// writes to packages/models/src/ after the ADR-0005 / ADR-0006 phase 1 carve-out.
+const modelsPackageRoot = join(__dirname, "..", "..", "models");
 
 interface ModelsDevModel {
 	id: string;
@@ -1922,8 +1924,8 @@ export const MODELS = {
 `;
 
 	// Write file
-	writeFileSync(join(packageRoot, "src/models.generated.ts"), output);
-	console.log("Generated src/models.generated.ts");
+	writeFileSync(join(modelsPackageRoot, "src/models.generated.ts"), output);
+	console.log("Generated packages/models/src/models.generated.ts");
 
 	// Print statistics
 	const totalModels = allModels.length;

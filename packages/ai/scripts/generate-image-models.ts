@@ -7,7 +7,9 @@ import type { ImagesModel } from "../src/types.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
-const packageRoot = join(__dirname, "..");
+// Generator lives in packages/ai/scripts/ but writes to packages/models/src/
+// after the ADR-0005 / ADR-0006 phase 1 carve-out.
+const modelsPackageRoot = join(__dirname, "..", "..", "models");
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 interface OpenRouterModelRecord {
@@ -120,7 +122,7 @@ ${providerEntries}
 async function main(): Promise<void> {
 	const models = await fetchOpenRouterImageModels();
 	const output = generateImageModelsFile(models);
-	const outputPath = join(packageRoot, "src", "image-models.generated.ts");
+	const outputPath = join(modelsPackageRoot, "src", "image-models.generated.ts");
 	writeFileSync(outputPath, output, "utf-8");
 	console.log(`Generated ${outputPath}`);
 }

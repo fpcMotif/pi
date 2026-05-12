@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Carve out `@earendil-works/pi-models`** (ADR-0005, ADR-0006 phase 1). The model registry data (`models.generated.ts`, `image-models.generated.ts`) and synchronous utilities (`getModel`, `getProviders`, `getModels`, `calculateCost`, `getSupportedThinkingLevels`, `clampThinkingLevel`, `modelsAreEqual`, `getImageModel`, `getImageProviders`, `getImageModels`) now live in `@earendil-works/pi-models` — a new browser-safe package with zero Effect or provider runtime dependencies. The registry-side types (`Model`, `ImagesModel`, `Api`, `ImagesApi`, `KnownProvider`, `ImagesProvider`, `Usage`, `ThinkingLevel`, `ThinkingLevelMap`, `ThinkingBudgets`, the `*Compat` interfaces, `OpenRouterRouting`, `VercelGatewayRouting`) move with them. `@earendil-works/pi-ai` re-exports the moved surface so existing consumers see no API break.
+- Generator scripts (`scripts/generate-models.ts`, `scripts/generate-image-models.ts`) stay in `packages/ai/scripts/` for now (they use pi-ai's provider SDKs) but write to `packages/models/src/`. They are no longer part of `npm run build` — run `npm run generate-models` / `npm run generate-image-models` explicitly when refreshing the registry.
+
 ### Added
 
 - Added Together AI as a built-in OpenAI-compatible provider with generated model metadata and `TOGETHER_API_KEY` authentication ([#3624](https://github.com/earendil-works/pi-mono/pull/3624) by [@Nutlope](https://github.com/Nutlope)).
