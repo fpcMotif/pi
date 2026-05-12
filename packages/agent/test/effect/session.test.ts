@@ -1,14 +1,10 @@
-import { OpenAiLanguageModel } from "@effect/ai-openai";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Stream } from "effect";
 import { describe, expect } from "vitest";
 
 import type { LlmPart } from "../../effect/agent-event.js";
 import { Session } from "../../effect/session.js";
-import { stubOpenAiClientStreaming } from "../../test-support/stub-openai-client-streaming.js";
-
-const openAiStreamingLayer = (text: string, chunkCount = 1) =>
-	OpenAiLanguageModel.layer({ model: "gpt-4" }).pipe(Layer.provide(stubOpenAiClientStreaming({ text, chunkCount })));
+import { openAiStreamingLayer } from "../../test-support/openai-language-model.js";
 
 describe("Session (slice 12b/c — Session.empty + send wired to LanguageModel.streamText)", () => {
 	it.effect("Session.empty resolves to a Session with a send function", () =>

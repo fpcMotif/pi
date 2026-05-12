@@ -11,17 +11,13 @@
  * field, accumulated usage / cost, pending tool calls, observable change
  * stream wiring (`SubscriptionRef.changes`).
  */
-import { OpenAiLanguageModel } from "@effect/ai-openai";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Stream, SubscriptionRef } from "effect";
+import { Effect, Stream, SubscriptionRef } from "effect";
 import { describe, expect } from "vitest";
 
 import { Session } from "../../effect/session.js";
 import { SessionState } from "../../effect/session-state.js";
-import { stubOpenAiClientStreaming } from "../../test-support/stub-openai-client-streaming.js";
-
-const openAiStreamingLayer = (text: string, chunkCount = 1) =>
-	OpenAiLanguageModel.layer({ model: "gpt-4" }).pipe(Layer.provide(stubOpenAiClientStreaming({ text, chunkCount })));
+import { openAiStreamingLayer } from "../../test-support/openai-language-model.js";
 
 describe("Session.state -- SubscriptionRef<SessionState>", () => {
 	it.effect("Session.empty initialises state to SessionState.empty (turnCount: 0)", () =>
