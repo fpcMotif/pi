@@ -43,7 +43,7 @@ Fifteen tracer bullets (26 test cases), all GREEN, all without an API key:
     - `Session.empty` resolves to a Session with `send` (smoke test).
     - `send("hello")` against `stubOpenAiClientStreaming({ text, chunkCount })` yields N `LlmPart` events whose unwrapped `text-delta` parts concatenate back to the canned text, followed by exactly one `Finish`.
 
-    **Deferred to later slices** (each its own tracer bullet): the `Input = NewPrompt | Continue | Retry` discriminated union, multi-turn history inside `Session`, `Session.state: SubscriptionRef<SessionState>` for snapshot reads, token/cost accounting on `Finish`, compaction triggers, retry on transient errors, skill-block parsing, `Effect.withSpan` telemetry, cancellation via `Fiber.interrupt`.
+    **Deferred to later slices** (each its own tracer bullet): the `Input = NewPrompt | Continue | Retry` discriminated union, multi-turn history inside `Session`, token/cost accounting on `Finish`, compaction triggers, retry on transient errors, skill-block parsing, `Effect.withSpan` telemetry, cancellation via `Fiber.interrupt`.
 
 15.   **Tool events in `Session.send`** (slice 12d — `ToolDispatched` / `ToolCompleted`). Extended `session.ts` to `Stream.flatMap` each upstream `Response.AnyPart` through a `liftPart(part)` helper:
 
@@ -57,6 +57,25 @@ Fifteen tracer bullets (26 test cases), all GREEN, all without an API key:
     - A `tool-result` with `isFailure: true` round-trips that flag into `ToolCompleted.isFailure` along with the failure-shaped `result`.
 
     The lifted events appear **alongside** the raw `LlmPart` (not replacing it) so consumers can pick the abstraction level they want: raw provider parts via `LlmPart`, or higher-level orchestration via `ToolDispatched` / `ToolCompleted`.
+
+16.   **`Session.state: SubscriptionRef<SessionState>` for snapshot reads** (slice 12e — observable per-session state per ADR-0009). New `effect/session-state.ts` defines:
+
+
+    - `SessionState` = `Schema.Class<SessionState>("SessionState")({ turnCount: Schema.Number })`. First-slice payload is just `turnCount`; future slices add message history, model selection, accumulated usage / cost, pending tool calls, cancellation flag (all as Schema fields on the same class so consumers see a single coherent snapshot).
+    - `SessionState.empty: SessionState = new SessionState({ turnCount: 0 })`.
+
+    `effect/session.ts` updated:
+
+    - `Session` interface gains `state: SubscriptionRef.SubscriptionRef<SessionState>` alongside `send`.
+    - `Session.empty` builds the SubscriptionRef via `SubscriptionRef.make(SessionState.empty)`.
+    - `send` wraps its provider-stream pipeline in `Stream.unwrap(Effect.gen(function*() { yield* SubscriptionRef.update(state, ...); return streamPipeline }))` so the `turnCount` bump is atomic on the same fiber boundary as the new events arriving.
+
+    2 tests in `test/effect/session-state.test.ts`:
+
+    - `Session.empty` exposes `state` initialised to `SessionState.empty` (`turnCount: 0`). Verified with `SubscriptionRef.get(session.state)` returning a `SessionState` instance.
+    - Three back-to-back `Stream.runDrain(session.send(prompt))` calls leave `turnCount` at 3 — increments accumulate across sends; nothing else mutates state in this slice.
+
+    **v4 note**: `SubscriptionRef` is **not** structurally a `Ref` in v4 (internal shape differs — `Ref` stores `ref.current`, `SubscriptionRef` stores `value` + `pubsub`). Use `SubscriptionRef.get(ref)` to read a SubscriptionRef; `Ref.get` on a SubscriptionRef throws `Cannot read properties of undefined (reading 'current')`.
 
 ## Architecture stance (Effect rewrite)
 
