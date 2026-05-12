@@ -7,7 +7,7 @@ The rewrite targets **Effect v4** (currently in beta; codenamed "smol" in the up
 - The `effect/unstable/*` namespace (including `ai`, `schema`, `cli`, `http`, `observability`) explicitly carries no semver guarantee between beta releases. Pin every beta version exactly; budget time per bump for breakage.
 - Choice diverges from upstream effect-smol's own format toolchain (they use dprint). oxfmt is newer and less battle-tested; if its TS output diverges from what we want we may have to fall back to dprint or biome-format-only.
 - TS 7.0 is still pre-release; some IDE integrations may lag. Mitigated by pinning to a specific dev build, as pi-mono already does.
-- Documentation, blog posts, and third-party Effect integrations are still mostly v3-shaped — source code in `effect-smol-main/` and `LLMS.md` are the authoritative reference for the rewrite.
+- Documentation, blog posts, and third-party Effect integrations are still mostly v3-shaped — source code in `effect-smol-main/` and `effect-smol-main/LLMS.md` are the authoritative reference for the rewrite.
 
 ## Status
 

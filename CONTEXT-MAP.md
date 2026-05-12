@@ -1,6 +1,8 @@
 # Context Map
 
-`pi-mono` is a multi-context monorepo. Each package under `packages/` is its own context. System-wide decisions live under `docs/adr/`; per-context decisions live under `packages/<pkg>/docs/adr/`.
+`pi-mono` is a multi-context monorepo. Each surviving package under `packages/` is its own context. System-wide decisions live under `docs/adr/`; per-context decisions live under `packages/<pkg>/docs/adr/`.
+
+This map describes the post-rewrite target shape from ADR-0002 through ADR-0016. During the phased migration in ADR-0006, legacy packages and dependencies can still exist in the checkout while the context docs describe the intended 1.0 architecture.
 
 ## Contexts (post-rewrite shape)
 
@@ -10,21 +12,21 @@
 - [pi-coding-agent](./packages/coding-agent/CONTEXT.md) — the `pi` CLI: tools, modes, dialogs, storage. **Effect rewrite.** (ADR-0001, ADR-0002)
 - [pi-web-ui](./packages/web-ui/CONTEXT.md) — Lit-based web components for AI chat. **Effect rewrite** (browser-targeted). Consumes `@effect/ai-*` and `pi-models` directly. (ADR-0002, ADR-0005)
 
-**Deleted**: `@earendil-works/pi-ai` is retired (ADR-0003, ADR-0005). It stays on npm at `0.74.x` with a `deprecated` field but is not republished.
+**Deleted in the target shape**: `@earendil-works/pi-ai` is retired (ADR-0003, ADR-0005). It may remain in the worktree during ADR-0006 phases 1-3; after cutover it stays on npm at `0.74.x` with a `deprecated` field but is not republished.
 
 ## Relationships
 
-- **pi-agent-core → @effect/ai-openai, @effect/ai-openrouter, effect** — the loop talks to `LanguageModel` from `effect/unstable/ai` via the provider Layers.
+- **pi-agent-core → @effect/ai-openai, @effect/ai-openrouter, effect** — target provider relationship: the loop talks to `LanguageModel` from `effect/unstable/ai` via provider Layers. Current tracer bullets only wire `@effect/ai-openai`.
 - **pi-agent-core → pi-models** — registry lookup (`getModel`, `getProviders`, `calculateCost`).
 - **pi-coding-agent → pi-agent-core, pi-tui, pi-models** — the CLI composes them.
-- **pi-web-ui → @effect/ai-openai, @effect/ai-openrouter, effect, pi-models** — browser app uses Effect directly; pi-models for registry; Lit for components.
+- **pi-web-ui → @effect/ai-openai, @effect/ai-openrouter, effect, pi-models** — target provider relationship: browser app uses Effect directly; pi-models for registry; Lit for components.
 - **pi-tui is a sink**: nobody Effect-side imports from pi-tui's API in an Effect-typed way; integration happens at boundaries with `Effect.runPromise` / `Stream`-to-event-bridge adapters.
 
 ## Open decisions
 
 All macro-architecture decisions are recorded in `docs/adr/0001–0016`. Remaining concerns are implementation-detail tier, not design-tree forks:
 
-- Print mode (`pi --print` / `pi json`) — port to Effects (no structural change expected; subcommand under ADR-0011).
+- Print mode (`pi --print` / `pi json`) — port to Effect (no structural change expected; subcommand under ADR-0011).
 - OAuth flow internals — move into `pi-agent-core` per ADR-0005 (no structural break expected).
 - Autocomplete / slash commands — Effect-shaped Services consumed by interactive mode.
 - Compaction + branch-summarization — Effects within the agent loop; observable via `AgentEvent` per ADR-0009.

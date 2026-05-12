@@ -7,7 +7,7 @@ Session.send(input: Input): Stream<AgentEvent, AgentError, R>
 type Input = NewPrompt | Continue | Retry
 ```
 
-Each element of the stream is one `AgentEvent`; stream completion = the loop is finished. A trailing `FinishEvent` carries the final messages, usage, and cost. `Session.state: SubscriptionRef<SessionState>` is exposed alongside the stream for components that want snapshot reads or to observe slices without consuming the event log; `SessionState` is a single `Schema`-defined record. Internally the loop delegates the multi-turn tool-dispatch to `effect/unstable/ai`'s `LanguageModel.streamText({ toolkit, ... })` and wraps it with pi-specific concerns (compaction triggers, retry on transient errors, skill-block parsing, hooks, telemetry spans).
+Each element of the stream is one `AgentEvent`; stream completion = the loop is finished. A trailing `FinishEvent` carries the final messages, usage, and cost. `Session.state: SubscriptionRef<SessionState>` is exposed alongside the stream for components that want snapshot reads or to observe slices without consuming the event log; `SessionState` is a single `Schema`-defined record. Internally the loop delegates provider streaming and single-turn tool-call resolution to `effect/unstable/ai`'s `LanguageModel.streamText({ toolkit, ... })`; pi owns the higher-level multi-turn agent loop and wraps the provider stream with compaction triggers, retry on transient errors, skill-block parsing, hooks, and telemetry spans.
 
 The event union is pi-defined with a `_tag` discriminator and nests `Response.AnyPart` rather than exposing it directly, so pi orchestration events (skills, compaction, retries, session metadata) are first-class peers of the LLM parts instead of side-channels:
 

@@ -6,7 +6,7 @@ The transport break is deliberate: 1.0 is already breaking, the JSONL-over-stdio
 
 The previous `rpc-client.ts` (515 LOC for tests + ad-hoc debugging) is replaced by `RpcClient.make({ transport })` exported through `@earendil-works/pi-agent-core/test-support` (ADR-0015), and a `pi rpc-call` CLI subcommand for interactive debugging.
 
-Rejected: keeping the JSONL-over-stdio wire (ADR-0018A) — comfortable but leaves the rewrite carrying ~1.6 KLOC of custom dispatch/framing/correlation that effect-rpc already provides; and HTTP-only transport — fine for browser attach but worse than Socket for the dominant headless-embedding use case.
+Rejected: keeping the JSONL-over-stdio wire (option 18A) — comfortable but leaves the rewrite carrying ~1.6 KLOC of custom dispatch/framing/correlation that effect-rpc already provides; and HTTP-only transport — fine for browser attach but worse than Socket for the dominant headless-embedding use case.
 
 ## Consequences
 
