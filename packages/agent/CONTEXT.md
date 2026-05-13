@@ -12,7 +12,7 @@
 
 ## Status — Effect rewrite tracer bullets
 
-Fifteen tracer bullets (26 test cases), all GREEN, all without an API key:
+Nineteen tracer bullets (53 test cases), all GREEN, all without an API key:
 
 1. **`stubLanguageModel({ text })`** — Layer that bypasses providers entirely; `LanguageModel.generateText` resolves to canned text. Proves the v4 runtime and `@effect/ai` API surface work.
 2. **`stubOpenAiClient({ text })` + `OpenAiLanguageModel.layer({ model })`** — Layer composition that exercises the real provider path (`OpenAiLanguageModel.make` calls `client.createResponse`, parses the OpenAI Responses-API body shape, builds the `GenerateTextResponse`). Proves the OpenAI integration path works without an API key.
@@ -30,14 +30,14 @@ Fifteen tracer bullets (26 test cases), all GREEN, all without an API key:
 
 
     - `AgentEvent` = `LlmPart | ToolDispatched | ToolCompleted | Finish` (closed `Schema.Union` of `Schema.TaggedClass`-derived variants). The pi-defined event union the future `Session.send` stream will emit.
-    - `AgentError` = `LlmError | ToolError | SchemaError | CancellationError` (`Schema.TaggedErrorClass`-derived). Yieldable in `Effect.gen`; propagates through the error channel.
+    - `AgentError` = `LlmError | ToolError | SchemaError | StoreError | CancellationError` (`Schema.TaggedErrorClass`-derived). Yieldable in `Effect.gen`; propagates through the error channel.
     - 6 test cases: tag-discrimination, _tag literals, Schema.encode/decode roundtrip for a `LlmPart`, decode failure on unknown `_tag`, error-channel propagation per AgentError variant.
     Future variants (`SkillInvoked`, `CompactionApplied`, `RetryRequested`, `SessionMeta`, `CompactionError`, `AuthError` if it splits from `LlmError`) are deferred until their slices need them.
 
 14.   **`Session.empty` + `Session.send` wired to `LanguageModel.streamText`** (12b/c — combined). `effect/session.ts` exposes:
 
 
-    - `Session` interface with `send: (prompt: string) => Stream<AgentEvent, LlmError, LanguageModel>`.
+    - `Session` interface with `send: (prompt: string) => Stream<AgentEvent, AgentError, LanguageModel>`.
     - `Session.empty: Effect<Session>` builder (stateless for now; mirrors `Chat.empty` so a stateful variant can land later without changing call sites).
     The `send` Stream wraps `LanguageModel.streamText({ prompt })`: `Stream.map` each `Response.AnyPart` to an `LlmPart` event, `Stream.mapError` each upstream `AiError` to our pi-defined `LlmError`, and `Stream.concat` a trailing `Finish` event. 2 tests in `test/effect/session.test.ts`:
     - `Session.empty` resolves to a Session with `send` (smoke test).
@@ -52,9 +52,9 @@ Fifteen tracer bullets (26 test cases), all GREEN, all without an API key:
     - `tool-result` part → `[LlmPart, ToolCompleted({ toolName, toolCallId, isFailure, result })]`
     - every other part → `[LlmPart]`
 
-    Verified by a new `stubLanguageModelStream(parts: ReadonlyArray<unknown>)` test-support helper that satisfies `LanguageModel.LanguageModel` directly (bypassing the OpenAI provider layer) with a caller-supplied canned `Response.StreamPart` sequence. 2 tests in `test/effect/session-tool-events.test.ts`:
-    - Canned parts `[text-delta, tool-call, tool-result]` produce the exact sequence `[LlmPart, LlmPart, ToolDispatched, LlmPart, ToolCompleted, Finish]` with all fields preserved.
-    - A `tool-result` with `isFailure: true` round-trips that flag into `ToolCompleted.isFailure` along with the failure-shaped `result`.
+    Verified by `stubLanguageModelStream(parts: ReadonlyArray<Response.StreamPartEncoded>)`, a typed Effect AI `LanguageModel.make` Layer that bypasses the OpenAI provider while still using upstream `Response.StreamPart(toolkit)` validation. 2 tests in `test/effect/session-tool-events.test.ts`:
+    - Canned `[text-delta, tool-call]` parts plus a real `WeatherHandlers` Layer produce `[LlmPart, LlmPart, ToolDispatched, LlmPart, ToolCompleted, Finish]`; the `tool-result` is produced by Effect AI's toolkit resolution, not a raw test bypass.
+    - A decoded `tool-result` with `isFailure: true` round-trips that flag into `ToolCompleted.isFailure` along with the failure-shaped `result`.
 
     The lifted events appear **alongside** the raw `LlmPart` (not replacing it) so consumers can pick the abstraction level they want: raw provider parts via `LlmPart`, or higher-level orchestration via `ToolDispatched` / `ToolCompleted`.
 
@@ -68,7 +68,7 @@ Fifteen tracer bullets (26 test cases), all GREEN, all without an API key:
 
     - `Session` interface gains `state: SubscriptionRef.SubscriptionRef<SessionState>` alongside `send`.
     - `Session.empty` builds the SubscriptionRef via `SubscriptionRef.make(SessionState.empty)`.
-    - `send` wraps its provider-stream pipeline in `Stream.unwrap(Effect.gen(function*() { yield* SubscriptionRef.update(state, ...); return streamPipeline }))` so the `turnCount` bump is atomic on the same fiber boundary as the new events arriving.
+    - `send` wraps its provider-stream pipeline in `Stream.unwrap(Effect.gen(function*() { yield* SubscriptionRef.modify(state, ...); return streamPipeline }))` so the `turnCount` bump is atomic on the same fiber boundary as the new events arriving.
 
     2 tests in `test/effect/session-state.test.ts`:
 
@@ -76,6 +76,29 @@ Fifteen tracer bullets (26 test cases), all GREEN, all without an API key:
     - Three back-to-back `Stream.runDrain(session.send(prompt))` calls leave `turnCount` at 3 — increments accumulate across sends; nothing else mutates state in this slice.
 
     **v4 note**: `SubscriptionRef` is **not** structurally a `Ref` in v4 (internal shape differs — `Ref` stores `ref.current`, `SubscriptionRef` stores `value` + `pubsub`). Use `SubscriptionRef.get(ref)` to read a SubscriptionRef; `Ref.get` on a SubscriptionRef throws `Cannot read properties of undefined (reading 'current')`.
+
+17.   **`SessionStore` + `Session.durable(id)` for durable state side effects** (slice 12f — first ADR-0012 store boundary inside `pi-agent-core`). New `effect/stores/session-store.ts` defines:
+
+
+    - `StoredSessionState` = versioned Schema class wrapping `SessionState` plus `updatedAt`.
+    - `SessionStore` = Effect `Context.Service` with `load`, `save`, and `remove`, returning typed `SchemaError` / `StoreError` values instead of throwing raw storage errors.
+    - `layerKeyValueStore` = production-shaped Layer over Effect v4's `effect/unstable/persistence` `KeyValueStore`.
+    - `MemoryLayer` / `layerMemory` = in-memory Layer for tests via `Ref<HashMap>`.
+
+    `effect/session.ts` now exposes `Session.durable(id)`, which loads the previous `SessionState` from `SessionStore`, increments `turnCount` on every `send`, persists the updated snapshot, then continues through the existing `LanguageModel.streamText` Effect AI path. 24 tests cover the store boundary, durable session reload, and KV/schema error mapping:
+    - `test/effect/stores/session-store.test.ts` (6 tests) proves save/load/list/remove + overwrite + per-Layer isolation against the `MemoryLayer`.
+    - `test/effect/stores/session-store-kv.test.ts` (4 tests) proves the production `layerKeyValueStore` path: the `SessionIndexV1` side-key (under the `indexes/` prefix) supports `list` over a pure KV, stays consistent across save / remove, deduplicates re-saves of the same id, and keeps data visible across fresh `SessionStore` resolutions when both use the same KV boundary.
+    - `test/effect/stores/session-store-errors.test.ts` (13 tests) pins KV failures, corrupted record/index decode failures, eager Schema construction failures, and the index update conditional branches.
+    - `test/effect/session-durable.test.ts` (1 test) proves a fresh `Session.durable(id)` sees the previous `turnCount` and persists later sends.
+
+    **The `list` operation lives on the `SessionStore` Service**, not on `KeyValueStore`: `KeyValueStore` is a pure key-value abstraction with `get` / `set` / `remove` / `has` / `size` / `clear` / `isEmpty` — no enumeration. The `layerKeyValueStore` maintains a `SessionIndexV1` Schema-validated side-key under the `indexes/` prefix that tracks live session ids. `save` adds; `remove` filters out; both are best-effort consistent inside a single Effect (a fiber interrupt between the record-write and the index-write can leave the index drifting from the records — a follow-on slice can wrap them in `Effect.transaction` once the persistence Layer exposes one).
+
+18.   **`Session.send` toolkit threading** (slice 12g — tool execution on the streaming path). `Session.send(prompt, toolkit?)` forwards an optional `LanguageModel.ToolkitInput<Tools>` to `LanguageModel.streamText({ prompt, toolkit })`. The streaming stub gains an `outputs` mode mirroring `stubOpenAiClient`: `function_call` entries emit `response.output_item.added` + `response.function_call_arguments.done` SSE events so the upstream parser produces a real `tool-call` part, the toolkit handler (provided via Layer at the call site) runs, and the resulting `tool-result` part surfaces through `liftPart` as `ToolDispatched` + `ToolCompleted` events. 1 test in `test/effect/session-toolkit.test.ts`: a single canned `function_call` for `GetWeather({ city: "Paris" })` round-trips through the `WeatherHandlers` layer into a `ToolCompleted` carrying `{ temperature: 72, condition: "sunny" }`, asserted to appear after `ToolDispatched` and before `Finish`.
+
+
+    Handler resolution services come from the runtime context (via `Weather.toLayer({ GetWeather: handler })`), NOT from `send`'s `R` channel — keeping the public signature stable regardless of the concrete `Toolkit<{ ... }>` shape. The signature is `<Tools extends Record<string, Tool.Any>>(prompt, toolkit?: LanguageModel.ToolkitInput<Tools>)` so callers passing a concrete `Toolkit.make(GetWeather)` get the precise inferred shape (the broad `Record<...>` slot would reject a concrete toolkit because `Record`'s index signature requires every key).
+
+19.   **Effect LSP integration** (ADR-0017 — `@effect/language-service` as the editor TypeScript plugin). Wired at the workspace root: `tsconfig.json` adds the `@effect/language-service` plugin, `$schema` points at the plugin's bundled `schema.json`, and the first rewrite-critical diagnostics (`floatingEffect`, `missingEffectContext`, `missingEffectError`, `missingLayerContext`) are promoted to editor errors. `packages/agent/tsconfig.effect.json` carries the same plugin options for package-scoped editor sessions. `@effect/language-service@0.85.1` enters `devDependencies` and is installed in `node_modules`; `bun.lock` records the Bun install. The plugin runs only inside `tsserver` — it does **not** affect `tsgo` builds — so `bunx tsgo -p tsconfig.effect.json --noEmit` remains the build/typecheck gate. Workspace-version TypeScript is required in the editor so the plugin actually loads.
 
 ## Architecture stance (Effect rewrite)
 
@@ -151,11 +174,11 @@ npm run fmt:effect:check
 ## What's not here yet
 
 - Streaming on the scripted / non-streaming stubs: only `stubOpenAiClientStreaming` implements `createResponseStream`; the others die on call. A future slice can unify (e.g. a per-call stream-or-body switch).
-- Streaming with tool calls: would require `response.output_item.added` + `response.function_call_arguments.delta`/`done` events in the canned stream. Same pattern, more events.
+- Multi-step streaming tool flow: the current `function_call` SSE shape (`output_item.added` + `function_call_arguments.done`) emits each call in one shot. A slice that exercises `function_call_arguments.delta` partial-argument streaming is still pending — same `buildSseEvents` extension, more events per call.
 - Remaining `AiError` reasons (`InvalidOutputError`, `StructuredOutputError`, `UnsupportedSchemaError`, `InternalProviderError`, `NetworkError`, `UnknownError`, `InvalidUserInputError`) — add to the `cases` array in `error-reasons.test.ts` when a slice needs them.
 - Concurrency control on parallel tool calls.
 - HTTP-driven error mapping via `AiError.reasonFromHttpStatus({ status, body })` — once a stub `HttpClient` lands.
-- **The `Session.send` Stream-as-loop entry point** (ADR-0009) — the big one. Builds on every tracer bullet here.
-- The other `test-support` fixtures per ADR-0015: `TestUI`, `TestStores`, `TestBashOperations`.
+- **`Session.send` follow-on slices** building on 12a–12g (per ADR-0009): `Input = NewPrompt | Continue | Retry` discriminated union, multi-turn history inside `SessionState`, token / cost accounting on `Finish`, compaction triggers, retry on transient errors, skill-block parsing, `Effect.withSpan` telemetry, cancellation via `Fiber.interrupt`.
+- The other `test-support` fixtures per ADR-0015: `TestUI`, broader `TestStores` beyond `SessionStore`, and `TestBashOperations`.
 
 These land as TDD slices, in order — see `docs/agents/domain.md` for how the consumer skills (`/tdd`, `/diagnose`, `/improve-codebase-architecture`) should treat this package.

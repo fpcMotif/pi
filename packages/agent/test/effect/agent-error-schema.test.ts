@@ -1,7 +1,14 @@
 import { Effect } from "effect";
 import { describe, expect, it } from "vitest";
 
-import { type AgentError, CancellationError, LlmError, SchemaError, ToolError } from "../../effect/agent-error.js";
+import {
+	type AgentError,
+	CancellationError,
+	LlmError,
+	SchemaError,
+	StoreError,
+	ToolError,
+} from "../../effect/agent-error.js";
 
 describe("AgentError tagged classes", () => {
 	it("each variant constructs with the correct _tag and fields", () => {
@@ -20,6 +27,10 @@ describe("AgentError tagged classes", () => {
 		expect(schema._tag).toBe("SchemaError");
 		expect(schema.description).toBe("invalid input shape");
 
+		const store = new StoreError({ store: "SessionStore", operation: "load", message: "failed", cause: null });
+		expect(store._tag).toBe("StoreError");
+		expect(store.store).toBe("SessionStore");
+
 		const cancellation = new CancellationError({});
 		expect(cancellation._tag).toBe("CancellationError");
 	});
@@ -31,6 +42,7 @@ describe("AgentError tagged classes", () => {
 					new LlmError({ aiError: null }),
 					new ToolError({ toolName: "T", toolCallId: "c", cause: null }),
 					new SchemaError({ description: "bad" }),
+					new StoreError({ store: "SessionStore", operation: "save", message: "bad", cause: null }),
 					new CancellationError({}),
 				];
 

@@ -24,7 +24,7 @@ This map describes the post-rewrite target shape from ADR-0002 through ADR-0016.
 
 ## Open decisions
 
-All macro-architecture decisions are recorded in `docs/adr/0001–0016`. Remaining concerns are implementation-detail tier, not design-tree forks:
+All macro-architecture decisions are recorded in `docs/adr/0001–0017`. Remaining concerns are implementation-detail tier, not design-tree forks:
 
 - Print mode (`pi --print` / `pi json`) — port to Effect (no structural change expected; subcommand under ADR-0011).
 - OAuth flow internals — move into `pi-agent-core` per ADR-0005 (no structural break expected).

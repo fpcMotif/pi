@@ -10,6 +10,12 @@ import { stubOpenAiClientStreaming } from "../../test-support/stub-openai-client
 const openAiStreamingLayer = (text: string, chunkCount = 1) =>
 	OpenAiLanguageModel.layer({ model: "gpt-4" }).pipe(Layer.provide(stubOpenAiClientStreaming({ text, chunkCount })));
 
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+	typeof value === "object" && value !== null;
+
+const isTextDelta = (part: unknown): part is { readonly type: "text-delta"; readonly delta: string } =>
+	isRecord(part) && part.type === "text-delta" && typeof part.delta === "string";
+
 describe("Session (slice 12b/c — Session.empty + send wired to LanguageModel.streamText)", () => {
 	it.effect("Session.empty resolves to a Session with a send function", () =>
 		Effect.gen(function* () {
@@ -37,10 +43,7 @@ describe("Session (slice 12b/c — Session.empty + send wired to LanguageModel.s
 			const textDeltas = heads
 				.filter((e): e is LlmPart => e._tag === "LlmPart")
 				.map((e) => e.part)
-				.filter(
-					(p): p is { readonly type: "text-delta"; readonly delta: string } =>
-						typeof p === "object" && p !== null && (p as { type?: unknown }).type === "text-delta",
-				);
+				.filter(isTextDelta);
 			expect(textDeltas.map((p) => p.delta).join("")).toBe("Hello from Session.send!");
 		}).pipe(Effect.provide(openAiStreamingLayer("Hello from Session.send!", 3))),
 	);

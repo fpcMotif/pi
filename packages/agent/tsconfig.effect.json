@@ -1,4 +1,21 @@
 {
 	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"diagnostics": true,
+				"refactors": true,
+				"quickinfo": true,
+				"completions": true,
+				"diagnosticSeverity": {
+					"floatingEffect": "error",
+					"missingEffectContext": "error",
+					"missingEffectError": "error",
+					"missingLayerContext": "error"
+				}
+			}
+		]
+	},
 	"include": ["effect/**/*.ts", "test-support/**/*.ts", "test/effect/**/*.ts"]
 }

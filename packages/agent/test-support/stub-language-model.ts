@@ -5,15 +5,13 @@ export interface StubLanguageModelOptions {
 	readonly text: string;
 }
 
+const textPart = (text: string): Response.TextPartEncoded => ({ type: "text", text });
+
 export const stubLanguageModel = (options: StubLanguageModelOptions) =>
-	Layer.succeed(
+	Layer.effect(
 		LanguageModel.LanguageModel,
-		LanguageModel.LanguageModel.of({
-			generateText: ((_options: unknown) =>
-				Effect.succeed(
-					new LanguageModel.GenerateTextResponse([Response.makePart("text", { text: options.text })]),
-				)) as never,
-			generateObject: (() => Effect.die("stub: generateObject not implemented")) as never,
-			streamText: (() => Stream.empty) as never,
+		LanguageModel.make({
+			generateText: () => Effect.succeed([textPart(options.text)]),
+			streamText: () => Stream.empty,
 		}),
 	);

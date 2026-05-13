@@ -7,7 +7,7 @@
  * const events = yield* Stream.runCollect(session.send("hello"))
  * ```
  *
- * `send(prompt)` returns a `Stream<AgentEvent, LlmError, LanguageModel.LanguageModel>`:
+ * `send(prompt)` returns a `Stream<AgentEvent, AgentError, LanguageModel.LanguageModel>`:
  *
  * - Each provider `Response.AnyPart` becomes one `LlmPart` event (raw view).
  * - When a `tool-call` part appears, an additional `ToolDispatched` event is
@@ -25,9 +25,9 @@
  *   arrive.
  *
  * `session.state: SubscriptionRef<SessionState>` exposes the observable
- * snapshot per ADR-0009. Components can read snapshots via `Ref.get(state)`
- * or subscribe to changes via `state.changes` (SubscriptionRef's Stream of
- * mutations). The first slice carries only `turnCount`.
+ * snapshot per ADR-0009. Components can read snapshots via
+ * `SubscriptionRef.get(state)` or subscribe to changes via
+ * `SubscriptionRef.changes(state)`. The first slice carries only `turnCount`.
  *
  * `send` accepts an optional second `toolkit` argument that is forwarded to
  * `LanguageModel.streamText({ prompt, toolkit })`. When provided, the upstream
@@ -46,12 +46,13 @@
  * - Compaction triggers, retry on transient errors, skill-block parsing,
  *   `Effect.withSpan` telemetry -- the wrapping per ADR-0009.
  */
-import { Effect, Stream, SubscriptionRef } from "effect";
+import { Effect, Option, Stream, SubscriptionRef } from "effect";
 import { LanguageModel, type Tool } from "effect/unstable/ai";
 
-import { LlmError } from "./agent-error.js";
+import { type AgentError, LlmError } from "./agent-error.js";
 import { type AgentEvent, Finish, LlmPart, ToolCompleted, ToolDispatched } from "./agent-event.js";
 import { SessionState } from "./session-state.js";
+import { SessionStore } from "./stores/session-store.js";
 
 /**
  * `Session.send` is generic over the toolkit's `Tools` map so that callers
@@ -70,8 +71,20 @@ export interface Session {
 	readonly send: <Tools extends Record<string, Tool.Any> = {}>(
 		prompt: string,
 		toolkit?: LanguageModel.ToolkitInput<Tools>,
-	) => Stream.Stream<AgentEvent, LlmError, LanguageModel.LanguageModel>;
+	) => Stream.Stream<AgentEvent, AgentError, LanguageModel.LanguageModel>;
 }
+
+interface MakeOptions {
+	readonly initialState: SessionState;
+	readonly persist: (state: SessionState) => Effect.Effect<void, AgentError>;
+}
+
+const isRecord = (value: unknown): value is Record<PropertyKey, unknown> => typeof value === "object" && value !== null;
+
+const hasStringProperty = <Key extends PropertyKey>(
+	value: Record<PropertyKey, unknown>,
+	key: Key,
+): value is Record<Key, string> & Record<PropertyKey, unknown> => typeof value[key] === "string";
 
 /**
  * Lift one upstream `Response.AnyPart` into the pi `AgentEvent` view. Every
@@ -81,43 +94,53 @@ export interface Session {
  */
 const liftPart = (part: unknown): ReadonlyArray<AgentEvent> => {
 	const base = new LlmPart({ part });
-	if (typeof part !== "object" || part === null) return [base];
+	if (!isRecord(part)) return [base];
 
-	const tag = (part as { readonly type?: unknown }).type;
+	const tag = part.type;
 
-	if (tag === "tool-call") {
-		const p = part as {
-			readonly id: string;
-			readonly name: string;
-			readonly params: unknown;
-		};
-		return [base, new ToolDispatched({ toolName: p.name, toolCallId: p.id, params: p.params })];
+	if (tag === "tool-call" && hasStringProperty(part, "id") && hasStringProperty(part, "name")) {
+		return [base, new ToolDispatched({ toolName: part.name, toolCallId: part.id, params: part.params })];
 	}
 
-	if (tag === "tool-result") {
-		const p = part as {
-			readonly id: string;
-			readonly name: string;
-			readonly isFailure: boolean;
-			readonly result: unknown;
-		};
+	if (
+		tag === "tool-result" &&
+		hasStringProperty(part, "id") &&
+		hasStringProperty(part, "name") &&
+		typeof part.isFailure === "boolean"
+	) {
 		return [
 			base,
-			new ToolCompleted({ toolName: p.name, toolCallId: p.id, isFailure: p.isFailure, result: p.result }),
+			new ToolCompleted({
+				toolName: part.name,
+				toolCallId: part.id,
+				isFailure: part.isFailure,
+				result: part.result,
+			}),
 		];
 	}
 
 	return [base];
 };
 
+const streamPrompt = <Tools extends Record<string, Tool.Any>>(
+	prompt: string,
+	toolkit: LanguageModel.ToolkitInput<Tools> | undefined,
+) =>
+	toolkit === undefined
+		? LanguageModel.streamText({ prompt })
+		: LanguageModel.streamText<
+				Tools,
+				{ readonly prompt: string; readonly toolkit: LanguageModel.ToolkitInput<Tools> }
+			>({ prompt, toolkit });
+
 /**
  * Build a new `Session`. The empty Session has no history, but the `state`
  * SubscriptionRef is live -- every `send` call increments `turnCount` so
  * observers can react to turn boundaries.
  */
-export const Session: { readonly empty: Effect.Effect<Session> } = {
-	empty: Effect.gen(function* () {
-		const state = yield* SubscriptionRef.make(SessionState.empty);
+export const makeSession = (options: MakeOptions): Effect.Effect<Session> =>
+	Effect.gen(function* () {
+		const state = yield* SubscriptionRef.make(options.initialState);
 		return {
 			state,
 			send: <Tools extends Record<string, Tool.Any> = {}>(
@@ -126,19 +149,13 @@ export const Session: { readonly empty: Effect.Effect<Session> } = {
 			) =>
 				Stream.unwrap(
 					Effect.gen(function* () {
-						yield* SubscriptionRef.update(state, (s) => new SessionState({ turnCount: s.turnCount + 1 }));
-						// Forward toolkit to the upstream LanguageModel when provided.
-						// `as never` bypasses the streamText overload-picker, which can't
-						// see through the conditional spread at the type level. The
-						// runtime path is identical either way.
-						const upstream =
-							toolkit === undefined
-								? LanguageModel.streamText({ prompt })
-								: (LanguageModel.streamText({ prompt, toolkit } as never) as Stream.Stream<
-										unknown,
-										unknown,
-										LanguageModel.LanguageModel
-									>);
+						const nextState = yield* SubscriptionRef.modify(state, (s) => {
+							const next = new SessionState({ turnCount: s.turnCount + 1 });
+							const result: readonly [SessionState, SessionState] = [next, next];
+							return result;
+						});
+						yield* options.persist(nextState);
+						const upstream = streamPrompt(prompt, toolkit);
 						return upstream.pipe(
 							Stream.flatMap((part) => Stream.fromIterable(liftPart(part))),
 							Stream.mapError((aiError): LlmError => new LlmError({ aiError })),
@@ -147,5 +164,25 @@ export const Session: { readonly empty: Effect.Effect<Session> } = {
 					}),
 				),
 		} satisfies Session;
+	});
+
+export const durable = (sessionId: string): Effect.Effect<Session, AgentError, SessionStore> =>
+	Effect.gen(function* () {
+		const store = yield* SessionStore;
+		const stored = yield* store.load(sessionId);
+		return yield* makeSession({
+			initialState: Option.getOrElse(stored, () => SessionState.empty),
+			persist: (state) => store.save(sessionId, state),
+		});
+	});
+
+export const Session: {
+	readonly empty: Effect.Effect<Session>;
+	readonly durable: typeof durable;
+} = {
+	empty: makeSession({
+		initialState: SessionState.empty,
+		persist: () => Effect.void,
 	}),
+	durable,
 };

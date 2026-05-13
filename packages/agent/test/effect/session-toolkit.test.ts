@@ -4,7 +4,7 @@ import { Effect, Layer, Schema, Stream } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
 
-import type { ToolCompleted, ToolDispatched } from "../../effect/agent-event.js";
+import type { AgentEvent, ToolCompleted, ToolDispatched } from "../../effect/agent-event.js";
 import { Session } from "../../effect/session.js";
 import { stubOpenAiClientStreaming } from "../../test-support/stub-openai-client-streaming.js";
 
@@ -19,6 +19,22 @@ const Weather = Toolkit.make(GetWeather);
 const WeatherHandlers = Weather.toLayer({
 	GetWeather: ({ city: _city }) => Effect.succeed({ temperature: 72, condition: "sunny" }),
 });
+
+const getToolDispatched = (events: ReadonlyArray<AgentEvent>, index: number): ToolDispatched => {
+	const event = events[index];
+	if (event?._tag !== "ToolDispatched") {
+		throw new Error(`expected ToolDispatched at index ${index}`);
+	}
+	return event;
+};
+
+const getToolCompleted = (events: ReadonlyArray<AgentEvent>, index: number): ToolCompleted => {
+	const event = events[index];
+	if (event?._tag !== "ToolCompleted") {
+		throw new Error(`expected ToolCompleted at index ${index}`);
+	}
+	return event;
+};
 
 describe("Session.send threads a toolkit through to LanguageModel.streamText", () => {
 	it.effect(
@@ -39,11 +55,11 @@ describe("Session.send threads a toolkit through to LanguageModel.streamText", (
 				expect(completedIdx).toBeGreaterThan(dispatchedIdx);
 				expect(finishIdx).toBe(tags.length - 1);
 
-				const dispatched = events[dispatchedIdx] as ToolDispatched;
+				const dispatched = getToolDispatched(events, dispatchedIdx);
 				expect(dispatched.toolName).toBe("GetWeather");
 				expect(dispatched.params).toEqual({ city: "Paris" });
 
-				const completed = events[completedIdx] as ToolCompleted;
+				const completed = getToolCompleted(events, completedIdx);
 				expect(completed.toolName).toBe("GetWeather");
 				expect(completed.isFailure).toBe(false);
 				expect(completed.result).toEqual({ temperature: 72, condition: "sunny" });
