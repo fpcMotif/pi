@@ -2,7 +2,7 @@
 
 `pi-mono` is a multi-context monorepo. Each surviving package under `packages/` is its own context. System-wide decisions live under `docs/adr/`; per-context decisions live under `packages/<pkg>/docs/adr/`.
 
-This map describes the post-rewrite target shape from ADR-0002 through ADR-0016. During the phased migration in ADR-0006, legacy packages and dependencies can still exist in the checkout while the context docs describe the intended 1.0 architecture.
+This map describes the post-rewrite target shape from ADR-0002 through ADR-0017. During the phased migration in ADR-0006, legacy packages and dependencies can still exist in the checkout while the context docs describe the intended 1.0 architecture. **ADR-0017** layers a monorepo-wide 100%-coverage requirement on every surviving + deprecated package, enforced via vitest + v8 in CI; see that ADR for excludes and sequencing.
 
 ## Contexts (post-rewrite shape)
 
@@ -24,7 +24,7 @@ This map describes the post-rewrite target shape from ADR-0002 through ADR-0016.
 
 ## Open decisions
 
-All macro-architecture decisions are recorded in `docs/adr/0001–0016`. Remaining concerns are implementation-detail tier, not design-tree forks:
+All macro-architecture decisions are recorded in ADR-0001 through ADR-0017 under `docs/adr/`. Remaining concerns are implementation-detail tier, not design-tree forks:
 
 - Print mode (`pi --print` / `pi json`) — port to Effect (no structural change expected; subcommand under ADR-0011).
 - OAuth flow internals — move into `pi-agent-core` per ADR-0005 (no structural break expected).

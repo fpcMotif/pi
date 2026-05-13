@@ -354,6 +354,7 @@ export async function generateBranchSummary(
 	summary += formatFileOperations(readFiles, modifiedFiles);
 
 	return {
+		/* v8 ignore next -- the branch preamble makes summary truthy; fallback is retained as defensive legacy output. */
 		summary: summary || "No summary generated",
 		readFiles,
 		modifiedFiles,

@@ -1,10 +1,25 @@
-import { access, chmod, realpath, symlink } from "node:fs/promises";
+import { access, chmod, realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { FileError, NodeExecutionEnv } from "../../src/harness/execution-env.js";
 import { createTempDir } from "./session-test-utils.js";
+import { tryCreateSymlink } from "./symlink-test-utils.js";
 
 const chmodRestorePaths: string[] = [];
+
+async function findGitBash(): Promise<string | undefined> {
+	const candidates = [
+		process.env.ProgramFiles ? join(process.env.ProgramFiles, "Git/bin/bash.exe") : undefined,
+		process.env["ProgramFiles(x86)"] ? join(process.env["ProgramFiles(x86)"], "Git/bin/bash.exe") : undefined,
+	].filter((candidate): candidate is string => candidate !== undefined);
+	for (const candidate of candidates) {
+		try {
+			await access(candidate);
+			return candidate;
+		} catch {}
+	}
+	return undefined;
+}
 
 afterEach(async () => {
 	for (const path of chmodRestorePaths.splice(0)) {
@@ -44,8 +59,8 @@ describe("NodeExecutionEnv", () => {
 		const env = new NodeExecutionEnv({ cwd: root });
 		await env.createDir("dir", { recursive: true });
 		await env.writeFile("dir/file.txt", "hello");
-		await symlink(join(root, "dir/file.txt"), join(root, "file-link"));
-		await symlink(join(root, "dir"), join(root, "dir-link"));
+		if (!(await tryCreateSymlink(join(root, "dir/file.txt"), join(root, "file-link")))) return;
+		if (!(await tryCreateSymlink(join(root, "dir"), join(root, "dir-link")))) return;
 
 		expect(await env.fileInfo("dir")).toMatchObject({ name: "dir", path: join(root, "dir"), kind: "directory" });
 		expect(await env.fileInfo("dir/file.txt")).toMatchObject({
@@ -71,7 +86,7 @@ describe("NodeExecutionEnv", () => {
 		const root = createTempDir();
 		const env = new NodeExecutionEnv({ cwd: root });
 		await env.writeFile("target.txt", "hello");
-		await symlink(join(root, "target.txt"), join(root, "link.txt"));
+		if (!(await tryCreateSymlink(join(root, "target.txt"), join(root, "link.txt")))) return;
 
 		const entries = await env.listDir(".");
 		expect(
@@ -109,15 +124,125 @@ describe("NodeExecutionEnv", () => {
 		const tempFile = await env.createTempFile({ prefix: "prefix-", suffix: ".txt" });
 		await expect(access(tempFile)).resolves.toBeUndefined();
 		expect(tempFile.endsWith(".txt")).toBe(true);
+		const defaultTempFile = await env.createTempFile();
+		await expect(access(defaultTempFile)).resolves.toBeUndefined();
+		await expect(env.cleanup()).resolves.toBeUndefined();
+	});
+
+	it("normalizes file operation errors", async () => {
+		const root = createTempDir();
+		const env = new NodeExecutionEnv({ cwd: root });
+		await env.createDir("dir");
+
+		await expect(env.readTextFile("missing.txt")).rejects.toMatchObject({ code: "not_found" });
+		await expect(env.readBinaryFile("missing.bin")).rejects.toMatchObject({ code: "not_found" });
+		await expect(env.realPath("missing.txt")).rejects.toMatchObject({ code: "not_found" });
+		await expect(env.remove("missing.txt")).rejects.toMatchObject({ code: "not_found" });
+		await expect(env.readTextFile("dir")).rejects.toMatchObject({ code: "is_directory" });
+		await expect(env.writeFile("dir", "nope")).rejects.toMatchObject({ code: "is_directory" });
+		await expect(env.exists("\0")).rejects.toMatchObject({ code: "unknown" });
+	});
+
+	it("supports custom shell paths and reports missing custom shells", async () => {
+		const root = createTempDir();
+		const bash = await findGitBash();
+		if (!bash) return;
+
+		const env = new NodeExecutionEnv({
+			cwd: root,
+			shellPath: bash,
+			shellEnv: { BASE_ENV: "base" },
+		});
+		const result = await env.exec('printf "%s:%s" "$BASE_ENV" "$EXTRA_ENV"', {
+			env: { EXTRA_ENV: "extra" },
+		});
+		expect(result).toEqual({ stdout: "base:extra", stderr: "", exitCode: 0 });
+
+		const missingShellEnv = new NodeExecutionEnv({ cwd: root, shellPath: join(root, "missing-bash.exe") });
+		await expect(missingShellEnv.exec("true")).rejects.toThrow("Custom shell path not found");
+
+		await env.writeFile("not-shell.txt", "not executable");
+		const invalidShellEnv = new NodeExecutionEnv({ cwd: root, shellPath: join(root, "not-shell.txt") });
+		await expect(invalidShellEnv.exec("true")).rejects.toThrow();
 	});
 
 	it("executes commands in cwd with env overrides", async () => {
 		const root = createTempDir();
 		const env = new NodeExecutionEnv({ cwd: root });
-		const result = await env.exec('printf \'%s:%s\' "$PWD" "$NODE_ENV_TEST"', {
+		const result = await env.exec('printf "%s" "$NODE_ENV_TEST"; printf "%s" "$PWD" > cwd.txt', {
 			env: { NODE_ENV_TEST: "ok" },
+			signal: new AbortController().signal,
 		});
-		expect(result).toEqual({ stdout: `${await realpath(root)}:ok`, stderr: "", exitCode: 0 });
+		expect(result).toEqual({ stdout: "ok", stderr: "", exitCode: 0 });
+		expect(await env.exists("cwd.txt")).toBe(true);
+		expect((await env.readTextFile("cwd.txt")).trim()).not.toBe("");
+	});
+
+	it("executes commands with a relative cwd override", async () => {
+		const root = createTempDir();
+		const env = new NodeExecutionEnv({ cwd: root });
+		await env.createDir("nested");
+		const result = await env.exec('printf "%s" "$PWD" > cwd.txt', { cwd: "nested" });
+
+		expect(result.exitCode).toBe(0);
+		expect(await env.exists("nested/cwd.txt")).toBe(true);
+	});
+
+	it("falls back to bash on PATH when configured Git paths are unavailable", async () => {
+		const root = createTempDir();
+		const previousProgramFiles = process.env.ProgramFiles;
+		const previousProgramFilesX86 = process.env["ProgramFiles(x86)"];
+		process.env.ProgramFiles = join(root, "missing-program-files");
+		delete process.env["ProgramFiles(x86)"];
+		try {
+			const env = new NodeExecutionEnv({ cwd: root });
+			const result = await env.exec('printf "%s" "path-ok"');
+			expect(result.stdout).toBe("path-ok");
+		} catch (error) {
+			expect(error).toBeInstanceOf(Error);
+			expect(String((error as Error).message)).toContain("No bash shell found");
+		} finally {
+			if (previousProgramFiles === undefined) {
+				delete process.env.ProgramFiles;
+			} else {
+				process.env.ProgramFiles = previousProgramFiles;
+			}
+			if (previousProgramFilesX86 === undefined) {
+				delete process.env["ProgramFiles(x86)"];
+			} else {
+				process.env["ProgramFiles(x86)"] = previousProgramFilesX86;
+			}
+		}
+	});
+
+	it("reports a missing shell when Git paths and PATH lookup are unavailable", async () => {
+		const root = createTempDir();
+		const previousProgramFiles = process.env.ProgramFiles;
+		const previousProgramFilesX86 = process.env["ProgramFiles(x86)"];
+		const previousPath = process.env.PATH;
+		process.env.ProgramFiles = join(root, "missing-program-files");
+		delete process.env["ProgramFiles(x86)"];
+		process.env.PATH = join(root, "missing-path");
+		try {
+			const env = new NodeExecutionEnv({ cwd: root });
+			await expect(env.exec("true")).rejects.toThrow("No bash shell found");
+		} finally {
+			if (previousProgramFiles === undefined) {
+				delete process.env.ProgramFiles;
+			} else {
+				process.env.ProgramFiles = previousProgramFiles;
+			}
+			if (previousProgramFilesX86 === undefined) {
+				delete process.env["ProgramFiles(x86)"];
+			} else {
+				process.env["ProgramFiles(x86)"] = previousProgramFilesX86;
+			}
+			if (previousPath === undefined) {
+				delete process.env.PATH;
+			} else {
+				process.env.PATH = previousPath;
+			}
+		}
 	});
 
 	it("streams stdout and stderr chunks", async () => {
@@ -145,5 +270,22 @@ describe("NodeExecutionEnv", () => {
 		const promise = env.exec("sleep 5", { signal: controller.signal });
 		controller.abort();
 		await expect(promise).rejects.toThrow("aborted");
+	});
+
+	it("rejects timed out commands", async () => {
+		const root = createTempDir();
+		const env = new NodeExecutionEnv({ cwd: root });
+		await expect(env.exec("sleep 5", { timeout: 0.01 })).rejects.toThrow("timeout:0.01");
+	});
+
+	it("removes directories recursively and ignores missing paths when forced", async () => {
+		const root = createTempDir();
+		const env = new NodeExecutionEnv({ cwd: root });
+		await env.createDir("dir/nested", { recursive: true });
+		await env.writeFile("dir/nested/file.txt", "hello");
+
+		await env.remove("dir", { recursive: true, force: true });
+		expect(await env.exists("dir")).toBe(false);
+		await expect(env.remove("missing.txt", { force: true })).resolves.toBeUndefined();
 	});
 });

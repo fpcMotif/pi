@@ -145,6 +145,7 @@ export async function runAgentLoopContinue(
 function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 	return new EventStream<AgentEvent, AgentMessage[]>(
 		(event: AgentEvent) => event.type === "agent_end",
+		/* v8 ignore next -- EventStream only calls the result extractor for the agent_end terminal event. */
 		(event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
 	);
 }

@@ -39,3 +39,13 @@ plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 collect.sh
+
+# External reference repos (effect-ts ecosystem)
+effect-main/
+effect-smol-main/
+language-service-main/
+tsgo-main/
+
+# Local dev artifacts
+.omx/
+coverage-fresh/

@@ -2,14 +2,31 @@ import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
 	EventStream,
+	type FauxProviderRegistration,
+	fauxAssistantMessage,
 	type Message,
 	type Model,
+	registerFauxProvider,
 	type UserMessage,
 } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { agentLoop, agentLoopContinue } from "../src/agent-loop.js";
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentTool } from "../src/types.js";
+
+const registrations: FauxProviderRegistration[] = [];
+
+afterEach(() => {
+	while (registrations.length > 0) {
+		registrations.pop()?.unregister();
+	}
+});
+
+function registerProvider(): FauxProviderRegistration {
+	const registration = registerFauxProvider();
+	registrations.push(registration);
+	return registration;
+}
 
 // Mock stream for testing - mimics MockAssistantStream
 class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
@@ -234,6 +251,72 @@ describe("agentLoop with AgentMessage", () => {
 		expect(transformedMessages.length).toBe(2);
 		// Then convertToLlm receives the pruned messages
 		expect(convertedMessages.length).toBe(2);
+	});
+
+	it("should use the default provider stream when no stream function is supplied", async () => {
+		const registration = registerProvider();
+		registration.setResponses([fauxAssistantMessage("default stream")]);
+
+		const stream = agentLoop(
+			[createUserMessage("Hello")],
+			{ systemPrompt: "You are helpful.", messages: [], tools: [] },
+			{ model: registration.getModel(), convertToLlm: identityConverter },
+		);
+
+		for await (const _event of stream) {
+			// consume
+		}
+
+		const messages = await stream.result();
+		expect(messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+		expect((messages[1] as AssistantMessage).content).toEqual([{ type: "text", text: "default stream" }]);
+	});
+
+	it("should resolve dynamic api keys and fall back to static api keys", async () => {
+		const seenApiKeys: Array<string | undefined> = [];
+		const providers: string[] = [];
+		const runOnce = async (configPatch: Partial<AgentLoopConfig>) => {
+			const stream = agentLoop(
+				[createUserMessage("Hello")],
+				{ systemPrompt: "You are helpful.", messages: [], tools: [] },
+				{ model: createModel(), convertToLlm: identityConverter, ...configPatch },
+				undefined,
+				(_model, _context, options) => {
+					seenApiKeys.push(options?.apiKey);
+					const stream = new MockAssistantStream();
+					queueMicrotask(() => {
+						stream.push({
+							type: "done",
+							reason: "stop",
+							message: createAssistantMessage([{ type: "text", text: "ok" }]),
+						});
+					});
+					return stream;
+				},
+			);
+			for await (const _event of stream) {
+				// consume
+			}
+		};
+
+		await runOnce({
+			apiKey: "static-key",
+			getApiKey: async (provider) => {
+				providers.push(provider);
+				return "dynamic-key";
+			},
+		});
+		await runOnce({
+			apiKey: "static-key",
+			getApiKey: async (provider) => {
+				providers.push(provider);
+				return undefined;
+			},
+		});
+		await runOnce({ apiKey: "static-key" });
+
+		expect(providers).toEqual(["openai", "openai"]);
+		expect(seenApiKeys).toEqual(["dynamic-key", "static-key", "static-key"]);
 	});
 
 	it("should handle tool calls and results", async () => {
@@ -965,6 +1048,66 @@ describe("agentLoop with AgentMessage", () => {
 
 		expect(llmCalls).toBe(2);
 		expect(convertedSecondTurnSystemPrompt).toBe("second prompt");
+	});
+
+	it("should keep current context when prepareNextTurn only updates model and reasoning", async () => {
+		const firstModel = createModel();
+		const secondModel = { ...firstModel, id: "second-model" };
+		const seen: Array<{ modelId: string; reasoning: unknown; messages: number }> = [];
+		let prepared = false;
+		const config: AgentLoopConfig = {
+			model: firstModel,
+			convertToLlm: identityConverter,
+			prepareNextTurn: async () => {
+				if (prepared) return undefined;
+				prepared = true;
+				return {
+					model: secondModel,
+					thinkingLevel: "off",
+				};
+			},
+		};
+
+		let llmCalls = 0;
+		const stream = agentLoop(
+			[createUserMessage("use tool")],
+			{ systemPrompt: "", messages: [], tools: [] },
+			config,
+			undefined,
+			(model, context, options) => {
+				llmCalls++;
+				seen.push({ modelId: model.id, reasoning: options?.reasoning, messages: context.messages.length });
+				const mockStream = new MockAssistantStream();
+				queueMicrotask(() => {
+					if (llmCalls === 1) {
+						mockStream.push({
+							type: "done",
+							reason: "toolUse",
+							message: createAssistantMessage(
+								[{ type: "toolCall", id: "missing-1", name: "missing", arguments: {} }],
+								"toolUse",
+							),
+						});
+					} else {
+						mockStream.push({
+							type: "done",
+							reason: "stop",
+							message: createAssistantMessage([{ type: "text", text: "done" }]),
+						});
+					}
+				});
+				return mockStream;
+			},
+		);
+
+		for await (const _event of stream) {
+			// consume
+		}
+
+		expect(seen).toEqual([
+			{ modelId: "mock", reasoning: undefined, messages: 1 },
+			{ modelId: "second-model", reasoning: undefined, messages: 3 },
+		]);
 	});
 
 	it("should stop after the current turn when shouldStopAfterTurn returns true", async () => {

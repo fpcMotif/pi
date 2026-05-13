@@ -7,7 +7,7 @@
  * const events = yield* Stream.runCollect(session.send("hello"))
  * ```
  *
- * `send(prompt)` returns a `Stream<AgentEvent, LlmError, LanguageModel.LanguageModel>`:
+ * `send(prompt, toolkit?)` returns a `Stream<AgentEvent, LlmError, LanguageModel>`:
  *
  * - Each provider `Response.AnyPart` becomes one `LlmPart` event (raw view).
  * - When a `tool-call` part appears, an additional `ToolDispatched` event is
@@ -19,15 +19,25 @@
  *   `Stream.mapError` so callers can `Stream.runForEach` against the closed
  *   `AgentError` union without knowing about Effect's provider error variants.
  * - A trailing `Finish` event is appended via `Stream.concat`.
- * - **Each `send` call increments `state.turnCount` by 1**, atomically, before
- *   the upstream stream starts emitting. Observers subscribed to
- *   `session.state` see the bump on the same fiber boundary the new events
- *   arrive.
+ *
+ * **Multi-turn history is accumulated automatically** (this slice):
+ *
+ * - Before the upstream stream starts emitting, the new user prompt is
+ *   appended to `state.history` (via `Prompt.concat`) and `state.turnCount`
+ *   is bumped. Both updates happen in a single `SubscriptionRef.update` so
+ *   the snapshot is consistent.
+ * - The FULL history (including the just-appended user message) is passed
+ *   to `LanguageModel.streamText`, so the next turn sees prior turns'
+ *   context.
+ * - Text-delta parts are accumulated into a `Ref<string>` as the stream
+ *   flows. When the upstream completes, the assembled assistant message is
+ *   appended to `state.history` (turnCount stays put — it bumped at the
+ *   start of this send).
  *
  * `session.state: SubscriptionRef<SessionState>` exposes the observable
- * snapshot per ADR-0009. Components can read snapshots via `Ref.get(state)`
- * or subscribe to changes via `state.changes` (SubscriptionRef's Stream of
- * mutations). The first slice carries only `turnCount`.
+ * snapshot per ADR-0009. Components can read snapshots via
+ * `SubscriptionRef.get(state)` or subscribe to changes via
+ * `SubscriptionRef.changes(state)`.
  *
  * `send` accepts an optional second `toolkit` argument that is forwarded to
  * `LanguageModel.streamText({ prompt, toolkit })`. When provided, the upstream
@@ -37,20 +47,111 @@
  * context (via `toolkit.toLayer({ ToolName: handler })`), NOT from this
  * signature's R-type.
  *
+ * **Tool turns are persisted in history too** (slice 12h):
+ *
+ * - During the stream, in addition to text-delta accumulation, the
+ *   accumulator captures `tool-call` and `tool-result` parts in arrival
+ *   order. Streaming-only artifacts (`tool-params-start` /
+ *   `tool-params-delta` / `tool-params-end`) are skipped.
+ * - When the upstream completes, the accumulator emits one
+ *   `AssistantMessage` whose `content` array preserves the original
+ *   ordering: text segments collapse into a `TextPart` at each block
+ *   boundary (see slice 26 below); `tool-call` / `tool-result` parts appear
+ *   inline at their respective positions.
+ *
+ * **Per-text-block segmentation is wired** (slice 26):
+ *
+ * - The accumulator now treats `text-start` and `text-end` parts as flush
+ *   boundaries: any pending text collected from preceding `text-delta`s
+ *   becomes its own `TextPart` at each marker. This preserves multi-block
+ *   assistant responses (e.g. `text → tool-call → text` or
+ *   `text → reasoning → text`) instead of coalescing all text into one part.
+ * - Streams that emit only `text-delta` (no `text-start`/`text-end`) still
+ *   produce a single `TextPart` via `finalize` at end-of-stream —
+ *   backward-compatible with all earlier slices' tests.
+ *
+ * **Reasoning blocks are persisted in history too** (slice 27):
+ *
+ * - The accumulator gains a `pendingReasoning: string` field that mirrors
+ *   `pendingText` for `reasoning-delta` parts. `reasoning-start` /
+ *   `reasoning-end` flush like `text-start` / `text-end`; flushing emits a
+ *   `{ type: "reasoning", text }` part into `content`.
+ * - Every delta cross-flushes the OTHER accumulator before appending — so a
+ *   `text-delta → reasoning-delta` sequence (no explicit boundary between)
+ *   still produces `[text, reasoning]` in arrival order. Tool boundaries
+ *   flush both accumulators.
+ * - Net effect: a stream like
+ *   `text-deltas → tool-call → reasoning-deltas → text-deltas`
+ *   produces `[text, tool-call, reasoning, text]` in `state.history`'s
+ *   assistant content. Pure text streams behave exactly as before.
+ *
+ * **Token accounting is wired** (slice 23):
+ *
+ * - During the stream, a second `Stream.tap` watches for `type === "finish"`
+ *   parts and captures `usage.inputTokens.total` / `usage.outputTokens.total`
+ *   into a `Ref<Captured | null>`. Undefined totals fall through as 0.
+ * - After the upstream completes, the captured tokens populate the trailing
+ *   `Finish({ inputTokens, outputTokens })` event AND accumulate into
+ *   `state.inputTokens` / `state.outputTokens` (cumulative across sends).
+ * - Streams that never emit a `finish` part (e.g. caller cancellation) leave
+ *   the ref null; the `Finish` event then has the fields omitted and state
+ *   totals stay put.
+ *
+ * **Transient-error retry is wired** (slice 24):
+ *
+ * - The per-send pipeline is split into a once-per-send setup (history + turn
+ *   update; runs in the outer `Stream.unwrap`) and a per-attempt factory (Ref
+ *   creation + upstream open + accumulator pipeline; runs in an inner
+ *   `Stream.unwrap` so each retry sees fresh Refs).
+ * - The inner stream is wrapped with `Stream.retry(retrySchedule)` where
+ *   `retrySchedule = Schedule.recurs(MAX_LLM_RETRIES).pipe(Schedule.while(({ input }) => input.aiError.isRetryable))`.
+ * - Net effect: on a retryable failure (`RateLimitError`, `OverloadedError`,
+ *   `TransportError`, …) the inner stream re-opens with fresh accRef/usageRef
+ *   and a fresh upstream; up to `MAX_LLM_RETRIES` re-attempts. On a
+ *   non-retryable failure (`AuthenticationError`, `ContentPolicyError`,
+ *   `InvalidRequestError`, …) the predicate is false → schedule halts →
+ *   error propagates after the first attempt. After the retry cap is
+ *   exhausted, the last error propagates.
+ * - History + turnCount are bumped ONCE per `send` (not once per attempt) —
+ *   they sit outside the retry boundary.
+ * - Mid-stream retry caveat: if events flow then the upstream fails, the
+ *   consumer has already observed those events. `Stream.retry` re-opens the
+ *   stream, so the retry attempt's events appear *after* the failed
+ *   attempt's. For the common transient-error pattern (`createResponseStream`
+ *   fails at-open, before any events flow) this is the desired behavior.
+ *
+ * **`Effect.withSpan` telemetry is wired** (slice 25):
+ *
+ * - The outer `Stream.unwrap` returns a stream wrapped in
+ *   `Stream.withSpan("pi.Session.send", { attributes: { "pi.input.tag", "pi.history.size" } })`.
+ *   The span starts when the consumer opens the stream and ends when the
+ *   stream completes (success, failure, or interruption — the exit is
+ *   attached to `span.status` on close).
+ * - Each per-attempt inner stream is wrapped in
+ *   `Stream.withSpan("pi.Session.send.attempt", { attributes: { "pi.attempt.number" } })`.
+ *   The attempt counter lives in a `Ref<number>` created in the outer
+ *   `Stream.unwrap`; the inner `Effect.gen` reads & bumps it on each entry,
+ *   so retries appear as separate sibling attempt spans (1, 2, 3, …) all
+ *   parented to the same `pi.Session.send` span.
+ * - The default `Tracer.Tracer` is a no-op until a real tracer is provided
+ *   via `Effect.provideService(Tracer.Tracer, ...)`. Tests use
+ *   `test-support/recording-tracer.ts` (`NativeSpan`-backed in-memory tracer)
+ *   to assert on span names and attributes.
+ *
  * Deferred to follow-on slices (each becomes its own tracer bullet):
  *
- * - The `Input = NewPrompt | Continue | Retry` discriminated union (`send`
- *   currently takes a bare prompt string).
- * - Multi-turn history (the message log inside `SessionState`).
- * - Token / cost accounting on `Finish` and inside `SessionState`.
- * - Compaction triggers, retry on transient errors, skill-block parsing,
- *   `Effect.withSpan` telemetry -- the wrapping per ADR-0009.
+ * - Backoff on retry (currently no delay between attempts; production wants
+ *   exponential / `retryAfter`-respecting backoff).
+ * - Configurable retry policy on `Session.empty` (currently hardcoded to
+ *   `MAX_LLM_RETRIES = 3` and `while-isRetryable`).
+ * - Compaction triggers, skill-block parsing -- the wrapping per ADR-0009.
  */
-import { Effect, Stream, SubscriptionRef } from "effect";
-import { LanguageModel, type Tool } from "effect/unstable/ai";
+import { Effect, Ref, Schedule, Stream, SubscriptionRef } from "effect";
+import { LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
 
 import { LlmError } from "./agent-error.js";
 import { type AgentEvent, Finish, LlmPart, ToolCompleted, ToolDispatched } from "./agent-event.js";
+import { type Input, normalize as normalizeInput, rollbackToLastUserMessage } from "./agent-input.js";
 import { SessionState } from "./session-state.js";
 
 /**
@@ -68,7 +169,7 @@ import { SessionState } from "./session-state.js";
 export interface Session {
 	readonly state: SubscriptionRef.SubscriptionRef<SessionState>;
 	readonly send: <Tools extends Record<string, Tool.Any> = {}>(
-		prompt: string,
+		input: string | Input,
 		toolkit?: LanguageModel.ToolkitInput<Tools>,
 	) => Stream.Stream<AgentEvent, LlmError, LanguageModel.LanguageModel>;
 }
@@ -111,41 +212,330 @@ const liftPart = (part: unknown): ReadonlyArray<AgentEvent> => {
 };
 
 /**
- * Build a new `Session`. The empty Session has no history, but the `state`
- * SubscriptionRef is live -- every `send` call increments `turnCount` so
- * observers can react to turn boundaries.
+ * Accumulator state for assembling one `AssistantMessage` worth of content as
+ * the upstream stream flows. Text deltas collapse into `pendingText` between
+ * boundaries; on each `text-start` / `text-end` / `tool-call` / `tool-result`
+ * the pendingText (if any) flushes to a `TextPart` and (for tool parts) the
+ * tool part appends — preserving arrival order AND per-text-block granularity
+ * in the final `content` array. Streams that emit raw `text-delta` without
+ * `text-start` / `text-end` markers still coalesce into one `TextPart` via
+ * `finalize` at end-of-stream (backward-compatible).
+ */
+interface AssistantContentAcc {
+	readonly pendingText: string;
+	readonly pendingReasoning: string;
+	readonly parts: ReadonlyArray<Record<string, unknown>>;
+}
+
+const initialAcc: AssistantContentAcc = { pendingText: "", pendingReasoning: "", parts: [] };
+
+const flushText = (acc: AssistantContentAcc): AssistantContentAcc =>
+	acc.pendingText.length === 0
+		? acc
+		: { ...acc, pendingText: "", parts: [...acc.parts, { type: "text", text: acc.pendingText }] };
+
+const flushReasoning = (acc: AssistantContentAcc): AssistantContentAcc =>
+	acc.pendingReasoning.length === 0
+		? acc
+		: { ...acc, pendingReasoning: "", parts: [...acc.parts, { type: "reasoning", text: acc.pendingReasoning }] };
+
+/**
+ * Flush BOTH pending accumulators. Used at any boundary part (text-start/-end,
+ * reasoning-start/-end, tool-call/-result) so the arrival order of text vs
+ * reasoning vs tool segments is preserved in the final `content` array.
+ *
+ * Cross-flushing on every boundary maintains the invariant that AT MOST one
+ * of `pendingText` / `pendingReasoning` is non-empty between absorb calls.
+ */
+const flushAll = (acc: AssistantContentAcc): AssistantContentAcc => flushReasoning(flushText(acc));
+
+const absorbPart = (acc: AssistantContentAcc, part: unknown): AssistantContentAcc => {
+	if (typeof part !== "object" || part === null) return acc;
+	const p = part as { readonly type?: unknown; readonly delta?: unknown };
+
+	// Text boundaries flush BOTH accumulators (defensive — closes any prior
+	// text or reasoning block before the new text block begins).
+	if (p.type === "text-start" || p.type === "text-end") {
+		return flushAll(acc);
+	}
+
+	// Text-delta: flush any pending reasoning FIRST (preserves the
+	// reasoning→text arrival order if no explicit boundary fired between
+	// them), then append to pending text.
+	if (p.type === "text-delta" && typeof p.delta === "string") {
+		const flushed = flushReasoning(acc);
+		return { ...flushed, pendingText: flushed.pendingText + p.delta };
+	}
+
+	// Reasoning boundaries flush BOTH accumulators (mirror of text-start/-end).
+	if (p.type === "reasoning-start" || p.type === "reasoning-end") {
+		return flushAll(acc);
+	}
+
+	// Reasoning-delta: cross-flush text first, then append to pending reasoning.
+	if (p.type === "reasoning-delta" && typeof p.delta === "string") {
+		const flushed = flushText(acc);
+		return { ...flushed, pendingReasoning: flushed.pendingReasoning + p.delta };
+	}
+
+	if (p.type === "tool-call") {
+		const tc = part as {
+			readonly id: string;
+			readonly name: string;
+			readonly params: unknown;
+		};
+		const flushed = flushAll(acc);
+		return {
+			pendingText: "",
+			pendingReasoning: "",
+			parts: [
+				...flushed.parts,
+				{ type: "tool-call", id: tc.id, name: tc.name, params: tc.params, providerExecuted: false },
+			],
+		};
+	}
+
+	if (p.type === "tool-result") {
+		const tr = part as {
+			readonly id: string;
+			readonly name: string;
+			readonly isFailure: boolean;
+			readonly result: unknown;
+		};
+		const flushed = flushAll(acc);
+		return {
+			pendingText: "",
+			pendingReasoning: "",
+			parts: [
+				...flushed.parts,
+				{ type: "tool-result", id: tr.id, name: tr.name, isFailure: tr.isFailure, result: tr.result },
+			],
+		};
+	}
+
+	// Skip streaming-only artifacts (`tool-params-*`, `response-metadata`,
+	// `finish`, etc.) — they're event-only, not persisted.
+	return acc;
+};
+
+const finalize = (acc: AssistantContentAcc): ReadonlyArray<Record<string, unknown>> => flushAll(acc).parts;
+
+/**
+ * Captured per-send token totals. `null` means we never saw a `finish` part
+ * (e.g. the stream errored or was interrupted before completion); the trailing
+ * `Finish` event then omits the token fields and state totals are unchanged.
+ */
+interface CapturedUsage {
+	readonly inputTokens: number;
+	readonly outputTokens: number;
+}
+
+/**
+ * Read `usage.inputTokens.total` / `usage.outputTokens.total` off a `finish`
+ * part. Undefined totals collapse to 0 so callers see a `number` everywhere.
+ * Returns `null` for any non-`finish` part so the `Stream.tap` can no-op.
+ */
+const captureUsage = (part: unknown): CapturedUsage | null => {
+	if (typeof part !== "object" || part === null) return null;
+	const p = part as { readonly type?: unknown; readonly usage?: unknown };
+	if (p.type !== "finish") return null;
+	const usage = p.usage as
+		| {
+				readonly inputTokens?: { readonly total?: number | undefined };
+				readonly outputTokens?: { readonly total?: number | undefined };
+		  }
+		| undefined;
+	const inputTokens = usage?.inputTokens?.total ?? 0;
+	const outputTokens = usage?.outputTokens?.total ?? 0;
+	return { inputTokens, outputTokens };
+};
+
+/**
+ * Hardcoded retry cap. After this many re-attempts (4 total tries on a
+ * persistently-retryable failure) the last error propagates. ADR-0009 marks
+ * configurable retry policy as a follow-on slice.
+ */
+const MAX_LLM_RETRIES = 3;
+
+/**
+ * Retry schedule for the per-attempt inner stream. Recurs up to
+ * `MAX_LLM_RETRIES` times, AND halts early if the failing error is
+ * non-retryable (per `AiError.reason.isRetryable`).
+ *
+ * The schedule's `input` is the stream's error type — here that's `LlmError`
+ * (we map `AiError → LlmError` before the retry boundary so the schedule sees
+ * pi's error shape).
+ */
+const retrySchedule = Schedule.recurs(MAX_LLM_RETRIES).pipe(
+	Schedule.while(
+		({ input }) => ((input as LlmError).aiError as { readonly isRetryable: boolean }).isRetryable,
+	),
+);
+
+/**
+ * Build a new `Session`. The empty Session has empty history (`Prompt.empty`,
+ * `turnCount: 0`). Each `send` call (a) bumps `turnCount` and appends the
+ * new user prompt to history before opening the upstream stream, (b)
+ * accumulates text deltas as the stream flows, and (c) appends the assembled
+ * assistant message to history after the upstream completes.
  */
 export const Session: { readonly empty: Effect.Effect<Session> } = {
 	empty: Effect.gen(function* () {
 		const state = yield* SubscriptionRef.make(SessionState.empty);
 		return {
 			state,
-			send: <Tools extends Record<string, Tool.Any> = {}>(
-				prompt: string,
+			send<Tools extends Record<string, Tool.Any> = {}>(
+				input: string | Input,
 				toolkit?: LanguageModel.ToolkitInput<Tools>,
-			) =>
-				Stream.unwrap(
+			) {
+				return Stream.unwrap(
 					Effect.gen(function* () {
-						yield* SubscriptionRef.update(state, (s) => new SessionState({ turnCount: s.turnCount + 1 }));
-						// Forward toolkit to the upstream LanguageModel when provided.
-						// `as never` bypasses the streamText overload-picker, which can't
-						// see through the conditional spread at the type level. The
-						// runtime path is identical either way.
-						const upstream =
-							toolkit === undefined
-								? LanguageModel.streamText({ prompt })
-								: (LanguageModel.streamText({ prompt, toolkit } as never) as Stream.Stream<
-										unknown,
-										unknown,
-										LanguageModel.LanguageModel
-									>);
-						return upstream.pipe(
-							Stream.flatMap((part) => Stream.fromIterable(liftPart(part))),
-							Stream.mapError((aiError): LlmError => new LlmError({ aiError })),
-							Stream.concat(Stream.succeed<AgentEvent>(new Finish({}))),
+						const normalized = normalizeInput(input);
+
+						// 1. ONCE PER SEND — compute the next history depending on the input variant,
+						//    then bump turnCount and commit the new history atomically. This runs
+						//    OUTSIDE the retry boundary so transient-error retries do not re-bump
+						//    `turnCount` or re-append the user message.
+						//
+						//    - NewPrompt: append a `user` message with the new prompt.
+						//    - Continue:  leave history as-is; the existing conversation IS the prompt.
+						//    - Retry:     roll history back to the last `user` message (dropping the
+						//                 trailing assistant turn), then proceed like Continue.
+						yield* SubscriptionRef.update(state, (s) => {
+							const nextHistory =
+								normalized._tag === "NewPrompt"
+									? Prompt.concat(s.history, normalized.prompt)
+									: normalized._tag === "Retry"
+										? rollbackToLastUserMessage(s.history)
+										: s.history;
+							return SessionState.advance(s, nextHistory);
+						});
+						const snapshot = yield* SubscriptionRef.get(state);
+
+						// 1b. Per-send attempt counter. Lives in the outer Effect.gen so the
+						//     Stream.retry re-runs of the inner Effect.gen below all share it —
+						//     attempt 1, 2, 3 each get a distinct `pi.attempt.number` attribute.
+						const attemptCounter = yield* Ref.make(0);
+
+						// 2. PER-ATTEMPT FACTORY — fresh Refs + fresh upstream open per try. The
+						//    Stream.retry below re-runs this Effect.gen on each retryable failure,
+						//    giving each attempt a clean accumulator (no leakage from partial
+						//    events of a failed attempt).
+						const attemptStream = Stream.unwrap(
+							Effect.gen(function* () {
+								// Bump the attempt counter and capture the value for this attempt's span.
+								const attemptNumber = yield* Ref.updateAndGet(attemptCounter, (n) => n + 1);
+
+								// Accumulator for the assistant's response — text deltas, tool calls,
+								// and tool results in arrival order. Streaming-only artifacts skipped.
+								const accRef = yield* Ref.make<AssistantContentAcc>(initialAcc);
+
+								// Per-attempt usage capture. Stays null until a `finish` part lands;
+								// if the attempt ends without one (errored / interrupted upstream),
+								// the trailing `Finish` event omits token fields and state totals
+								// don't bump.
+								const usageRef = yield* Ref.make<CapturedUsage | null>(null);
+
+								// Open the upstream stream with the FULL history (incl. just-appended user msg).
+								// `as never` bypasses the streamText overload-picker, which can't see through
+								// the conditional spread at the type level. Runtime path is identical.
+								const upstream =
+									toolkit === undefined
+										? LanguageModel.streamText({ prompt: snapshot.history })
+										: (LanguageModel.streamText({
+												prompt: snapshot.history,
+												toolkit,
+											} as never) as Stream.Stream<unknown, unknown, LanguageModel.LanguageModel>);
+
+								return upstream.pipe(
+									Stream.flatMap((part) => Stream.fromIterable(liftPart(part))),
+									// Absorb each LlmPart into the assistant-content accumulator. Skips
+									// streaming-only artifacts; coalesces text deltas; captures tool turns.
+									// Also peels usage totals off the upstream `finish` part into usageRef.
+									Stream.tap((event) =>
+										event._tag === "LlmPart"
+											? Effect.gen(function* () {
+													yield* Ref.update(accRef, (acc) => absorbPart(acc, event.part));
+													const captured = captureUsage(event.part);
+													if (captured !== null) {
+														yield* Ref.set(usageRef, captured);
+													}
+												})
+											: Effect.void,
+									),
+									// Map BEFORE the retry boundary so the schedule's predicate sees `LlmError`.
+									Stream.mapError((aiError): LlmError => new LlmError({ aiError })),
+									// After the upstream completes, append the assistant message (with
+									// text + tool-call + tool-result content in order), bump cumulative
+									// token totals on state, and emit Finish carrying this send's tokens.
+									// On a failed attempt this concat never runs (Stream.concat skips
+									// when the left side errors), so partial accumulator state never
+									// leaks into `state.history`.
+									Stream.concat(
+										Stream.unwrap(
+											Effect.gen(function* () {
+												const acc = yield* Ref.get(accRef);
+												const content = finalize(acc);
+												const usage = yield* Ref.get(usageRef);
+												if (content.length > 0 || usage !== null) {
+													yield* SubscriptionRef.update(state, (s) => {
+														const nextHistory =
+															content.length > 0
+																? Prompt.concat(
+																		s.history,
+																		Prompt.make([{ role: "assistant", content }] as never),
+																	)
+																: s.history;
+														return new SessionState({
+															turnCount: s.turnCount,
+															history: nextHistory,
+															inputTokens: s.inputTokens + (usage?.inputTokens ?? 0),
+															outputTokens: s.outputTokens + (usage?.outputTokens ?? 0),
+														});
+													});
+												}
+												return Stream.succeed<AgentEvent>(
+													usage === null
+														? new Finish({})
+														: new Finish({
+																inputTokens: usage.inputTokens,
+																outputTokens: usage.outputTokens,
+															}),
+												);
+											}),
+										),
+									),
+									// Per-attempt telemetry span. Wraps the entire attempt pipeline:
+									// flatMap + tap + mapError + concat. The span ends when the attempt
+									// completes (success / any failure / interruption). On retry, a new
+									// attemptStream open re-enters this Effect.gen, bumps the counter,
+									// and emits a fresh sibling span under the outer `pi.Session.send`
+									// span — so consumers see one attempt span per try.
+									Stream.withSpan("pi.Session.send.attempt", {
+										attributes: { "pi.attempt.number": attemptNumber },
+									}),
+								);
+							}),
+						);
+
+						// 3. Wrap the per-attempt stream with a retry schedule + an outer
+						//    telemetry span. Bounded recurs + while-isRetryable predicate stops
+						//    early on AuthenticationError / InvalidRequestError / etc., and caps
+						//    the loop at MAX_LLM_RETRIES. The outer span wraps the whole send
+						//    (including all retries) so consumers see a parent span with N
+						//    attempt-span children.
+						return attemptStream.pipe(
+							Stream.retry(retrySchedule),
+							Stream.withSpan("pi.Session.send", {
+								attributes: {
+									"pi.input.tag": normalized._tag,
+									"pi.history.size": snapshot.history.content.length,
+								},
+							}),
 						);
 					}),
-				),
+				);
+			},
 		} satisfies Session;
 	}),
 };

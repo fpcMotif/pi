@@ -99,6 +99,10 @@ function createUserMessage(text: string): UserMessage {
 	};
 }
 
+function throwNonError(value: unknown): never {
+	throw value;
+}
+
 describe("Agent", () => {
 	it("copies mutable state arrays and clears runtime queues on reset", () => {
 		const model = createModel();
@@ -203,6 +207,13 @@ describe("Agent", () => {
 
 		const promptPromise = agent.prompt("busy");
 		expect(agent.signal?.aborted).toBe(false);
+		const waitDuringRun = agent.waitForIdle();
+		let waitSettled = false;
+		void waitDuringRun.then(() => {
+			waitSettled = true;
+		});
+		await Promise.resolve();
+		expect(waitSettled).toBe(false);
 		await expect(agent.prompt("second")).rejects.toThrow("Agent is already processing a prompt");
 		await expect(agent.continue()).rejects.toThrow("Agent is already processing");
 
@@ -213,9 +224,14 @@ describe("Agent", () => {
 		expect(agent.hasQueuedMessages()).toBe(true);
 		agent.clearFollowUpQueue();
 		expect(agent.hasQueuedMessages()).toBe(false);
+		agent.steer(createUserMessage("steer again"));
+		agent.followUp(createUserMessage("follow again"));
+		agent.clearAllQueues();
+		expect(agent.hasQueuedMessages()).toBe(false);
 
 		stream?.finish(createAssistantMessage("done"));
 		await promptPromise;
+		await expect(waitDuringRun).resolves.toBeUndefined();
 		await expect(agent.waitForIdle()).resolves.toBeUndefined();
 	});
 
@@ -243,6 +259,26 @@ describe("Agent", () => {
 		expect(seenLastContent[1]).toBe("array");
 		expect(seenLastContent[2]).toBe("[object Object],[object Object]");
 		expect(seenLastContent[3]).toBe("continue user");
+	});
+
+	it("continues from an assistant message with only a queued follow-up", async () => {
+		const seenPrompts: string[] = [];
+		const agent = new Agent({
+			initialState: {
+				model: createModel(),
+				messages: [createAssistantMessage("ready")],
+			},
+			streamFn: async (_model, context) => {
+				const last = context.messages.at(-1);
+				seenPrompts.push(last?.role === "user" ? String(last.content) : "");
+				return new MockAssistantStream(createAssistantMessage("followed"));
+			},
+		});
+		agent.followUp(createUserMessage("follow only"));
+
+		await agent.continue();
+
+		expect(seenPrompts).toEqual(["follow only"]);
 	});
 
 	it("records a failed run as an assistant error message", async () => {
@@ -276,6 +312,59 @@ describe("Agent", () => {
 			"turn_end",
 			"agent_end",
 		]);
+	});
+
+	it("stringifies non-error provider failures", async () => {
+		const agent = new Agent({
+			initialState: { model: createModel() },
+			streamFn: async () => {
+				throwNonError("provider string");
+			},
+		});
+
+		await agent.prompt("hello");
+
+		expect(agent.state.errorMessage).toBe("provider string");
+		expect(agent.state.messages.at(-1)).toMatchObject({
+			role: "assistant",
+			stopReason: "error",
+			errorMessage: "provider string",
+		});
+	});
+
+	it("records aborted failures when the active signal aborts before provider failure", async () => {
+		let releaseStart!: () => void;
+		const started = new Promise<void>((resolve) => {
+			releaseStart = resolve;
+		});
+		const agent = new Agent({
+			initialState: { model: createModel() },
+			streamFn: async (_model, _context, options) => {
+				releaseStart();
+				await new Promise((_resolve, reject) => {
+					options?.signal?.addEventListener(
+						"abort",
+						() => {
+							reject("aborted string");
+						},
+						{ once: true },
+					);
+				});
+				throw new Error("unreachable");
+			},
+		});
+
+		const promptPromise = agent.prompt("hello");
+		await started;
+		agent.abort();
+		await promptPromise;
+
+		expect(agent.state.errorMessage).toBe("aborted string");
+		expect(agent.state.messages.at(-1)).toMatchObject({
+			role: "assistant",
+			stopReason: "aborted",
+			errorMessage: "aborted string",
+		});
 	});
 
 	it("rejects invalid continuation states", async () => {

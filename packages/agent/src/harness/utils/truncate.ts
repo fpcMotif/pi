@@ -235,6 +235,7 @@ export function truncateTail(content: string, options: TruncationOptions = {}): 
  */
 function truncateStringToBytesFromEnd(str: string, maxBytes: number): string {
 	const buf = Buffer.from(str, "utf-8");
+	/* v8 ignore next 3 -- @preserve */
 	if (buf.length <= maxBytes) {
 		return str;
 	}

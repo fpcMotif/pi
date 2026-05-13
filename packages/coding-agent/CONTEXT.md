@@ -33,7 +33,7 @@
 
 - **pi-coding-agent -> pi-agent-core**: consumes the agent loop/session runtime and shared test support.
 - **pi-coding-agent -> pi-tui**: owns terminal composition and tool-result rendering.
-- **pi-coding-agent -> pi-models**: uses model registry data for selection, scoped cycling, display, and cost.
+- **pi-coding-agent -> pi-models**: target post-rewrite relationship; uses model registry data for selection, scoped cycling, display, and cost after legacy `pi-ai` registry imports are removed.
 - **pi-coding-agent -> extensions**: loads user code at process startup and composes contributed capabilities into the runtime.
 
 ## Example dialogue

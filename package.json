@@ -22,6 +22,8 @@
 		"coverage:agent": "npm run test:coverage --workspace @earendil-works/pi-agent-core",
 		"coverage:agent:effect": "npm run test:coverage:effect --workspace @earendil-works/pi-agent-core",
 		"coverage:agent:100": "npm run test:coverage:100 --workspace @earendil-works/pi-agent-core",
+		"coverage:all": "npm run test:coverage --workspaces --if-present",
+		"coverage:all:100": "npm run test:coverage:100 --workspaces --if-present && node scripts/coverage-aggregate.mjs",
 		"test": "npm run test --workspaces --if-present",
 		"version:patch": "npm version patch -ws --no-git-tag-version && node scripts/sync-versions.js && shx rm -rf node_modules packages/*/node_modules package-lock.json && npm install",
 		"version:minor": "npm version minor -ws --no-git-tag-version && node scripts/sync-versions.js && shx rm -rf node_modules packages/*/node_modules package-lock.json && npm install",

@@ -31,8 +31,8 @@
 
 ## Relationships
 
-- **pi-web-ui -> pi-agent-core**: embeds the agent/session surface for browser chat workflows.
-- **pi-web-ui -> pi-models**: uses browser-safe model registry data.
+- **pi-web-ui -> pi-agent-core**: target post-rewrite relationship; browser chat workflows embed the agent/session surface after the web rewrite slice replaces the legacy `pi-ai` path.
+- **pi-web-ui -> pi-models**: target post-rewrite relationship; uses browser-safe model registry data after legacy `pi-ai` registry imports are removed.
 - **pi-web-ui -> @effect/ai-openai / @effect/ai-openrouter**: target provider path for the rewrite; legacy browser provider helpers remain historical until the web rewrite slice replaces them.
 - **pi-web-ui -> browser storage**: persists app-local state through IndexedDB-backed stores.
 

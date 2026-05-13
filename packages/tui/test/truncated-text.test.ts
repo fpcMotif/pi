@@ -1,6 +1,6 @@
 import assert from "node:assert";
-import { describe, it } from "node:test";
 import { Chalk } from "chalk";
+import { describe, it } from "vitest";
 import { TruncatedText } from "../src/components/truncated-text.js";
 import { visibleWidth } from "../src/utils.js";
 
