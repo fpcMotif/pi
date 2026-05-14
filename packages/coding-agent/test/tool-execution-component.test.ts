@@ -7,6 +7,7 @@ import { getReadmePath } from "../src/config.js";
 import type { ToolDefinition } from "../src/core/extensions/types.js";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.js";
 import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.js";
+import { createAllToolDefinitions } from "../src/core/tools/index.js";
 import { createWriteToolDefinition } from "../src/core/tools/write.js";
 import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
@@ -33,6 +34,15 @@ function createFakeTui(): TUI {
 describe("ToolExecutionComponent parity", () => {
 	beforeAll(() => {
 		initTheme("dark");
+	});
+
+	test("keeps built-in tool definitions renderer-neutral", () => {
+		const definitions = createAllToolDefinitions(process.cwd());
+		for (const definition of Object.values(definitions)) {
+			expect(definition).not.toHaveProperty("renderShell");
+			expect(definition).not.toHaveProperty("renderCall");
+			expect(definition).not.toHaveProperty("renderResult");
+		}
 	});
 
 	test("stacks custom call and result renderers like the old implementation", () => {

@@ -3,7 +3,7 @@ import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 import { ansiLinesToHtml } from "../src/core/export-html/ansi-to-html.js";
 import { createToolHtmlRenderer } from "../src/core/export-html/tool-renderer.js";
-import type { ToolDefinition } from "../src/core/extensions/types.js";
+import type { ToolRenderer } from "../src/core/extensions/types.js";
 import type { Theme } from "../src/modes/interactive/theme/theme.js";
 
 describe("export HTML tool output whitespace", () => {
@@ -23,14 +23,11 @@ describe("export HTML tool output whitespace", () => {
 
 	it("trims TUI spacing lines from custom tool result HTML", () => {
 		const component: Component = { render: () => ["", "\u001b[31mone\u001b[0m", "two", ""], invalidate: () => {} };
-		const tool = {
-			name: "custom",
-			label: "custom",
-			description: "custom",
+		const toolRenderer = {
 			renderResult: () => component,
-		} as unknown as ToolDefinition;
+		} satisfies ToolRenderer;
 		const renderer = createToolHtmlRenderer({
-			getToolDefinition: () => tool,
+			getToolRenderer: () => toolRenderer,
 			theme: {} as Theme,
 			cwd: "/tmp",
 		});

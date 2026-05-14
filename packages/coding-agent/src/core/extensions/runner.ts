@@ -40,6 +40,7 @@ import type {
 	ProviderConfig,
 	RegisteredCommand,
 	RegisteredTool,
+	RegisteredToolRenderer,
 	ReplacedSessionContext,
 	ResolvedCommand,
 	ResourcesDiscoverEvent,
@@ -189,6 +190,7 @@ export async function emitSessionShutdownEvent(
 }
 
 const noOpUIContext: ExtensionUIContext = {
+	capabilities: {},
 	select: async () => undefined,
 	confirm: async () => false,
 	input: async () => undefined,
@@ -389,6 +391,30 @@ export class ExtensionRunner {
 			const tool = ext.tools.get(toolName);
 			if (tool) {
 				return tool.definition;
+			}
+		}
+		return undefined;
+	}
+
+	/** Get all registered tool renderers from all extensions (first registration per name wins). */
+	getAllRegisteredToolRenderers(): RegisteredToolRenderer[] {
+		const renderersByName = new Map<string, RegisteredToolRenderer>();
+		for (const ext of this.extensions) {
+			for (const renderer of ext.toolRenderers.values()) {
+				if (!renderersByName.has(renderer.toolName)) {
+					renderersByName.set(renderer.toolName, renderer);
+				}
+			}
+		}
+		return Array.from(renderersByName.values());
+	}
+
+	/** Get a tool renderer by name. Returns undefined if not found. */
+	getToolRenderer(toolName: string): RegisteredToolRenderer["renderer"] | undefined {
+		for (const ext of this.extensions) {
+			const renderer = ext.toolRenderers.get(toolName);
+			if (renderer) {
+				return renderer.renderer;
 			}
 		}
 		return undefined;

@@ -16,6 +16,10 @@
  *   that came after), then calls the LLM again with the rolled-back history.
  *   Use this when the previous attempt failed or produced an unwanted
  *   response and you want a fresh take on the same prompt.
+ * - **`AcceptedPromptEnvelope`** — a host-preflighted prompt turn. The host
+ *   has already run skill/prompt-template expansion, extension input
+ *   transforms, and model/auth preflight; `send` owns ordering the injected
+ *   messages and final user content into history.
  *
  * `Session.send` still accepts a bare `string` for backward compatibility
  * (existing tests + simple callers); strings are normalised to
@@ -32,8 +36,18 @@ export class Continue extends Schema.TaggedClass<Continue>()("Continue", {}) {}
 
 export class Retry extends Schema.TaggedClass<Retry>()("Retry", {}) {}
 
-export const Input = Schema.Union([NewPrompt, Continue, Retry]);
-export type Input = NewPrompt | Continue | Retry;
+export class AcceptedPromptEnvelope extends Schema.TaggedClass<AcceptedPromptEnvelope>()("AcceptedPromptEnvelope", {
+	content: Schema.Union([Schema.String, Schema.Array(Schema.Unknown)]),
+	injectedMessages: Schema.optional(Schema.Array(Schema.Unknown)),
+	queueMode: Schema.optional(
+		Schema.Union([Schema.Literal("direct"), Schema.Literal("steer"), Schema.Literal("followUp")]),
+	),
+	source: Schema.optional(Schema.String),
+	systemPromptOverride: Schema.optional(Schema.String),
+}) {}
+
+export const Input = Schema.Union([NewPrompt, Continue, Retry, AcceptedPromptEnvelope]);
+export type Input = NewPrompt | Continue | Retry | AcceptedPromptEnvelope;
 
 /**
  * Lift a raw `string` or `Input` to a canonical `Input` value.
@@ -41,6 +55,9 @@ export type Input = NewPrompt | Continue | Retry;
  */
 export const normalize = (input: string | Input): Input =>
 	typeof input === "string" ? new NewPrompt({ prompt: input }) : input;
+
+export const promptFromAcceptedEnvelope = (envelope: AcceptedPromptEnvelope): Prompt.Prompt =>
+	Prompt.make([...(envelope.injectedMessages ?? []), { role: "user", content: envelope.content }] as never);
 
 /**
  * Roll a `Prompt` back to (and including) its last `user` message. Used by

@@ -60,6 +60,11 @@ export type {
 	ExtensionCommandContextActions,
 	ExtensionContext,
 	ExtensionContextActions,
+	ExtensionUICapabilities,
+	ExtensionUICapabilityDeclaration,
+	ExtensionUICapabilityName,
+	ExtensionUIDialogsCapability,
+	ExtensionUIEditorCapability,
 	// Errors
 	ExtensionError,
 	ExtensionEvent,
@@ -105,6 +110,7 @@ export type {
 	// Commands
 	RegisteredCommand,
 	RegisteredTool,
+	RegisteredToolRenderer,
 	ReplacedSessionContext,
 	ResolvedCommand,
 	// Events - Resources
@@ -136,6 +142,8 @@ export type {
 	ToolCallEventResult,
 	// Tools
 	ToolDefinition,
+	ToolRenderer,
+	ToolRenderContext,
 	// Events - Tool Execution
 	ToolExecutionEndEvent,
 	// Tool execution mode

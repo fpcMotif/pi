@@ -37,5 +37,7 @@ export * from "./harness/utils/shell-output.js";
 export * from "./harness/utils/truncate.js";
 // Proxy utilities
 export * from "./proxy.js";
+// Transcript operations
+export * from "./transcript/index.js";
 // Types
 export * from "./types.js";

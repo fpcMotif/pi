@@ -66,6 +66,7 @@ import {
 	type SessionStartEvent,
 	type ShutdownHandler,
 	type ToolDefinition,
+	type ToolRenderer,
 	type ToolExecutionEndEvent,
 	type ToolExecutionStartEvent,
 	type ToolExecutionUpdateEvent,
@@ -303,6 +304,7 @@ export class AgentSession {
 	// Tool registry for extension getTools/setTools
 	private _toolRegistry: Map<string, AgentTool> = new Map();
 	private _toolDefinitions: Map<string, ToolDefinitionEntry> = new Map();
+	private _toolRenderers: Map<string, ToolRenderer> = new Map();
 	private _toolPromptSnippets: Map<string, string> = new Map();
 	private _toolPromptGuidelines: Map<string, string[]> = new Map();
 
@@ -812,6 +814,10 @@ export class AgentSession {
 
 	getToolDefinition(name: string): ToolDefinition | undefined {
 		return this._toolDefinitions.get(name)?.definition;
+	}
+
+	getToolRenderer(name: string): ToolRenderer | undefined {
+		return this._toolRenderers.get(name);
 	}
 
 	/**
@@ -2267,6 +2273,12 @@ export class AgentSession {
 			});
 		}
 		this._toolDefinitions = definitionRegistry;
+		this._toolRenderers = new Map(
+			this._extensionRunner
+				.getAllRegisteredToolRenderers()
+				.filter((renderer) => isAllowedTool(renderer.toolName))
+				.map((renderer) => [renderer.toolName, renderer.renderer]),
+		);
 		this._toolPromptSnippets = new Map(
 			Array.from(definitionRegistry.values())
 				.map(({ definition }) => {
@@ -2999,7 +3011,7 @@ export class AgentSession {
 
 		// Create tool renderer if we have an extension runner (for custom tool HTML rendering)
 		const toolRenderer: ToolHtmlRenderer = createToolHtmlRenderer({
-			getToolDefinition: (name) => this.getToolDefinition(name),
+			getToolRenderer: (name) => this.getToolRenderer(name),
 			theme,
 			cwd: this.sessionManager.getCwd(),
 		});

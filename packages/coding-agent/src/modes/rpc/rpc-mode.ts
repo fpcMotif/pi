@@ -16,6 +16,7 @@ import type { AgentSessionRuntime } from "../../core/agent-session-runtime.js";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionUIDialogsCapability,
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
 } from "../../core/extensions/index.js";
@@ -126,32 +127,43 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	/**
 	 * Create an extension UI context that uses the RPC protocol.
 	 */
-	const createExtensionUIContext = (): ExtensionUIContext => ({
-		select: (title, options, opts) =>
-			createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
-			),
+	const createExtensionUIContext = (): ExtensionUIContext => {
+		const dialogs: ExtensionUIDialogsCapability = {
+			select: (title, options, opts) =>
+				createDialogPromise(opts, undefined, { method: "select", title, options, timeout: opts?.timeout }, (r) =>
+					"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+				),
 
-		confirm: (title, message, opts) =>
-			createDialogPromise(opts, false, { method: "confirm", title, message, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false,
-			),
+			confirm: (title, message, opts) =>
+				createDialogPromise(opts, false, { method: "confirm", title, message, timeout: opts?.timeout }, (r) =>
+					"cancelled" in r && r.cancelled ? false : "confirmed" in r ? r.confirmed : false,
+				),
 
-		input: (title, placeholder, opts) =>
-			createDialogPromise(opts, undefined, { method: "input", title, placeholder, timeout: opts?.timeout }, (r) =>
-				"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
-			),
+			input: (title, placeholder, opts) =>
+				createDialogPromise(opts, undefined, { method: "input", title, placeholder, timeout: opts?.timeout }, (r) =>
+					"cancelled" in r && r.cancelled ? undefined : "value" in r ? r.value : undefined,
+				),
 
-		notify(message: string, type?: "info" | "warning" | "error"): void {
-			// Fire and forget - no response needed
-			output({
-				type: "extension_ui_request",
-				id: crypto.randomUUID(),
-				method: "notify",
-				message,
-				notifyType: type,
-			} as RpcExtensionUIRequest);
-		},
+			notify(message: string, type?: "info" | "warning" | "error"): void {
+				// Fire and forget - no response needed
+				output({
+					type: "extension_ui_request",
+					id: crypto.randomUUID(),
+					method: "notify",
+					message,
+					notifyType: type,
+				} as RpcExtensionUIRequest);
+			},
+
+			async custom() {
+				// Custom UI not supported in RPC mode
+				return undefined as never;
+			},
+		};
+
+		return {
+			capabilities: { dialogs },
+			...dialogs,
 
 		onTerminalInput(): () => void {
 			// Raw terminal input not supported in RPC mode
@@ -216,11 +228,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 				method: "setTitle",
 				title,
 			} as RpcExtensionUIRequest);
-		},
-
-		async custom() {
-			// Custom UI not supported in RPC mode
-			return undefined as never;
 		},
 
 		pasteToEditor(text: string): void {
@@ -301,7 +308,8 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		setToolsExpanded(_expanded: boolean) {
 			// Tool expansion not supported in RPC mode - no TUI
 		},
-	});
+	};
+};
 
 	runtimeHost.setRebindSession(async () => {
 		await rebindSession();

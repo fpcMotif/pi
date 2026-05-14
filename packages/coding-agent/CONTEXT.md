@@ -22,12 +22,17 @@
 - **CLI mode** - A top-level execution workflow: interactive, print/json, or RPC.
 - **Session** - Persisted conversation state with branchable history and metadata.
 - **Tool** - A model-callable capability such as read, write, edit, bash, grep, find, or ls.
+- **Typed tool result** - The Schema-validated value returned by a tool handler and carried through agent events.
+- **LLM-facing serialized summary** - The JSON serialization of a typed tool result sent back to the model.
 - **Tool renderer** - An interactive-mode adapter that turns a typed tool result into a `pi-tui` component.
+- **Tool renderer host** - The Module that consumes tool execution events and produces renderer updates for a mode-specific Adapter. It owns renderer lifecycle, partial/final result state, fallback behavior, expansion state, and image policy without owning tool execution.
 - **Extension** - A user package that contributes tools, slash commands, keybindings, UI, hooks, or state.
+- **Extension UI capability** - A focused Extension UI Interface such as dialogs, editor access, status bar, widget host, theme access, or terminal input. Each CLI mode supplies only the capability Adapters it supports.
 - **Skill** - A markdown capability loaded into the agent prompt, distinct from executable extension code.
 - **Prompt template** - A reusable prompt expansion file.
 - **Theme** - Terminal styling configuration consumed by interactive components.
 - **Pi package** - A distributable bundle of extensions, skills, prompt templates, and themes.
+- **Resource catalog** - The categorized discovery output for extension, skill, prompt template, and theme resources from already-installed packages, local paths, and extension-provided paths. It excludes package install/update/remove behavior.
 
 ## Relationships
 

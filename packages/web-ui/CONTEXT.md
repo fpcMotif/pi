@@ -23,6 +23,7 @@
 - **ChatPanel** - The high-level embeddable chat component with messages, input, and artifact panel.
 - **AgentInterface** - The lower-level chat component for custom layouts.
 - **Artifact** - A generated or updated browser-viewable asset such as HTML, SVG, Markdown, text, JSON, image, PDF, DOCX, or XLSX.
+- **Artifact workspace** - The browser-local Artifact state and command Module that owns create, update, rewrite, get, delete, logs, and reconstruction semantics independently of panel DOM rendering and sandbox execution Adapters.
 - **Attachment** - A user-supplied file or URL payload with preview/extracted text metadata.
 - **AppStorage** - The composed browser storage facade for settings, provider keys, sessions, and custom providers.
 - **Provider key** - Browser-stored credential or token used by a provider integration.

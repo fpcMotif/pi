@@ -23,7 +23,7 @@ npx.cmd vitest --run --coverage --no-file-parallelism --maxWorkers=1 --minWorker
 
 Result: 53 test files passed, 364 tests passed, with 100% statements, branches, functions, and lines under V8 coverage for `src/**/*.ts` and `effect/**/*.ts`. This is the direct Vitest coverage invocation for this package, not `npm test`.
 
-Current stricter gate: `npm run coverage:agent:100` runs the package's `test:coverage:100` script, which enforces statements, branches, functions, and lines at 100%. The current worktree is expected to satisfy this gate for `packages/agent`; the branch-coverage blocker has been closed with behavior tests first and narrow `v8 ignore next` annotations only for proven unreachable defensive branches:
+Current stricter gate: `npm run coverage:agent:100` runs the package's `test:coverage:100` script, which enforces statements, branches, functions, and lines at 100%. The current worktree satisfies this gate for `packages/agent`; the branch-coverage blocker has been closed with behavior tests first and narrow `v8 ignore next` annotations only for proven unreachable defensive branches:
 
 - `agent-loop.ts` EventStream result extraction fallback: the extractor is invoked only for the `agent_end` terminal event.
 - `proxy.ts` EventStream error extractor fallback and `parseStreamingJson(...) || {}` fallback: the extractor is terminal-event constrained and `parseStreamingJson` always returns an object.
@@ -335,6 +335,8 @@ Twenty-seven tracer bullets (54 test cases), all GREEN, all without an API key:
 - **v4 error-channel testing** — `Effect.either` is **removed** in v4. Use `Effect.flip` (swaps success/error — assert on the success of the flipped effect) or `Effect.exit` + `Exit.isFailure`.
 - **v4 stream collection** — `Stream.runCollect` returns `Effect<Array<A>, E, R>` (NOT `Effect<Chunk<A>>` as in v3). No `Chunk.toReadonlyArray` shim needed.
 - **AgentEvent / AgentError** — `effect/agent-event.ts`, `effect/agent-error.ts`. The pi-defined Schema-tagged unions for the `Session.send` Stream (ADR-0009). Event variants extend `Schema.TaggedClass`; error variants extend `Schema.TaggedErrorClass` (yieldable in `Effect.gen`). Construction: `new LlmPart({ part })`, `yield* new ToolError({ ... })`.
+- **Transcript operation** — A pure operation over persisted agent messages, such as LLM-facing conversion, compaction text extraction, or replay/reconstruction. Core owns base transcript operations; host packages supply custom role Adapters for host-specific message roles.
+- **Accepted prompt envelope** — A host-preflighted prompt input handed to `Session`: skill/prompt-template expansion and extension input transforms have already run, model/auth preflight has passed, and the envelope carries user content plus queue policy and host metadata without terminal UI details.
 
 ## Toolchain (for the Effect rewrite paths)
 

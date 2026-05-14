@@ -151,7 +151,12 @@ import { LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
 
 import { LlmError } from "./agent-error.js";
 import { type AgentEvent, Finish, LlmPart, ToolCompleted, ToolDispatched } from "./agent-event.js";
-import { type Input, normalize as normalizeInput, rollbackToLastUserMessage } from "./agent-input.js";
+import {
+	type Input,
+	normalize as normalizeInput,
+	promptFromAcceptedEnvelope,
+	rollbackToLastUserMessage,
+} from "./agent-input.js";
 import { SessionState } from "./session-state.js";
 
 /**
@@ -367,9 +372,7 @@ const MAX_LLM_RETRIES = 3;
  * pi's error shape).
  */
 const retrySchedule = Schedule.recurs(MAX_LLM_RETRIES).pipe(
-	Schedule.while(
-		({ input }) => ((input as LlmError).aiError as { readonly isRetryable: boolean }).isRetryable,
-	),
+	Schedule.while(({ input }) => ((input as LlmError).aiError as { readonly isRetryable: boolean }).isRetryable),
 );
 
 /**
@@ -398,6 +401,8 @@ export const Session: { readonly empty: Effect.Effect<Session> } = {
 						//    `turnCount` or re-append the user message.
 						//
 						//    - NewPrompt: append a `user` message with the new prompt.
+						//    - AcceptedPromptEnvelope: append host-preflighted injected messages,
+						//      then the final user content, and optionally replace the system prompt.
 						//    - Continue:  leave history as-is; the existing conversation IS the prompt.
 						//    - Retry:     roll history back to the last `user` message (dropping the
 						//                 trailing assistant turn), then proceed like Continue.
@@ -405,9 +410,16 @@ export const Session: { readonly empty: Effect.Effect<Session> } = {
 							const nextHistory =
 								normalized._tag === "NewPrompt"
 									? Prompt.concat(s.history, normalized.prompt)
-									: normalized._tag === "Retry"
-										? rollbackToLastUserMessage(s.history)
-										: s.history;
+									: normalized._tag === "AcceptedPromptEnvelope"
+										? normalized.systemPromptOverride === undefined
+											? Prompt.concat(s.history, promptFromAcceptedEnvelope(normalized))
+											: Prompt.setSystem(
+													Prompt.concat(s.history, promptFromAcceptedEnvelope(normalized)),
+													normalized.systemPromptOverride,
+												)
+										: normalized._tag === "Retry"
+											? rollbackToLastUserMessage(s.history)
+											: s.history;
 							return SessionState.advance(s, nextHistory);
 						});
 						const snapshot = yield* SubscriptionRef.get(state);
