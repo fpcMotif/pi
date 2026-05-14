@@ -4,11 +4,19 @@ export * from "./agent.js";
 export * from "./agent-loop.js";
 export * from "./harness/agent-harness.js";
 export {
+	type BranchPreparation,
+	type BranchSummaryDetails,
+	type BranchSummarySession,
+	type CollectEntriesResult,
 	collectEntriesForBranchSummary,
 	generateBranchSummary,
 	prepareBranchEntries,
 } from "./harness/compaction/branch-summarization.js";
 export {
+	type CompactionDetails,
+	type CompactionResult,
+	type ContextUsageEstimate,
+	type CutPointResult,
 	calculateContextTokens,
 	compact,
 	DEFAULT_COMPACTION_SETTINGS,
@@ -22,6 +30,13 @@ export {
 	serializeConversation,
 	shouldCompact,
 } from "./harness/compaction/compaction.js";
+export {
+	computeFileLists,
+	createFileOps,
+	extractFileOpsFromMessage,
+	formatFileOperations,
+	SUMMARIZATION_SYSTEM_PROMPT,
+} from "./harness/compaction/utils.js";
 export * from "./harness/execution-env.js";
 export * from "./harness/messages.js";
 export * from "./harness/prompt-templates.js";

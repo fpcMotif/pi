@@ -46,6 +46,14 @@ const finishPart = (input: number, output: number) => ({
 	response: undefined,
 });
 
+function expectLlmError(err: unknown): LlmError {
+	expect(err).toBeInstanceOf(LlmError);
+	if (!(err instanceof LlmError)) {
+		throw new Error(`Expected LlmError, got ${String(err)}`);
+	}
+	return err;
+}
+
 describe("Session.send retries on retryable AiError reasons, propagates non-retryable ones", () => {
 	it.effect("two RateLimitError attempts then a successful attempt → events flow, turnCount bumps once", () =>
 		Effect.gen(function* () {
@@ -82,8 +90,8 @@ describe("Session.send retries on retryable AiError reasons, propagates non-retr
 
 			// Stream fails — Effect.flip turns the failure success so we can inspect it.
 			const err = yield* Effect.flip(Stream.runDrain(session.send("hello")));
-			expect(err).toBeInstanceOf(LlmError);
-			expect((err.aiError as { readonly reason: { readonly _tag: string } }).reason._tag).toBe(
+			const llmError = expectLlmError(err);
+			expect((llmError.aiError as { readonly reason: { readonly _tag: string } }).reason._tag).toBe(
 				"AuthenticationError",
 			);
 
@@ -107,8 +115,10 @@ describe("Session.send retries on retryable AiError reasons, propagates non-retr
 			const session = yield* Session.empty;
 			const err = yield* Effect.flip(Stream.runDrain(session.send("hello")));
 
-			expect(err).toBeInstanceOf(LlmError);
-			expect((err.aiError as { readonly reason: { readonly _tag: string } }).reason._tag).toBe("RateLimitError");
+			const llmError = expectLlmError(err);
+			expect((llmError.aiError as { readonly reason: { readonly _tag: string } }).reason._tag).toBe(
+				"RateLimitError",
+			);
 
 			// Despite 4 attempts, state shows just the once-per-send pre-stream effects.
 			const snapshot = yield* SubscriptionRef.get(session.state);

@@ -66,11 +66,11 @@ import {
 	type SessionStartEvent,
 	type ShutdownHandler,
 	type ToolDefinition,
-	type ToolRenderer,
 	type ToolExecutionEndEvent,
 	type ToolExecutionStartEvent,
 	type ToolExecutionUpdateEvent,
 	type ToolInfo,
+	type ToolRenderer,
 	type TreePreparation,
 	type TurnEndEvent,
 	type TurnStartEvent,
@@ -2712,7 +2712,7 @@ export class AgentSession {
 		}
 
 		// Collect entries to summarize (from old leaf to common ancestor)
-		const { entries: entriesToSummarize, commonAncestorId } = collectEntriesForBranchSummary(
+		const { entries: entriesToSummarize, commonAncestorId } = await collectEntriesForBranchSummary(
 			this.sessionManager,
 			oldLeafId,
 			targetId,
