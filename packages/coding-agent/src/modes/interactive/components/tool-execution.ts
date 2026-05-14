@@ -1,6 +1,7 @@
 import { Box, type Component, Container, getCapabilities, Image, Spacer, Text, type TUI } from "@earendil-works/pi-tui";
+import { composeToolRenderers, toolRendererFromDefinition } from "../../../core/extensions/tool-renderer.js";
 import type { ToolDefinition, ToolRenderContext, ToolRenderer } from "../../../core/extensions/types.js";
-import { type ToolName } from "../../../core/tools/index.js";
+import type { ToolName } from "../../../core/tools/index.js";
 import { convertToPng } from "../../../utils/image-convert.js";
 import { theme } from "../theme/theme.js";
 import { ToolRendererHost, type ToolRenderResultSnapshot } from "../tool-renderer-host.js";
@@ -48,7 +49,10 @@ export class ToolExecutionComponent extends Container {
 			imageWidthCells: options.imageWidthCells ?? 60,
 		});
 		this.toolDefinition = toolDefinition;
-		this.toolRenderer = toolRenderer ?? BUILTIN_TOOL_RENDERERS[toolName as ToolName];
+		this.toolRenderer = composeToolRenderers(
+			composeToolRenderers(toolRenderer, toolRendererFromDefinition(toolDefinition)),
+			BUILTIN_TOOL_RENDERERS[toolName as ToolName],
+		);
 		this.ui = ui;
 		this.cwd = cwd;
 

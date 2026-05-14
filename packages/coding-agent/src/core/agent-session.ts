@@ -77,6 +77,7 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
+import { composeToolRenderers, toolRendererFromDefinition } from "./extensions/tool-renderer.js";
 import type { BashExecutionMessage, CustomMessage } from "./messages.js";
 import type { ModelRegistry } from "./model-registry.js";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.js";
@@ -2273,12 +2274,22 @@ export class AgentSession {
 			});
 		}
 		this._toolDefinitions = definitionRegistry;
-		this._toolRenderers = new Map(
-			this._extensionRunner
-				.getAllRegisteredToolRenderers()
-				.filter((renderer) => isAllowedTool(renderer.toolName))
-				.map((renderer) => [renderer.toolName, renderer.renderer]),
-		);
+		const toolRenderers = new Map<string, ToolRenderer>();
+		for (const { definition } of definitionRegistry.values()) {
+			const definitionRenderer = toolRendererFromDefinition(definition);
+			if (definitionRenderer) {
+				toolRenderers.set(definition.name, definitionRenderer);
+			}
+		}
+		for (const renderer of this._extensionRunner.getAllRegisteredToolRenderers()) {
+			if (isAllowedTool(renderer.toolName)) {
+				const mergedRenderer = composeToolRenderers(renderer.renderer, toolRenderers.get(renderer.toolName));
+				if (mergedRenderer) {
+					toolRenderers.set(renderer.toolName, mergedRenderer);
+				}
+			}
+		}
+		this._toolRenderers = toolRenderers;
 		this._toolPromptSnippets = new Map(
 			Array.from(definitionRegistry.values())
 				.map(({ definition }) => {

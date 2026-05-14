@@ -6,8 +6,8 @@ import { beforeAll, describe, expect, test } from "vitest";
 import { getReadmePath } from "../src/config.js";
 import type { ToolDefinition } from "../src/core/extensions/types.js";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.js";
-import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.js";
 import { createAllToolDefinitions } from "../src/core/tools/index.js";
+import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.js";
 import { createWriteToolDefinition } from "../src/core/tools/write.js";
 import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.js";
 import { initTheme } from "../src/modes/interactive/theme/theme.js";
@@ -233,6 +233,30 @@ describe("ToolExecutionComponent parity", () => {
 		const rendered = stripAnsi(component.render(120).join("\n"));
 		expect(rendered).toContain("wrapped override call");
 		expect(rendered).toContain("wrapped override result");
+	});
+
+	test("lets explicit renderer slots override definition slots without dropping definition fallbacks", () => {
+		const component = new ToolExecutionComponent(
+			"custom_tool",
+			"tool-4f",
+			{},
+			{},
+			{
+				...createBaseToolDefinition(),
+				renderCall: () => new Text("definition call", 0, 0),
+				renderResult: () => new Text("definition result", 0, 0),
+			},
+			createFakeTui(),
+			process.cwd(),
+			{
+				renderResult: () => new Text("explicit result", 0, 0),
+			},
+		);
+		component.updateResult({ content: [{ type: "text", text: "done" }], details: undefined, isError: false }, false);
+		const rendered = stripAnsi(component.render(120).join("\n"));
+		expect(rendered).toContain("definition call");
+		expect(rendered).toContain("explicit result");
+		expect(rendered).not.toContain("definition result");
 	});
 
 	test("shares renderer state across custom call and result slots", () => {

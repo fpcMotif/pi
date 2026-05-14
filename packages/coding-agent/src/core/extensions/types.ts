@@ -483,7 +483,7 @@ export interface ToolRenderer<TArgs = unknown, TDetails = unknown, TState = unkn
 /**
  * Tool definition for registerTool().
  */
-export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = unknown> {
+export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = unknown, TState = unknown> {
 	/** Tool name (used in LLM tool calls) */
 	name: string;
 	/** Human-readable label for UI */
@@ -496,6 +496,8 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 	promptGuidelines?: string[];
 	/** Parameter schema (TypeBox) */
 	parameters: TParams;
+	/** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
+	renderShell?: "default" | "self";
 
 	/** Optional compatibility shim to prepare raw tool call arguments before schema validation. Must return an object conforming to TParams. */
 	prepareArguments?: (args: unknown) => Static<TParams>;
@@ -517,9 +519,20 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 		onUpdate: AgentToolUpdateCallback<TDetails> | undefined,
 		ctx: ExtensionContext,
 	): Promise<AgentToolResult<TDetails>>;
+
+	/** Custom rendering for tool call display. Prefer registerToolRenderer() for new tools. */
+	renderCall?(args: Static<TParams>, theme: Theme, context: ToolRenderContext<TState, Static<TParams>>): Component;
+
+	/** Custom rendering for tool result display. Prefer registerToolRenderer() for new tools. */
+	renderResult?(
+		result: AgentToolResult<TDetails>,
+		options: ToolRenderResultOptions,
+		theme: Theme,
+		context: ToolRenderContext<TState, Static<TParams>>,
+	): Component;
 }
 
-type AnyToolDefinition = ToolDefinition<TSchema, unknown>;
+type AnyToolDefinition = ToolDefinition<TSchema, unknown, unknown>;
 
 /**
  * Preserve parameter inference for standalone tool definitions.
@@ -528,10 +541,10 @@ type AnyToolDefinition = ToolDefinition<TSchema, unknown>;
  * as `customTools`, where contextual typing would otherwise widen params to
  * `unknown`.
  */
-export function defineTool<TParams extends TSchema, TDetails = unknown>(
-	tool: ToolDefinition<TParams, TDetails>,
-): ToolDefinition<TParams, TDetails> & AnyToolDefinition {
-	return tool as ToolDefinition<TParams, TDetails> & AnyToolDefinition;
+export function defineTool<TParams extends TSchema, TDetails = unknown, TState = unknown>(
+	tool: ToolDefinition<TParams, TDetails, TState>,
+): ToolDefinition<TParams, TDetails, TState> & AnyToolDefinition {
+	return tool as ToolDefinition<TParams, TDetails, TState> & AnyToolDefinition;
 }
 
 // ============================================================================
@@ -1180,8 +1193,8 @@ export interface ExtensionAPI {
 	// =========================================================================
 
 	/** Register a tool that the LLM can call. */
-	registerTool<TParams extends TSchema = TSchema, TDetails = unknown>(
-		tool: ToolDefinition<TParams, TDetails>,
+	registerTool<TParams extends TSchema = TSchema, TDetails = unknown, TState = unknown>(
+		tool: ToolDefinition<TParams, TDetails, TState>,
 	): void;
 
 	/** Register an interactive renderer for a tool. */
