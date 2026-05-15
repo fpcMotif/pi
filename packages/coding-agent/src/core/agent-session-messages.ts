@@ -13,15 +13,14 @@ export function extractUserMessageText(content: string | Array<{ type: string; t
 }
 
 export function getLastAssistantText(messages: AgentMessage[]): string | undefined {
-	const lastAssistant = messages
-		.slice()
-		.reverse()
-		.find((message): message is AssistantMessage => {
-			if (message.role !== "assistant") {
-				return false;
-			}
-			return !(message.stopReason === "aborted" && message.content.length === 0);
-		});
+	let lastAssistant: AssistantMessage | undefined;
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const message = messages[i];
+		if (message.role !== "assistant") continue;
+		if (message.stopReason === "aborted" && message.content.length === 0) continue;
+		lastAssistant = message;
+		break;
+	}
 
 	if (!lastAssistant) {
 		return undefined;
