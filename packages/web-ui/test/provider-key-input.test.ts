@@ -299,7 +299,56 @@ describe("ProviderKeyInput", () => {
 		expect(storageState.keys.get("openai")).toBe("sk-empty-proxy");
 	});
 
-	// 5s setTimeout callbacks inside saveKey are uncovered (lines 103-104, 110-111).
-	// Fake timers don't compose cleanly with the async chain through getAppStorage()
-	// in this test harness; left as a known gap.
+	it("failed badge auto-clears after the 5s timeout (covers the setTimeout callback on a failed test)", async () => {
+		getModelMock.mockReturnValue({ id: "gpt-4o-mini" });
+		completeMock.mockResolvedValue({ stopReason: "other" });
+		const el = await make("openai");
+		const input = el.querySelector("input") as HTMLInputElement;
+		input.value = "sk-bad";
+		input.dispatchEvent(new Event("input"));
+		await el.updateComplete;
+		const btn = Array.from(el.querySelectorAll("button")).find((b) => b.textContent === "Save") as HTMLButtonElement;
+
+		vi.useFakeTimers();
+		try {
+			btn.click();
+			// Flush the async saveKey chain so `failed = true` + setTimeout(5000) is scheduled.
+			await vi.advanceTimersByTimeAsync(0);
+			await el.updateComplete;
+			expect(el.textContent).toContain("✗ Invalid");
+			// Advance past the 5s timeout — the callback flips `failed` back to false.
+			await vi.advanceTimersByTimeAsync(5000);
+		} finally {
+			vi.useRealTimers();
+		}
+		await el.updateComplete;
+		expect(el.textContent).not.toContain("✗ Invalid");
+	});
+
+	it("failed badge from a storage-save error also auto-clears after the 5s timeout", async () => {
+		getModelMock.mockReturnValue({ id: "gpt-4o-mini" });
+		completeMock.mockResolvedValue({ stopReason: "stop" });
+		storageState.keys.set = () => {
+			throw new Error("disk full");
+		};
+		const el = await make("openai");
+		const input = el.querySelector("input") as HTMLInputElement;
+		input.value = "sk-disk";
+		input.dispatchEvent(new Event("input"));
+		await el.updateComplete;
+		const btn = Array.from(el.querySelectorAll("button")).find((b) => b.textContent === "Save") as HTMLButtonElement;
+
+		vi.useFakeTimers();
+		try {
+			btn.click();
+			await vi.advanceTimersByTimeAsync(0);
+			await el.updateComplete;
+			expect(el.textContent).toContain("✗ Invalid");
+			await vi.advanceTimersByTimeAsync(5000);
+		} finally {
+			vi.useRealTimers();
+		}
+		await el.updateComplete;
+		expect(el.textContent).not.toContain("✗ Invalid");
+	});
 });

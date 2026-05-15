@@ -269,4 +269,36 @@ describe("ConsoleRuntimeProvider getRuntime() inner closures", () => {
 		await completeFn();
 		expect((sends[sends.length - 1] as { type: string }).type).toBe("execution-error");
 	});
+
+	it("window 'error' event with neither error nor message falls through to String(e) fallbacks", async () => {
+		const sends: unknown[] = [];
+		(globalThis as Record<string, unknown>).sendRuntimeMessage = async (msg: unknown) => {
+			sends.push(msg);
+			return {};
+		};
+		new ConsoleRuntimeProvider().getRuntime()("sb");
+		// No `.error`, no `.message` → `e.error?.stack || e.message || String(e)`
+		// and `e.error?.message || e.message || String(e)` both reach `String(e)`.
+		const errEvent = new Event("error");
+		window.dispatchEvent(errEvent);
+		const completeFn = (globalThis as Record<string, (...a: unknown[]) => Promise<unknown>>).complete;
+		await completeFn();
+		expect((sends[sends.length - 1] as { type: string }).type).toBe("execution-error");
+	});
+
+	it("window 'unhandledrejection' with no reason at all falls through to the literal fallbacks", async () => {
+		const sends: unknown[] = [];
+		(globalThis as Record<string, unknown>).sendRuntimeMessage = async (msg: unknown) => {
+			sends.push(msg);
+			return {};
+		};
+		new ConsoleRuntimeProvider().getRuntime()("sb");
+		// `e.reason` undefined → `e.reason?.message || e.reason || "Unknown error"`
+		// reaches the literal, and `e.reason?.stack || text` uses `text`.
+		const evt = new Event("unhandledrejection");
+		window.dispatchEvent(evt);
+		const completeFn = (globalThis as Record<string, (...a: unknown[]) => Promise<unknown>>).complete;
+		await completeFn();
+		expect((sends[sends.length - 1] as { type: string }).type).toBe("execution-error");
+	});
 });

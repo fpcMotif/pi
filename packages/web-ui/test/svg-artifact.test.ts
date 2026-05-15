@@ -141,4 +141,35 @@ describe("SvgArtifact", () => {
 		await el.updateComplete;
 		expect(createObjectUrlMock.mock.calls.length).toBeGreaterThanOrEqual(before);
 	});
+
+	it("setting content to empty after a non-empty value clears the preview URL without re-creating one", async () => {
+		const el = (await make("a.svg", "<svg/>")) as HTMLElement & {
+			content: string;
+			updateComplete?: Promise<unknown>;
+		};
+		createObjectUrlMock.mockClear();
+		revokeMock.mockClear();
+		// Setter does not early-return (values differ); updatePreviewUrl hits
+		// the `!this._content` early return so no new URL is created.
+		el.content = "";
+		await el.updateComplete;
+		expect(revokeMock).toHaveBeenCalled();
+		expect(createObjectUrlMock).not.toHaveBeenCalled();
+		expect(el.querySelector("img")).toBeNull();
+	});
+
+	it("re-connecting after disconnect re-creates the preview URL via connectedCallback", async () => {
+		const el = (await make("a.svg", "<svg/>")) as HTMLElement & {
+			content: string;
+			updateComplete?: Promise<unknown>;
+		};
+		// disconnectedCallback revokes the URL, leaving previewUrl empty while
+		// _content stays truthy — the exact precondition for the connectedCallback branch.
+		el.remove();
+		createObjectUrlMock.mockClear();
+		document.body.appendChild(el);
+		await el.updateComplete;
+		expect(createObjectUrlMock).toHaveBeenCalled();
+		expect(el.querySelector("img")).not.toBeNull();
+	});
 });

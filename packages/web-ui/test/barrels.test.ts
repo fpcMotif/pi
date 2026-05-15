@@ -18,7 +18,7 @@ vi.mock("highlight.js", () => ({ default: { highlight: () => ({ value: "" }) } }
 vi.mock("lucide", () => new Proxy({}, { get: () => "icon" }));
 vi.mock("docx-preview", () => ({ renderAsync: vi.fn() }));
 vi.mock("xlsx", () => ({ read: vi.fn(), utils: { sheet_to_html: vi.fn() } }));
-vi.mock("pdfjs-dist", () => ({}));
+vi.mock("pdfjs-dist", () => ({ GlobalWorkerOptions: {}, getDocument: vi.fn() }));
 vi.mock("jszip", () => ({ default: class {} }));
 
 describe("tools/artifacts/index.ts barrel", () => {

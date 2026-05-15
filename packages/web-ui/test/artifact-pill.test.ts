@@ -38,13 +38,27 @@ describe("ArtifactPill function", () => {
 	});
 
 	it("clicking when artifactsPanel is undefined is a no-op (covers `if (!artifactsPanel) return`)", async () => {
-		// We can't reach the handler in the rendered no-panel case (handler is null),
-		// but we can prove the early-return branch by binding a handler ourselves
-		// and ensuring it does not call any panel function.
+		// The click handler is always bound; with no panel it must early-return
+		// without throwing or calling anything.
+		const { render } = await import("lit");
+		const container = document.createElement("div");
+		render(ArtifactPill("x.md", undefined), container);
+		const span = container.querySelector("span") as HTMLElement;
+		expect(() => span.click()).not.toThrow();
+	});
+
+	it("clicking with a panel prevents default + stops propagation before opening the artifact", async () => {
 		const open = vi.fn();
-		const tpl = ArtifactPill("x.md", undefined);
-		expect(tpl).toBeDefined();
-		expect(open).not.toHaveBeenCalled();
+		const { render } = await import("lit");
+		const container = document.createElement("div");
+		render(ArtifactPill("evt.md", { openArtifact: open } as never), container);
+		const span = container.querySelector("span") as HTMLElement;
+		const evt = new MouseEvent("click", { bubbles: true, cancelable: true });
+		const stopSpy = vi.spyOn(evt, "stopPropagation");
+		span.dispatchEvent(evt);
+		expect(evt.defaultPrevented).toBe(true);
+		expect(stopSpy).toHaveBeenCalled();
+		expect(open).toHaveBeenCalledWith("evt.md");
 	});
 });
 

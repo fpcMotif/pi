@@ -58,6 +58,52 @@ describe("ArtifactWorkspace", () => {
 		);
 	});
 
+	it("clear() empties the workspace", () => {
+		const workspace = new ArtifactWorkspace();
+		workspace.execute({ command: "create", filename: "a.txt", content: "x" });
+		workspace.execute({ command: "create", filename: "b.txt", content: "y" });
+		expect(workspace.artifacts.size).toBe(2);
+		workspace.clear();
+		expect(workspace.artifacts.size).toBe(0);
+	});
+
+	it("update on a missing file returns a missing_file error", () => {
+		const workspace = new ArtifactWorkspace();
+		const result = workspace.execute({ command: "update", filename: "ghost.txt", old_str: "a", new_str: "b" });
+		expect(result.ok).toBe(false);
+		expect(result).toMatchObject({ errorCode: "missing_file", action: "update" });
+		expect(formatArtifactWorkspaceResult(result)).toBe(
+			"Error: File ghost.txt not found. No files have been created yet.",
+		);
+	});
+
+	it("rewrite on a missing file returns a missing_file error", () => {
+		const workspace = new ArtifactWorkspace();
+		const result = workspace.execute({ command: "rewrite", filename: "ghost.txt", content: "x" });
+		expect(result.ok).toBe(false);
+		expect(result).toMatchObject({ errorCode: "missing_file", action: "rewrite" });
+	});
+
+	it("rewrite without content returns a missing_content error", () => {
+		const workspace = new ArtifactWorkspace();
+		workspace.execute({ command: "create", filename: "a.txt", content: "original" });
+		const result = workspace.execute({ command: "rewrite", filename: "a.txt" });
+		expect(result.ok).toBe(false);
+		expect(result).toMatchObject({ errorCode: "missing_content", action: "rewrite" });
+		expect(formatArtifactWorkspaceResult(result)).toBe("Error: rewrite command requires content");
+		// Original content is untouched.
+		expect(workspace.artifacts.get("a.txt")?.content).toBe("original");
+	});
+
+	it("formatting a successful get with empty content yields an empty string (covers `?? \"\"`)", () => {
+		const result = {
+			ok: true,
+			action: "get",
+			filename: "a.txt",
+		} satisfies ArtifactWorkspaceResult;
+		expect(formatArtifactWorkspaceResult(result)).toBe("");
+	});
+
 	it("stores last-run logs and lets the formatter append command logs", () => {
 		const workspace = new ArtifactWorkspace();
 		workspace.execute({ command: "create", filename: "index.html", content: "<script></script>" });

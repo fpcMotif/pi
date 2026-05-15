@@ -121,4 +121,18 @@ describe("TextArtifact", () => {
 		const el = await make("plain", "x");
 		expect(el.querySelector("pre")).not.toBeNull();
 	});
+
+	it("filename ending in a dot yields an empty extension (covers the `|| \"\"` fallback in isCode/getMimeType/render)", async () => {
+		// "a.".split(".") === ["a", ""], so pop() === "" — a falsy left operand
+		// of `|| ""` in isCode(), getMimeType(), and render().
+		const el = (await make("trailingdot.", "body")) as HTMLElement & { getHeaderButtons: () => unknown };
+		// Empty ext is not a code extension → plain <pre>, no language class.
+		expect(el.querySelector("code")).toBeNull();
+		expect(el.querySelector("pre")?.textContent).toContain("body");
+		const { render } = await import("lit");
+		const container = document.createElement("div");
+		render(el.getHeaderButtons() as never, container);
+		const btn = container.querySelector("button") as HTMLButtonElement;
+		expect(btn.dataset.mime).toBe("text/plain");
+	});
 });
