@@ -1,5 +1,5 @@
 import { Effect, Layer, Stream } from "effect";
-import { LanguageModel, Response } from "effect/unstable/ai";
+import { LanguageModel } from "effect/unstable/ai";
 
 /**
  * A Layer providing {@link LanguageModel.LanguageModel} with a `streamText`
@@ -14,11 +14,12 @@ import { LanguageModel, Response } from "effect/unstable/ai";
  * `generateText` / `generateObject` die on call; pair only with code paths
  * that exercise `streamText`.
  */
-export const stubLanguageModelStream = (parts: ReadonlyArray<Response.StreamPartEncoded>) =>
-	Layer.effect(
+export const stubLanguageModelStream = (parts: ReadonlyArray<unknown>) =>
+	Layer.succeed(
 		LanguageModel.LanguageModel,
-		LanguageModel.make({
-			generateText: () => Effect.die("stubLanguageModelStream: generateText not implemented"),
-			streamText: () => Stream.fromIterable(parts),
+		LanguageModel.LanguageModel.of({
+			generateText: (() => Effect.die("stubLanguageModelStream: generateText not implemented")) as never,
+			generateObject: (() => Effect.die("stubLanguageModelStream: generateObject not implemented")) as never,
+			streamText: (() => Stream.fromIterable(parts)) as never,
 		}),
 	);
