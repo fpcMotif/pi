@@ -4,8 +4,8 @@ import { Text } from "@earendil-works/pi-tui";
 import { getReadmePath } from "../../../config.js";
 import type { ToolRenderer, ToolRenderResultOptions } from "../../../core/extensions/types.js";
 import { resolveReadPath } from "../../../core/tools/path-utils.js";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import type { ReadToolDetails } from "../../../core/tools/read.js";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../../../core/tools/truncate.js";
 import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.js";
 import { keyHint, keyText } from "../components/keybinding-hints.js";
 import { getLanguageFromPath, highlightCode, type Theme } from "../theme/theme.js";
@@ -158,9 +158,7 @@ export const readToolRenderer: ToolRenderer<ReadRenderArgs, ReadToolDetails | un
 	renderCall(args, theme, context) {
 		const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 		const classification = !context.expanded ? getCompactReadClassification(args, context.cwd) : undefined;
-		text.setText(
-			classification ? formatCompactReadCall(classification, args, theme) : formatReadCall(args, theme),
-		);
+		text.setText(classification ? formatCompactReadCall(classification, args, theme) : formatReadCall(args, theme));
 		return text;
 	},
 	renderResult(result, options, theme, context) {

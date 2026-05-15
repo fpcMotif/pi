@@ -18,8 +18,8 @@ const adapters = {
 	notice: (message: AgentMessage): Message[] => {
 		if (message.role !== "notice") return [];
 		return [
-			{ role: "user", content: [{ type: "text", text: message.text }] },
-			{ role: "user", content: [{ type: "text", text: `${message.text} follow-up` }] },
+			{ role: "user", content: [{ type: "text", text: message.text }], timestamp: 1 },
+			{ role: "user", content: [{ type: "text", text: `${message.text} follow-up` }], timestamp: 2 },
 		];
 	},
 } satisfies TranscriptAdapters;
@@ -31,8 +31,8 @@ describe("toLlm", () => {
 
 		expect(toLlm([user, notice], adapters)).toEqual([
 			user,
-			{ role: "user", content: [{ type: "text", text: "custom" }] },
-			{ role: "user", content: [{ type: "text", text: "custom follow-up" }] },
+			{ role: "user", content: [{ type: "text", text: "custom" }], timestamp: 1 },
+			{ role: "user", content: [{ type: "text", text: "custom follow-up" }], timestamp: 2 },
 		]);
 	});
 

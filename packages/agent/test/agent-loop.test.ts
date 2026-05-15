@@ -1461,7 +1461,7 @@ describe("agentLoopContinue with AgentMessage", () => {
 							return {
 								role: "user" as const,
 								content: (m as any).text,
-								timestamp: m.timestamp,
+								timestamp: (m as any).timestamp,
 							};
 						}
 						return m;

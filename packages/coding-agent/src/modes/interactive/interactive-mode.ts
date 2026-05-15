@@ -66,10 +66,10 @@ import type {
 	ExtensionCommandContext,
 	ExtensionContext,
 	ExtensionRunner,
-	ExtensionUIDialogsCapability,
-	ExtensionUIEditorCapability,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionUIDialogsCapability,
+	ExtensionUIEditorCapability,
 	ExtensionWidgetOptions,
 } from "../../core/extensions/index.js";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.js";
@@ -3096,9 +3096,8 @@ export class InteractiveMode {
 				// Tool results are rendered inline with tool calls, handled separately
 				break;
 			}
-			default: {
-				const _exhaustive: never = message;
-			}
+			default:
+				break;
 		}
 	}
 

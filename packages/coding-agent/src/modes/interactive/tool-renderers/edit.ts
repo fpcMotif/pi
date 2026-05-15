@@ -1,8 +1,8 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { Box, Container, Spacer, Text } from "@earendil-works/pi-tui";
 import type { ToolRenderer } from "../../../core/extensions/types.js";
-import { computeEditsDiff, type Edit, type EditDiffError, type EditDiffResult } from "../../../core/tools/edit-diff.js";
 import type { EditToolDetails, EditToolInput } from "../../../core/tools/edit.js";
+import { computeEditsDiff, type Edit, type EditDiffError, type EditDiffResult } from "../../../core/tools/edit-diff.js";
 import { renderDiff } from "../components/diff.js";
 import type { Theme } from "../theme/theme.js";
 import { invalidArgText, shortenPath, str } from "./render-utils.js";
@@ -180,9 +180,7 @@ export const editToolRenderer: ToolRenderer<RenderableEditArgs, EditToolDetails 
 	renderCall(args, theme, context) {
 		const component = getEditCallRenderComponent(context.state, context.lastComponent);
 		const previewInput = getRenderablePreviewInput(args);
-		const argsKey = previewInput
-			? JSON.stringify({ path: previewInput.path, edits: previewInput.edits })
-			: undefined;
+		const argsKey = previewInput ? JSON.stringify({ path: previewInput.path, edits: previewInput.edits }) : undefined;
 
 		if (component.previewArgsKey !== argsKey) {
 			component.preview = undefined;
@@ -207,9 +205,7 @@ export const editToolRenderer: ToolRenderer<RenderableEditArgs, EditToolDetails 
 	renderResult(result, _options, theme, context) {
 		const callComponent = context.state.callComponent;
 		const previewInput = getRenderablePreviewInput(context.args as EditToolInput | undefined);
-		const argsKey = previewInput
-			? JSON.stringify({ path: previewInput.path, edits: previewInput.edits })
-			: undefined;
+		const argsKey = previewInput ? JSON.stringify({ path: previewInput.path, edits: previewInput.edits }) : undefined;
 		const typedResult = result as EditToolResultLike;
 		const resultDiff = !context.isError ? typedResult.details?.diff : undefined;
 		let changed = false;

@@ -43,7 +43,7 @@ Future migration obligation: when ADR-0006 phase 4 moves the runtime into `src/`
 
 ## Status — Effect rewrite tracer bullets
 
-Twenty-seven tracer bullets (54 test cases), all GREEN, all without an API key:
+Thirty-two tracer bullets, all GREEN, all without an API key:
 
 1. **`stubLanguageModel({ text })`** — Layer that bypasses providers entirely; `LanguageModel.generateText` resolves to canned text. Proves the v4 runtime and `@effect/ai` API surface work.
 2. **`stubOpenAiClient({ text })` + `OpenAiLanguageModel.layer({ model })`** — Layer composition that exercises the real provider path (`OpenAiLanguageModel.make` calls `client.createResponse`, parses the OpenAI Responses-API body shape, builds the `GenerateTextResponse`). Proves the OpenAI integration path works without an API key.
@@ -63,7 +63,7 @@ Twenty-seven tracer bullets (54 test cases), all GREEN, all without an API key:
     - `AgentEvent` = `LlmPart | ToolDispatched | ToolCompleted | Finish` (closed `Schema.Union` of `Schema.TaggedClass`-derived variants). The pi-defined event union the future `Session.send` stream will emit.
     - `AgentError` = `LlmError | ToolError | SchemaError | CancellationError` (`Schema.TaggedErrorClass`-derived). Yieldable in `Effect.gen`; propagates through the error channel.
     - 6 test cases: tag-discrimination, _tag literals, Schema.encode/decode roundtrip for a `LlmPart`, decode failure on unknown `_tag`, error-channel propagation per AgentError variant.
-    Future variants (`SkillInvoked`, `CompactionApplied`, `RetryRequested`, `SessionMeta`, `CompactionError`, `AuthError` if it splits from `LlmError`) are deferred until their slices need them.
+    Future variants (`RetryRequested`, `SessionMeta`, `AuthError` if it splits from `LlmError`) are deferred until their slices need them. (`CompactionApplied` / `CompactionError` landed in slice 28. There is no `SkillInvoked` variant — skill-block parsing is a host concern, ADR-0009 amendment 2026-05-14.)
 
 14.   **`Session.empty` + `Session.send` wired to `LanguageModel.streamText`** (12b/c — combined). `effect/session.ts` exposes:
 
@@ -74,7 +74,7 @@ Twenty-seven tracer bullets (54 test cases), all GREEN, all without an API key:
     - `Session.empty` resolves to a Session with `send` (smoke test).
     - `send("hello")` against `stubOpenAiClientStreaming({ text, chunkCount })` yields N `LlmPart` events whose unwrapped `text-delta` parts concatenate back to the canned text, followed by exactly one `Finish`.
 
-    **At this slice boundary, deferred to later slices** (each its own tracer bullet): the `Input = NewPrompt | Continue | Retry` discriminated union, multi-turn history inside `Session`, compaction triggers, skill-block parsing, cancellation via `Fiber.interrupt`. (Input triad, multi-turn history, token/cost accounting, retry, and telemetry have since landed in later tracer bullets.)
+    **At this slice boundary, deferred to later slices** (each its own tracer bullet): the `Input = NewPrompt | Continue | Retry` discriminated union, multi-turn history inside `Session`, compaction triggers, cancellation via `Fiber.interrupt`. (Input triad, multi-turn history, token/cost accounting, retry, telemetry, and compaction triggers have since landed in later tracer bullets. Skill-block parsing was removed from the loop's scope — host concern, ADR-0009 amendment 2026-05-14.)
 
 15.   **Tool events in `Session.send`** (slice 12d — `ToolDispatched` / `ToolCompleted`). Extended `session.ts` to `Stream.flatMap` each upstream `Response.AnyPart` through a `liftPart(part)` helper:
 
@@ -237,7 +237,7 @@ Twenty-seven tracer bullets (54 test cases), all GREEN, all without an API key:
     - Backoff between attempts (currently no delay; production wants exponential / `retryAfter`-respecting).
     - Configurable retry policy on `Session.empty` (currently hardcoded).
 
-25.   **`Effect.withSpan` telemetry on `Session.send`** (slice 25 — closes out the last ADR-0009 "wrapping" item alongside compaction and skill-block parsing). `Session.send` now emits two named spans per send, observable via any standard Effect `Tracer.Tracer`:
+25.   **`Effect.withSpan` telemetry on `Session.send`** (slice 25 — the telemetry ADR-0009 "wrapping" item; compaction triggers landed later in slice 28, and skill-block parsing was subsequently removed from the loop's scope per the ADR-0009 amendment of 2026-05-14). `Session.send` now emits two named spans per send, observable via any standard Effect `Tracer.Tracer`:
 
 
     - **Outer span**: `pi.Session.send` — wraps the entire send including all retry attempts. Attributes: `pi.input.tag` (`"NewPrompt"` / `"Continue"` / `"Retry"`) and `pi.history.size` (number of messages in `state.history` at send time, *after* the input variant's history mutation lands).
@@ -301,12 +301,122 @@ Twenty-seven tracer bullets (54 test cases), all GREEN, all without an API key:
     - Re-emit reasoning-block boundaries as `AgentEvent`s (e.g. `ReasoningStarted` / `ReasoningCompleted`) — consumers see raw `LlmPart`s only.
     - Surface a "thinking" status in `SessionState` for UI hints during long reasoning runs.
 
+28.   **Compaction triggers in `Session.send`** (slice 28 — the big remaining ADR-0009 "wrapping" item). New `effect/compaction.ts` holds pure, runtime-free helpers so the trigger logic is unit-testable in isolation:
+
+
+    - `estimateTokens(history)` — chars/4 heuristic over message content. `messageChars` counts `text` parts, `tool-call` (`name` + `JSON.stringify(params)`), `tool-result` (`JSON.stringify(result)`), and bare-string `system` content. Mirrors the legacy `estimateTokens` fallback path.
+    - `shouldCompact(history, threshold)` — pure predicate; `true` once `estimateTokens` strictly exceeds the threshold.
+    - `splitHistory(history, keepRecentTokens)` — walks backwards accumulating the chars/4 estimate; the first message that tips the accumulator at/past `keepRecentTokens` starts `toKeep`, everything older is `toSummarize`. The cut never lands on a `tool` message (a tool-result must stay with its tool-call's assistant message) — it walks back past any leading `tool` messages.
+    - `COMPACTION_THRESHOLD = 100_000` / `KEEP_RECENT_TOKENS = 20_000` — hardcoded slice defaults (same disposition as `MAX_LLM_RETRIES`; a configurable policy on `Session.empty` is a follow-on slice).
+
+    New `CompactionApplied` `AgentEvent` variant (`{ tokensBefore, tokensAfter, summarizedMessageCount }`) and `CompactionError` `AgentError` variant (`{ cause }` — wraps the failed summarisation `AiError`, distinct from the per-turn `LlmError`).
+
+    `effect/session.ts` integration — a step-0 block at the top of the `send` `Effect.gen`, BEFORE the input-variant history update:
+
+    - Reads `state.history`; if `shouldCompact` fires, `splitHistory` cuts it, then `LanguageModel.generateText({ prompt: Prompt.concat(toSummarize, SUMMARIZATION_INSTRUCTION) })` produces the summary text.
+    - `state.history` is rebuilt as `[summary user message, ...toKeep.content]` via `Prompt.fromMessages` (`turnCount` and token totals preserved — the input-variant update and turn bump happen in the existing step 1 on top of the compacted history).
+    - The `CompactionApplied` event is prepended to the final stream via `Stream.concat(Stream.succeed(compactionEvent), mainStream)` so consumers observe it as the FIRST element.
+    - A failed `generateText` is `Effect.mapError`-ed to `CompactionError`, widening `send`'s error channel to `LlmError | CompactionError`.
+
+    New test fixture `stubLanguageModelDual` (`test-support/stub-language-model-dual.ts`) — a Layer satisfying `LanguageModel.LanguageModel` for BOTH `generateText` (canned `summaryText`, or a canned `summaryError` `AiError` failure) AND `streamText` (canned part sequence). A compaction `send` calls both methods in one turn, so the single-purpose stubs (`stubLanguageModel`, `stubLanguageModelStream`) — each dies on the other method — don't suffice.
+
+    13 tests across `test/effect/compaction.test.ts` (7 — pure helpers) and `test/effect/session-compaction.test.ts` (3 — integration):
+
+    - `estimateTokens`: chars/4 over text; counts tool-call + tool-result content; counts bare-string `system` content.
+    - `shouldCompact`: false at/below threshold, true above.
+    - `splitHistory`: cuts at a message boundary keeping ~`keepRecentTokens`; never orphans a tool-result (moves the cut back to the tool-call's assistant message).
+    - `Session.send` over-threshold → `CompactionApplied` is the first event, `state.history` shrinks.
+    - `Session.send` under-threshold → no `CompactionApplied`, and (via `stubLanguageModelStream`, which dies on `generateText`) the summary call is never reached.
+    - Summary `generateText` failure → `CompactionError` in the error channel (asserted via `Effect.flip`).
+
+    **What this does NOT yet do**:
+    - Real summarisation prompt structure — `SUMMARIZATION_INSTRUCTION` is a single terse instruction, not the legacy's structured-checkpoint format (`## Goal` / `## Progress` / …). The summary message is plain `user` role.
+    - Split-turn handling — the legacy compaction summarises a turn prefix separately when the cut falls mid-turn; this slice cuts only at whole-message boundaries.
+    - Iterative summaries — no "previous summary" merge; each compaction summarises `toSummarize` from scratch.
+    - Configurable threshold / keep-recent on `Session.empty` (hardcoded constants for now).
+    - A `CompactionApplied` / compaction-count field on `SessionState` for snapshot observability.
+
+29.   **Tool-call concurrency control on `Session.send`** (slice 29 — ADR-0009's "tool execution defaults to sequential" sub-decision). `Session.send` gains an optional third positional parameter `concurrency?: Types.Concurrency` (`number | "unbounded" | "inherit"`), forwarded to `LanguageModel.streamText` as the tool-call resolution concurrency.
+
+      **Latent bug this fixes**: the effect framework's `streamText` defaults `concurrency` to `"unbounded"` when the option is omitted (`LanguageModel.ts` `resolveConcurrency`). The prior `Session.send` passed no `concurrency`, so the effect path was silently resolving tool calls unbounded — contradicting ADR-0009 ("sequential preserves today's semantics because pi's built-in `bash` / `write` / `edit` tools have real side effects"). `send` now resolves `concurrency ?? 1` and passes an explicit `1` by default; the toolkit and no-toolkit `streamText` branches both carry it.
+
+
+    New test fixture `recordingLanguageModelStream` (`test-support/recording-language-model-stream.ts`) — a Layer whose `streamText` yields a canned part sequence AND pushes each options object it was called with into a shared `calls` array. Used when the test asserts on what `Session.send` *passes* to `streamText` rather than the events it emits. (`generateText` / `generateObject` die.)
+
+    3 tests in `test/effect/session-concurrency.test.ts`:
+
+    - `send(input)` with no concurrency arg → `streamText` receives `concurrency: 1` (sequential default).
+    - `send(input, undefined, "unbounded")` → `streamText` receives `concurrency: "unbounded"`.
+    - `send(input, undefined, 4)` → `streamText` receives `concurrency: 4`.
+
+    **Testing stance**: pi's contract is "set the right default + forward the opt-in" — the actual parallel tool resolution is framework behavior, tested upstream in `effect/unstable/ai`. So these tests assert on the forwarded options, not on observed execution overlap.
+
+    **What this does NOT yet do**:
+    - Per-turn `concurrency` on the `Input` variants (it is a `send` argument, not a field on `NewPrompt` / `AcceptedPromptEnvelope`).
+    - A configurable default on `Session.empty` (hardcoded `1`, same disposition as `MAX_LLM_RETRIES` / `COMPACTION_THRESHOLD`).
+
+30.   **Observer hooks on `Session.send`** (slice 30 — ADR-0009's final loop-wrapping item after compaction, retry, and telemetry). New `effect/hooks.ts` defines a small `Hooks` service as a `Context.Reference` with a no-op default:
+
+
+    - `Hooks.onAgentEvent(event)` is invoked once per `AgentEvent` the consumer sees, in stream order.
+    - The hook observes the final event stream after orchestration events have been added, so it also sees prepended events such as `CompactionApplied`.
+    - Because `Hooks` has a default implementation, `Session.send`'s `R` channel remains unchanged. Hosts or tests opt in with `Effect.provideService(Hooks, customHooks)`.
+
+    New test fixture `recordingHooks` (`test-support/recording-hooks.ts`) returns `{ hooks, events }` so tests can assert that hook-observed events match emitted events.
+
+    3 tests in `test/effect/session-hooks.test.ts`:
+
+    - A provided `Hooks` observes every emitted event, in order.
+    - The hook observes a prepended `CompactionApplied` event when compaction fires.
+    - With no `Hooks` provided, `send` uses the no-op default and emits normally.
+
+    **Testing stance**: this slice intentionally implements observer-only hooks. Hooks cannot mutate the event, block a tool call, patch a tool result, or change loop control flow.
+
+    **What this does NOT yet do**:
+    - Mutating hooks for tool-call approval / result patching.
+    - Lifecycle hooks such as `onStart` / `onShutdown`.
+    - Host-specific hook adapters in `pi-coding-agent`.
+
+31.   **HTTP-status-driven error mapping** (slice 31 — a `stubHttpClient` test-support fixture + characterization tests). New `test-support/stub-http-client.ts` provides `HttpClient.HttpClient` resolving every request to a canned `Response(body, { status, headers })`.
+
+
+    Composed UNDER the **real** `OpenAiClient.layer({})` (rather than stubbing `OpenAiClient` directly like `stubOpenAiClient`), a non-2xx status flows through the provider's genuine HTTP-error path: `HttpClient.filterStatusOk` → `StatusCodeError` → `@effect/ai-openai`'s `mapStatusCodeError` / `mapStatusCodeToReason` → `AiError`. One layer deeper than slice 6's `stubOpenAiClient({ error })`, which hands back an `AiError` directly.
+
+    7 tests in `test/effect/http-error-mapping.test.ts`:
+
+    - 429 → `AiError.RateLimitError` through `generateText`.
+    - Parametrized matrix (`it.effect.each`): 400 → `InvalidRequestError`, 401 / 403 → `AuthenticationError`, 429 → `RateLimitError`, 500 → `InternalProviderError`.
+    - 429 through `Session.send` → surfaces as `LlmError` (wrapping the `AiError`) in the stream error channel — proving the pi loop's `Stream.mapError` wraps an HTTP-originated `AiError`, after exhausting the retryable-error retry path.
+
+    **No-RED slice**: this slice adds no `effect/` production code — the provider's mapping and `Session.send`'s existing `mapError` already work. It is **characterization testing**: it establishes the `stubHttpClient` fixture (which unblocks future deeper integration tests) and locks in the HTTP-status → `AiError` reason matrix that pi's chosen provider stack depends on.
+
+    **What this does NOT yet do**:
+    - Body-driven nuance — e.g. a 429 with an `insufficient_quota` JSON body maps to `QuotaExhaustedError` rather than `RateLimitError`; `retry-after` header parsing. The fixture supports `body` / `headers`, but no test exercises those branches yet.
+    - A streaming-specific HTTP-error test distinct from the `Session.send` path.
+
+32.   **Configurable + observable compaction** (slice 32 — closes two slice-28 compaction follow-ons). Two changes:
+
+
+    - **`SessionState.compactionCount: number`** — observable count of how many times the session has compacted, `0` in `empty`, preserved by `advance`, bumped by the compaction update in `Session.send` (its sole writer). Every `new SessionState({...})` site now carries the field.
+    - **`Session.make(config?: SessionConfig)`** — `SessionConfig = { compactionThreshold?, keepRecentTokens? }`. Omitted fields fall back to the module defaults (`COMPACTION_THRESHOLD` / `KEEP_RECENT_TOKENS`). `send` reads the session's resolved `compactionThreshold` / `keepRecentTokens` closure values instead of the module constants. `Session.empty` is now `Session.make({})` — both produce a FRESH `Session` (own `state` ref) per run.
+
+    4 tests in `test/effect/session-compaction-config.test.ts`:
+
+    - `SessionState.empty.compactionCount` is `0`.
+    - `compactionCount` bumps to 1 each time compaction fires.
+    - `Session.make({ compactionThreshold: 50, keepRecentTokens: 40 })` — a ~150-token history (well under the 100_000 default) compacts, and the low `keepRecentTokens` forces a real split (`summarizedMessageCount > 0`, vs `0` under the 20_000 default).
+    - `Session.empty` delegates to `make({})` — a fresh session at `SessionState.empty`, independent `state` ref per run.
+
+    **What this does NOT yet do**:
+    - Configurable retry policy (`MAX_LLM_RETRIES`) — still a hardcoded module constant; a separate follow-on.
+    - Structured-checkpoint summary prompt, split-turn handling, iterative "previous summary" merge — the remaining slice-28 compaction follow-ons.
+
 ## Architecture stance (Effect rewrite)
 
 - **Idiomatic Effect throughout** (ADR-0001). No Promise facade beneath Effect. Public surface is `Effect`/`Stream`-shaped.
 - **`@effect/ai` is the LLM abstraction** (ADR-0003). Target providers: `@effect/ai-openai`, `@effect/ai-openrouter`, and OpenAI Codex (re-implemented in-repo as a v4 Effect provider). Current tracer bullets exercise only `@effect/ai-openai`; OpenRouter and Codex provider wiring are later slices.
 - **Effect v4 beta substrate** (ADR-0004). Pinned exact at `4.0.0-beta.65`. Beta releases carry no semver guarantee; every bump is a manual bump with breakage budgeted.
-- **Agent loop is `Stream`-as-loop** (ADR-0009). Current tracer entry is `Session.send(input, toolkit?): Stream<AgentEvent, LlmError, LanguageModel>`. `LanguageModel.streamText({ toolkit, ... })` is wrapped, not exposed directly. `Session.empty`, observable state, history, retry, usage, telemetry, and tool-event lifting are already implemented in the Effect path; compaction, skill-block parsing, and production wiring remain future slices.
+- **Agent loop is `Stream`-as-loop** (ADR-0009). Current tracer entry is `Session.send(input, toolkit?, concurrency?): Stream<AgentEvent, LlmError | CompactionError, LanguageModel>`. `LanguageModel.streamText({ toolkit, ... })` is wrapped, not exposed directly. `Session.empty`, observable state, history, retry, usage, telemetry, tool-event lifting, compaction triggers, observer hooks, and tool-call concurrency control are already implemented in the Effect path; production wiring remains a future slice. Tool execution defaults to sequential (`concurrency: 1`). **Skill loading / skill-block parsing is NOT a loop concern** — it is a host (`pi-coding-agent`) responsibility; the loop consumes already-expanded prompts (ADR-0009 amendment, 2026-05-14).
 - **Tools are pure** (ADR-0010). `Tool.make("Name", { parameters, success, failure })` defines the schema contract; `Toolkit.make(...tools).toLayer({ Name: handler })` wires Effect handlers. Renderers live in `pi-coding-agent`, not here.
 - **Tests use `test-support` deep import** (ADR-0015). Effect-shaped Layer fixtures replace the old faux provider pattern.
 
@@ -330,11 +440,18 @@ Twenty-seven tracer bullets (54 test cases), all GREEN, all without an API key:
 - **stubLanguageModelStream** — `test-support/stub-language-model-stream.ts`. Test Layer that satisfies `LanguageModel.LanguageModel` directly (bypassing the OpenAI provider layer) with a caller-supplied static `ReadonlyArray<unknown>` of `Response.StreamPart`-shaped objects. Use for tests where you need precise control over the part sequence (e.g. tool-call/tool-result lifting, finish-part usage, mixed text/tool flows).
 - **stubLanguageModelStreamScripted** — `test-support/stub-language-model-stream-scripted.ts`. Test Layer that satisfies `LanguageModel.LanguageModel` directly and serves a different stream per call from a `script: ReadonlyArray<{ type: "parts", parts } | { type: "error", error: AiError }>`. Internal `Ref<number>` tracks call index; calls past script length die. Use for retry sequences (fail-then-success), cap-exceeded scenarios, or any other test where successive `streamText` calls must differ. Mirrors `stubOpenAiClientScripted` but bypasses the OpenAI provider layer.
 - **recordingTracer** — `test-support/recording-tracer.ts`. Returns `{ tracer, spans }` where `tracer` is a minimal `Tracer.Tracer` whose `span` factory constructs a `NativeSpan` and pushes it into the shared `spans` array. Provide via `Effect.provideService(Tracer.Tracer, tracer)`; assert on `spans[i].name` / `.attributes.get(key)` / `.status._tag` (`"Ended"` after run completion) / `.status.exit._tag` (`"Success"` vs `"Failure"`). Used to test `Effect.withSpan` / `Stream.withSpan` wiring without standing up a real opentelemetry pipeline.
+- **Hooks** — `effect/hooks.ts`. `Context.Reference` service with a no-op default. `Session.send` taps its final event stream and calls `Hooks.onAgentEvent(event)` once per emitted `AgentEvent`, in stream order. Observer-only in the current slice.
+- **recordingHooks** — `test-support/recording-hooks.ts`. Returns `{ hooks, events }`, where `hooks.onAgentEvent` pushes every observed `AgentEvent` into the shared `events` array. Use with `Effect.provideService(Hooks, hooks)` when tests need to assert hook observation order.
+- **recordingLanguageModelStream** — `test-support/recording-language-model-stream.ts`. Returns `{ layer, calls }` where `layer` provides `LanguageModel.LanguageModel` with a `streamText` that yields a canned part sequence AND pushes each options object it was called with into the shared `calls` array. Use when the test asserts on what a consumer _passes_ to `streamText` (e.g. the `concurrency` knob) rather than the events produced. `generateText` / `generateObject` die.
+- **stubHttpClient** — `test-support/stub-http-client.ts`. Layer providing `HttpClient.HttpClient` that resolves every request to a canned `Response(body, { status, headers })`. Composed UNDER the real `OpenAiClient.layer` it drives the provider's genuine HTTP-error path (`filterStatusOk` → `StatusCodeError` → `mapStatusCodeError` → `AiError`) — one layer deeper than `stubOpenAiClient`, which fakes `OpenAiClient` directly.
 - **disableToolCallResolution** — option on `LanguageModel.generateText`. When `true`, tool calls surface as `tool-call` parts but handlers don't run (no `tool-result` parts). Default `false` → auto-execute. `generateText` does NOT auto-loop after tool execution; the final response merges tool-call parts with their resolved tool-result parts in a single round.
+- **concurrency** — option on `LanguageModel.generateText` / `streamText` controlling tool-call resolution parallelism (`number | "unbounded" | "inherit"`). The framework defaults it to `"unbounded"` when omitted; `Session.send` resolves an explicit `1` (sequential) unless its `concurrency?` argument opts in (ADR-0009).
 - **failureMode** — option on `Tool.make`. `"error"` (default) propagates the handler's `Effect.fail` through the calling Effect's error channel. `"return"` captures the failure as a `tool-result` part with `isFailure: true` so the agent loop can react to it instead of crashing. Inside the toolkit, `Toolkit.ts` `normalizeError` only wraps `Schema.SchemaError` (→ `InvalidToolResultError`) and `AiError.AiErrorReason` values; any other failure propagates as-is.
 - **v4 error-channel testing** — `Effect.either` is **removed** in v4. Use `Effect.flip` (swaps success/error — assert on the success of the flipped effect) or `Effect.exit` + `Exit.isFailure`.
 - **v4 stream collection** — `Stream.runCollect` returns `Effect<Array<A>, E, R>` (NOT `Effect<Chunk<A>>` as in v3). No `Chunk.toReadonlyArray` shim needed.
-- **AgentEvent / AgentError** — `effect/agent-event.ts`, `effect/agent-error.ts`. The pi-defined Schema-tagged unions for the `Session.send` Stream (ADR-0009). Event variants extend `Schema.TaggedClass`; error variants extend `Schema.TaggedErrorClass` (yieldable in `Effect.gen`). Construction: `new LlmPart({ part })`, `yield* new ToolError({ ... })`.
+- **AgentEvent / AgentError** — `effect/agent-event.ts`, `effect/agent-error.ts`. The pi-defined Schema-tagged unions for the `Session.send` Stream (ADR-0009). Event variants extend `Schema.TaggedClass`; error variants extend `Schema.TaggedErrorClass` (yieldable in `Effect.gen`). Construction: `new LlmPart({ part })`, `yield* new ToolError({ ... })`. Event variants: `LlmPart | ToolDispatched | ToolCompleted | CompactionApplied | Finish`. Error variants: `LlmError | ToolError | SchemaError | CancellationError | CompactionError`.
+- **Compaction** — `effect/compaction.ts`. Pure trigger helpers: `estimateTokens(history)` (chars/4 heuristic), `shouldCompact(history, threshold)`, `splitHistory(history, keepRecentTokens)` (cut-point detection that never orphans a tool-result). `Session.send` wires them in at step 0 — over `COMPACTION_THRESHOLD` it summarises the older history slice via `LanguageModel.generateText`, rebuilds `state.history` as `[summary user message, ...recent kept]`, and emits `CompactionApplied` as the stream's first event. A failed summary call → `CompactionError`.
+- **stubLanguageModelDual** — `test-support/stub-language-model-dual.ts`. Test Layer satisfying `LanguageModel.LanguageModel` for BOTH `generateText` (canned `summaryText` or canned `summaryError` `AiError`) AND `streamText` (canned part sequence). Needed by compaction tests, where one `send` calls both methods.
 - **Transcript operation** — A pure operation over persisted agent messages, such as LLM-facing conversion, compaction text extraction, or replay/reconstruction. Core owns base transcript operations; host packages supply custom role Adapters for host-specific message roles.
 - **Accepted prompt envelope** — A host-preflighted prompt input handed to `Session`: skill/prompt-template expansion and extension input transforms have already run, model/auth preflight has passed, and the envelope carries user content plus queue policy and host metadata without terminal UI details.
 
@@ -381,9 +498,8 @@ npm run fmt:effect:check
 
 - Streaming on the scripted / non-streaming stubs: only `stubOpenAiClientStreaming` implements `createResponseStream`; the others die on call. A future slice can unify (e.g. a per-call stream-or-body switch).
 - Remaining `AiError` reasons (`InvalidOutputError`, `StructuredOutputError`, `UnsupportedSchemaError`, `InternalProviderError`, `NetworkError`, `UnknownError`, `InvalidUserInputError`) - add to the `cases` array in `error-reasons.test.ts` when a slice needs them.
-- Concurrency control on parallel tool calls.
-- HTTP-driven error mapping via `AiError.reasonFromHttpStatus({ status, body })` - once a stub `HttpClient` lands.
-- `Session.send` still needs compaction triggers and skill-block parsing before it covers the full ADR-0009 wrapping target.
+- ADR-0009 wrapping follow-ons: the current `Hooks` service is observer-only (`onAgentEvent`). Mutating hooks for tool-call approval / result patching, lifecycle hooks (`onStart` / `onShutdown`), and host-specific hook adapters are still future slices. Skill-block parsing was **removed** from this target — it is a host (`pi-coding-agent`) concern (ADR-0009 amendment, 2026-05-14); the loop consumes already-expanded prompts.
+- Compaction follow-ons: structured-checkpoint summary prompt, split-turn handling, and iterative "previous summary" merge. (Configurable threshold / keep-recent via `Session.make` and the `compactionCount` field on `SessionState` landed in slice 32.)
 - Retry policy still needs production backoff and `retryAfter` support; the current tests cover no-delay retry of retryable at-open provider failures.
 - The other `test-support` fixtures per ADR-0015: `TestUI`, `TestStores`, `TestBashOperations`.
 

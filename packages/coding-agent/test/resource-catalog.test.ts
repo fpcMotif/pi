@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ResourceCatalog, resourcePrecedenceRank, type PathMetadata } from "../src/core/resource-catalog.js";
+import { type PathMetadata, ResourceCatalog, resourcePrecedenceRank } from "../src/core/resource-catalog.js";
 
 const metadata = (source: string, scope: PathMetadata["scope"], origin: PathMetadata["origin"]): PathMetadata => ({
 	source,

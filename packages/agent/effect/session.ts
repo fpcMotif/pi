@@ -144,20 +144,33 @@
  *   exponential / `retryAfter`-respecting backoff).
  * - Configurable retry policy on `Session.empty` (currently hardcoded to
  *   `MAX_LLM_RETRIES = 3` and `while-isRetryable`).
- * - Compaction triggers, skill-block parsing -- the wrapping per ADR-0009.
+ *
+ * (Skill-block parsing is NOT a loop concern — it is a host (`pi-coding-agent`)
+ * responsibility; the loop consumes already-expanded prompts. See the ADR-0009
+ * amendment, 2026-05-14.)
  */
-import { Effect, Ref, Schedule, Stream, SubscriptionRef } from "effect";
+import { Effect, Ref, Schedule, Stream, SubscriptionRef, type Types } from "effect";
 import { LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
 
-import { LlmError } from "./agent-error.js";
-import { type AgentEvent, Finish, LlmPart, ToolCompleted, ToolDispatched } from "./agent-event.js";
+import { CompactionError, LlmError } from "./agent-error.js";
+import { type AgentEvent, CompactionApplied, Finish, LlmPart, ToolCompleted, ToolDispatched } from "./agent-event.js";
 import {
 	type Input,
 	normalize as normalizeInput,
 	promptFromAcceptedEnvelope,
 	rollbackToLastUserMessage,
 } from "./agent-input.js";
+import { COMPACTION_THRESHOLD, estimateTokens, KEEP_RECENT_TOKENS, splitHistory } from "./compaction.js";
+import { Hooks } from "./hooks.js";
 import { SessionState } from "./session-state.js";
+
+/**
+ * Instruction appended after the to-summarise history slice when compaction
+ * fires. The provider sees the older conversation followed by this user
+ * message and returns a concise context checkpoint.
+ */
+const SUMMARIZATION_INSTRUCTION =
+	"Summarize the conversation above into a concise context checkpoint that another assistant can use to continue the work. Preserve goals, decisions, exact file paths, and next steps.";
 
 /**
  * `Session.send` is generic over the toolkit's `Tools` map so that callers
@@ -176,7 +189,8 @@ export interface Session {
 	readonly send: <Tools extends Record<string, Tool.Any> = {}>(
 		input: string | Input,
 		toolkit?: LanguageModel.ToolkitInput<Tools>,
-	) => Stream.Stream<AgentEvent, LlmError, LanguageModel.LanguageModel>;
+		concurrency?: Types.Concurrency,
+	) => Stream.Stream<AgentEvent, LlmError | CompactionError, LanguageModel.LanguageModel>;
 }
 
 /**
@@ -376,24 +390,85 @@ const retrySchedule = Schedule.recurs(MAX_LLM_RETRIES).pipe(
 );
 
 /**
+ * Per-session configuration. Omitted fields fall back to the module defaults
+ * (`COMPACTION_THRESHOLD` / `KEEP_RECENT_TOKENS`). A configurable retry policy
+ * is a follow-on slice.
+ */
+export interface SessionConfig {
+	/** Token estimate above which `Session.send` compacts history before the turn. */
+	readonly compactionThreshold?: number;
+	/** Tokens of recent history `splitHistory` keeps verbatim during compaction. */
+	readonly keepRecentTokens?: number;
+}
+
+/**
  * Build a new `Session`. The empty Session has empty history (`Prompt.empty`,
  * `turnCount: 0`). Each `send` call (a) bumps `turnCount` and appends the
  * new user prompt to history before opening the upstream stream, (b)
  * accumulates text deltas as the stream flows, and (c) appends the assembled
  * assistant message to history after the upstream completes.
+ *
+ * `Session.make(config?)` overrides the compaction defaults; `Session.empty`
+ * is `Session.make({})` — the unconfigured session with module defaults.
  */
-export const Session: { readonly empty: Effect.Effect<Session> } = {
-	empty: Effect.gen(function* () {
+const makeSession = (config: SessionConfig = {}): Effect.Effect<Session> =>
+	Effect.gen(function* () {
+		const compactionThreshold = config.compactionThreshold ?? COMPACTION_THRESHOLD;
+		const keepRecentTokens = config.keepRecentTokens ?? KEEP_RECENT_TOKENS;
 		const state = yield* SubscriptionRef.make(SessionState.empty);
 		return {
 			state,
 			send<Tools extends Record<string, Tool.Any> = {}>(
 				input: string | Input,
 				toolkit?: LanguageModel.ToolkitInput<Tools>,
+				concurrency?: Types.Concurrency,
 			) {
+				// ADR-0009: tool execution defaults to sequential. The effect framework
+				// defaults `concurrency` to `"unbounded"` when omitted, so resolve an
+				// explicit `1` here unless the caller opted into parallelism.
+				const resolvedConcurrency: Types.Concurrency = concurrency ?? 1;
 				return Stream.unwrap(
 					Effect.gen(function* () {
 						const normalized = normalizeInput(input);
+
+						// Observer hooks — read once per send. `Hooks` is a `Context.Reference`
+						// with a no-op default, so this never adds to `send`'s `R` channel.
+						const hooks = yield* Hooks;
+
+						// 0. COMPACTION CHECK — runs BEFORE the input-variant history update.
+						//    When `state.history` has grown past `COMPACTION_THRESHOLD`, summarise
+						//    the older portion via `LanguageModel.generateText` and rebuild
+						//    `state.history` as `[summary user message, ...recent kept messages]`.
+						//    The `CompactionApplied` event is prepended to the stream at the end
+						//    of this `Effect.gen` so consumers see it as the first element.
+						const preCompaction = yield* SubscriptionRef.get(state);
+						let compactionEvent: CompactionApplied | undefined;
+						const tokensBefore = estimateTokens(preCompaction.history);
+						if (tokensBefore > compactionThreshold) {
+							const { toSummarize, toKeep } = splitHistory(preCompaction.history, keepRecentTokens);
+							// A failed summarisation call surfaces as `CompactionError` in
+							// `send`'s error channel — distinct from the per-turn `LlmError`.
+							const summary = yield* LanguageModel.generateText({
+								prompt: Prompt.concat(toSummarize, Prompt.make(SUMMARIZATION_INSTRUCTION)),
+							}).pipe(Effect.mapError((aiError) => new CompactionError({ cause: aiError })));
+							const compactedHistory = Prompt.fromMessages([
+								Prompt.makeMessage("user", {
+									content: [Prompt.makePart("text", { text: summary.text })],
+								}),
+								...toKeep.content,
+							]);
+							yield* SubscriptionRef.update(state, (s) =>
+								SessionState.with(s, {
+									history: compactedHistory,
+									compactionCount: s.compactionCount + 1,
+								}),
+							);
+							compactionEvent = new CompactionApplied({
+								tokensBefore,
+								tokensAfter: estimateTokens(compactedHistory),
+								summarizedMessageCount: toSummarize.content.length,
+							});
+						}
 
 						// 1. ONCE PER SEND — compute the next history depending on the input variant,
 						//    then bump turnCount and commit the new history atomically. This runs
@@ -407,19 +482,22 @@ export const Session: { readonly empty: Effect.Effect<Session> } = {
 						//    - Retry:     roll history back to the last `user` message (dropping the
 						//                 trailing assistant turn), then proceed like Continue.
 						yield* SubscriptionRef.update(state, (s) => {
-							const nextHistory =
-								normalized._tag === "NewPrompt"
-									? Prompt.concat(s.history, normalized.prompt)
-									: normalized._tag === "AcceptedPromptEnvelope"
-										? normalized.systemPromptOverride === undefined
-											? Prompt.concat(s.history, promptFromAcceptedEnvelope(normalized))
-											: Prompt.setSystem(
-													Prompt.concat(s.history, promptFromAcceptedEnvelope(normalized)),
-													normalized.systemPromptOverride,
-												)
-										: normalized._tag === "Retry"
-											? rollbackToLastUserMessage(s.history)
-											: s.history;
+							const nextHistory = ((): Prompt.Prompt => {
+								switch (normalized._tag) {
+									case "NewPrompt":
+										return Prompt.concat(s.history, normalized.prompt);
+									case "AcceptedPromptEnvelope": {
+										const withEnvelope = Prompt.concat(s.history, promptFromAcceptedEnvelope(normalized));
+										return normalized.systemPromptOverride === undefined
+											? withEnvelope
+											: Prompt.setSystem(withEnvelope, normalized.systemPromptOverride);
+									}
+									case "Retry":
+										return rollbackToLastUserMessage(s.history);
+									default:
+										return s.history;
+								}
+							})();
 							return SessionState.advance(s, nextHistory);
 						});
 						const snapshot = yield* SubscriptionRef.get(state);
@@ -449,14 +527,20 @@ export const Session: { readonly empty: Effect.Effect<Session> } = {
 								const usageRef = yield* Ref.make<CapturedUsage | null>(null);
 
 								// Open the upstream stream with the FULL history (incl. just-appended user msg).
+								// `concurrency` controls tool-call resolution parallelism (sequential
+								// by default per ADR-0009; see `resolvedConcurrency` above).
 								// `as never` bypasses the streamText overload-picker, which can't see through
 								// the conditional spread at the type level. Runtime path is identical.
 								const upstream =
 									toolkit === undefined
-										? LanguageModel.streamText({ prompt: snapshot.history })
+										? LanguageModel.streamText({
+												prompt: snapshot.history,
+												concurrency: resolvedConcurrency,
+											})
 										: (LanguageModel.streamText({
 												prompt: snapshot.history,
 												toolkit,
+												concurrency: resolvedConcurrency,
 											} as never) as Stream.Stream<unknown, unknown, LanguageModel.LanguageModel>);
 
 								return upstream.pipe(
@@ -498,8 +582,7 @@ export const Session: { readonly empty: Effect.Effect<Session> } = {
 																		Prompt.make([{ role: "assistant", content }] as never),
 																	)
 																: s.history;
-														return new SessionState({
-															turnCount: s.turnCount,
+														return SessionState.with(s, {
 															history: nextHistory,
 															inputTokens: s.inputTokens + (usage?.inputTokens ?? 0),
 															outputTokens: s.outputTokens + (usage?.outputTokens ?? 0),
@@ -536,7 +619,7 @@ export const Session: { readonly empty: Effect.Effect<Session> } = {
 						//    the loop at MAX_LLM_RETRIES. The outer span wraps the whole send
 						//    (including all retries) so consumers see a parent span with N
 						//    attempt-span children.
-						return attemptStream.pipe(
+						const mainStream = attemptStream.pipe(
 							Stream.retry(retrySchedule),
 							Stream.withSpan("pi.Session.send", {
 								attributes: {
@@ -545,9 +628,34 @@ export const Session: { readonly empty: Effect.Effect<Session> } = {
 								},
 							}),
 						);
+
+						// Prepend the `CompactionApplied` event when compaction fired at the
+						// top of this send, so consumers observe it as the first element.
+						const fullStream =
+							compactionEvent === undefined
+								? mainStream
+								: Stream.concat(Stream.succeed<AgentEvent>(compactionEvent), mainStream);
+
+						// Observer hooks (ADR-0009): invoke `onAgentEvent` for every event the
+						// consumer sees, in stream order. The `Hooks` reference defaults to a
+						// no-op, so this is inert unless a host / extension / test provides one.
+						return fullStream.pipe(Stream.tap((event) => hooks.onAgentEvent(event)));
 					}),
 				);
 			},
 		} satisfies Session;
-	}),
+	});
+
+/**
+ * `Session.make(config?)` builds a session with optional per-session config;
+ * `Session.empty` is the unconfigured session (`Session.make({})`) — module
+ * defaults for compaction. Both are `Effect`s that produce a FRESH `Session`
+ * (with its own `state` `SubscriptionRef`) each time they are run.
+ */
+export const Session: {
+	readonly empty: Effect.Effect<Session>;
+	readonly make: (config?: SessionConfig) => Effect.Effect<Session>;
+} = {
+	make: makeSession,
+	empty: makeSession(),
 };

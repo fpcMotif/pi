@@ -161,12 +161,7 @@ export const writeToolRenderer: ToolRenderer<WriteRenderArgs, undefined> = {
 			component.cache = undefined;
 		}
 		component.setText(
-			formatWriteCall(
-				args,
-				{ expanded: context.expanded, isPartial: context.isPartial },
-				theme,
-				component.cache,
-			),
+			formatWriteCall(args, { expanded: context.expanded, isPartial: context.isPartial }, theme, component.cache),
 		);
 		return component;
 	},

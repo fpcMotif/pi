@@ -22,7 +22,9 @@ export interface ToolRenderSnapshot {
 export class ToolRendererHost {
 	private current: ToolRenderSnapshot;
 
-	constructor(snapshot: Omit<ToolRenderSnapshot, "expanded" | "isPartial" | "executionStarted" | "argsComplete" | "result">) {
+	constructor(
+		snapshot: Omit<ToolRenderSnapshot, "expanded" | "isPartial" | "executionStarted" | "argsComplete" | "result">,
+	) {
 		this.current = {
 			...snapshot,
 			expanded: false,
