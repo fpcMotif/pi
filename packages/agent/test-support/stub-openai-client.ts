@@ -1,8 +1,9 @@
-import { OpenAiClient } from "@effect/ai-openai";
+import { OpenAiClient, OpenAiSchema } from "@effect/ai-openai";
 import { Effect, Layer } from "effect";
 import type { AiError } from "effect/unstable/ai";
-import * as Headers from "effect/unstable/http/Headers";
+import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
+import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
 export type StubOutputItem =
 	| { readonly type: "text"; readonly text: string }
@@ -28,7 +29,39 @@ export interface StubOpenAiClientOptions {
 	readonly error?: AiError.AiError;
 }
 
-export const buildOpenAiOutput = (item: StubOutputItem): Record<string, unknown> => {
+export type StubOpenAiResponse = typeof OpenAiSchema.Response.Type;
+export type StubOpenAiOutputItem = StubOpenAiResponse["output"][number];
+
+const stubRequest = HttpClientRequest.post("https://stub.openai.invalid/v1/responses");
+
+export const makeStubHttpResponse = (): HttpClientResponse.HttpClientResponse =>
+	HttpClientResponse.fromWeb(stubRequest, new globalThis.Response(null, { status: 200 }));
+
+export const stubHttpClient = HttpClient.make(() =>
+	Effect.die("stub OpenAiClient: raw HTTP client is not implemented"),
+);
+
+export const notImplementedCreateResponse: OpenAiClient.Service["createResponse"] = () =>
+	Effect.die("stub OpenAiClient: createResponse is not implemented");
+
+export const notImplementedCreateResponseStream: OpenAiClient.Service["createResponseStream"] = () =>
+	Effect.die("stub OpenAiClient: createResponseStream is not implemented");
+
+export const notImplementedCreateEmbedding: OpenAiClient.Service["createEmbedding"] = () =>
+	Effect.die("stub OpenAiClient: createEmbedding is not implemented");
+
+export const succeedOpenAiResponse = (
+	response: StubOpenAiResponse,
+): Effect.Effect<readonly [StubOpenAiResponse, HttpClientResponse.HttpClientResponse]> => {
+	const tuple: readonly [StubOpenAiResponse, HttpClientResponse.HttpClientResponse] = [
+		response,
+		makeStubHttpResponse(),
+	];
+
+	return Effect.succeed(tuple);
+};
+
+export const buildOpenAiOutput = (item: StubOutputItem): StubOpenAiOutputItem => {
 	if (item.type === "text") {
 		return {
 			type: "message",
@@ -69,30 +102,24 @@ export const stubOpenAiClient = (options: StubOpenAiClientOptions) => {
 	const items: ReadonlyArray<StubOutputItem> =
 		options.outputs ?? (options.text !== undefined ? [{ type: "text", text: options.text }] : []);
 
-	const cannedBody = {
+	const cannedBody: StubOpenAiResponse = {
 		id: responseId,
 		created_at: 0,
 		model,
 		output: items.map(buildOpenAiOutput),
 	};
 
-	const cannedResponse = {
-		request: HttpClientRequest.post("https://stub.openai.invalid/v1/responses"),
-		status: 200,
-		headers: Headers.empty,
-	};
-
-	const createResponseImpl = options.error
-		? (((_request: unknown) => Effect.fail(options.error)) as never)
-		: (((_request: unknown) => Effect.succeed([cannedBody, cannedResponse] as never)) as never);
+	const error = options.error;
+	const createResponseImpl: OpenAiClient.Service["createResponse"] =
+		error === undefined ? () => succeedOpenAiResponse(cannedBody) : () => Effect.fail(error);
 
 	return Layer.succeed(
 		OpenAiClient.OpenAiClient,
 		OpenAiClient.OpenAiClient.of({
-			client: undefined as never,
+			client: stubHttpClient,
 			createResponse: createResponseImpl,
-			createResponseStream: (() => Effect.die("stubOpenAiClient: createResponseStream not implemented")) as never,
-			createEmbedding: (() => Effect.die("stubOpenAiClient: createEmbedding not implemented")) as never,
+			createResponseStream: notImplementedCreateResponseStream,
+			createEmbedding: notImplementedCreateEmbedding,
 		}),
 	);
 };

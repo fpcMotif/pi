@@ -1,7 +1,23 @@
 {
+	"$schema": "./node_modules/@effect/language-service/schema.json",
 	"extends": "./tsconfig.base.json",
 	"compilerOptions": {
 		"noEmit": true,
+		"plugins": [
+			{
+				"name": "@effect/language-service",
+				"diagnostics": true,
+				"refactors": true,
+				"quickinfo": true,
+				"completions": true,
+				"diagnosticSeverity": {
+					"floatingEffect": "error",
+					"missingEffectContext": "error",
+					"missingEffectError": "error",
+					"missingLayerContext": "error"
+				}
+			}
+		],
 		"paths": {
 			"*": ["./*"],
 			"@earendil-works/pi-ai": ["./packages/ai/src/index.ts"],

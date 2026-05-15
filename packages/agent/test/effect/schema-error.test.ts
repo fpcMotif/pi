@@ -9,15 +9,26 @@ import { stubOpenAiClient } from "../../test-support/stub-openai-client.js";
 const GetWeather = Tool.make("GetWeather", {
 	description: "Get the current weather for a city.",
 	parameters: Schema.Struct({ city: Schema.String }),
-	success: Schema.Struct({ temperature: Schema.Number, condition: Schema.String }),
+	success: Schema.Unknown.pipe(
+		Schema.check(
+			Schema.makeFilter((value: unknown) =>
+				typeof value === "object" &&
+				value !== null &&
+				"temperature" in value &&
+				"condition" in value &&
+				typeof value.temperature === "number" &&
+				typeof value.condition === "string"
+					? undefined
+					: "expected temperature number and condition string",
+			),
+		),
+	),
 });
 
 const Weather = Toolkit.make(GetWeather);
 
-// Handler returns an obviously wrong shape. The cast bypasses TS's compile-time
-// guard so we can exercise the runtime schema validation path.
 const BadWeatherHandlers = Weather.toLayer({
-	GetWeather: (() => Effect.succeed({ wrong: "shape", missing: "fields" })) as never,
+	GetWeather: () => Effect.succeed({ wrong: "shape", missing: "fields" }),
 });
 
 describe("Schema error path (handler returns invalid success value)", () => {

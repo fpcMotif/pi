@@ -52,6 +52,18 @@ export class SchemaError extends Schema.TaggedErrorClass<SchemaError>()("SchemaE
 }) {}
 
 /**
+ * A durable state side effect failed at the Store boundary. This keeps
+ * storage failures inside the AgentError union instead of leaking raw
+ * filesystem / key-value-store implementation errors through Session streams.
+ */
+export class StoreError extends Schema.TaggedErrorClass<StoreError>()("StoreError", {
+	store: Schema.String,
+	operation: Schema.String,
+	message: Schema.String,
+	cause: Schema.Unknown,
+}) {}
+
+/**
  * The current action fiber was interrupted (per ADR-0008's
  * `Fiber.interrupt(currentActionFiber)` cancellation pattern). This is a
  * **graceful** stop, not a crash — clients should render it as "stopped" not
@@ -74,4 +86,4 @@ export class CompactionError extends Schema.TaggedErrorClass<CompactionError>()(
 /**
  * The closed union of every `AgentError` variant.
  */
-export type AgentError = LlmError | ToolError | SchemaError | CancellationError | CompactionError;
+export type AgentError = LlmError | ToolError | SchemaError | StoreError | CancellationError | CompactionError;

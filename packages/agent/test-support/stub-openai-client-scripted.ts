@@ -1,10 +1,16 @@
 import { OpenAiClient } from "@effect/ai-openai";
 import { Effect, Layer, Ref } from "effect";
 import type { AiError } from "effect/unstable/ai";
-import * as Headers from "effect/unstable/http/Headers";
-import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 
-import { buildOpenAiOutput, type StubOutputItem } from "./stub-openai-client.js";
+import {
+	buildOpenAiOutput,
+	notImplementedCreateEmbedding,
+	notImplementedCreateResponseStream,
+	stubHttpClient,
+	succeedOpenAiResponse,
+	type StubOpenAiResponse,
+	type StubOutputItem,
+} from "./stub-openai-client.js";
 
 export type StubScriptStep =
 	| {
@@ -14,12 +20,6 @@ export type StubScriptStep =
 			readonly model?: string;
 	  }
 	| { readonly type: "error"; readonly error: AiError.AiError };
-
-const cannedResponse = {
-	request: HttpClientRequest.post("https://stub.openai.invalid/v1/responses"),
-	status: 200,
-	headers: Headers.empty,
-};
 
 /**
  * A Layer providing {@link OpenAiClient} whose `createResponse` consumes a
@@ -33,8 +33,8 @@ export const stubOpenAiClientScripted = (script: ReadonlyArray<StubScriptStep>) 
 		Effect.gen(function* () {
 			const callIndex = yield* Ref.make(0);
 			return OpenAiClient.OpenAiClient.of({
-				client: undefined as never,
-				createResponse: ((_request: unknown) =>
+				client: stubHttpClient,
+				createResponse: () =>
 					Effect.gen(function* () {
 						const i = yield* Ref.getAndUpdate(callIndex, (n) => n + 1);
 						const step = script[i];
@@ -46,17 +46,16 @@ export const stubOpenAiClientScripted = (script: ReadonlyArray<StubScriptStep>) 
 						if (step.type === "error") {
 							return yield* Effect.fail(step.error);
 						}
-						const cannedBody = {
+						const cannedBody: StubOpenAiResponse = {
 							id: step.responseId ?? `resp_stub_${i}`,
 							created_at: 0,
 							model: step.model ?? "stub-model",
 							output: step.outputs.map(buildOpenAiOutput),
 						};
-						return [cannedBody, cannedResponse];
-					})) as never,
-				createResponseStream: (() =>
-					Effect.die("stubOpenAiClientScripted: createResponseStream not implemented")) as never,
-				createEmbedding: (() => Effect.die("stubOpenAiClientScripted: createEmbedding not implemented")) as never,
+						return yield* succeedOpenAiResponse(cannedBody);
+					}),
+				createResponseStream: notImplementedCreateResponseStream,
+				createEmbedding: notImplementedCreateEmbedding,
 			});
 		}),
 	);

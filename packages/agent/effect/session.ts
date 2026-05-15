@@ -7,7 +7,7 @@
  * const events = yield* Stream.runCollect(session.send("hello"))
  * ```
  *
- * `send(prompt, toolkit?)` returns a `Stream<AgentEvent, LlmError, LanguageModel>`:
+ * `send(input, toolkit?)` returns a `Stream<AgentEvent, AgentError, LanguageModel.LanguageModel>`:
  *
  * - Each provider `Response.AnyPart` becomes one `LlmPart` event (raw view).
  * - When a `tool-call` part appears, an additional `ToolDispatched` event is
@@ -149,10 +149,10 @@
  * responsibility; the loop consumes already-expanded prompts. See the ADR-0009
  * amendment, 2026-05-14.)
  */
-import { Effect, Ref, Schedule, Stream, SubscriptionRef, type Types } from "effect";
+import { Effect, Option, Ref, Schedule, Stream, SubscriptionRef, type Types } from "effect";
 import { LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
 
-import { CompactionError, LlmError } from "./agent-error.js";
+import { type AgentError, CompactionError, LlmError } from "./agent-error.js";
 import { type AgentEvent, CompactionApplied, Finish, LlmPart, ToolCompleted, ToolDispatched } from "./agent-event.js";
 import {
 	type Input,
@@ -163,6 +163,7 @@ import {
 import { COMPACTION_THRESHOLD, estimateTokens, KEEP_RECENT_TOKENS, splitHistory } from "./compaction.js";
 import { Hooks } from "./hooks.js";
 import { SessionState } from "./session-state.js";
+import { SessionStore } from "./stores/session-store.js";
 
 /**
  * Instruction appended after the to-summarise history slice when compaction
@@ -190,8 +191,20 @@ export interface Session {
 		input: string | Input,
 		toolkit?: LanguageModel.ToolkitInput<Tools>,
 		concurrency?: Types.Concurrency,
-	) => Stream.Stream<AgentEvent, LlmError | CompactionError, LanguageModel.LanguageModel>;
+	) => Stream.Stream<AgentEvent, AgentError, LanguageModel.LanguageModel>;
 }
+
+interface MakeOptions {
+	readonly initialState: SessionState;
+	readonly persist: (state: SessionState) => Effect.Effect<void, AgentError>;
+}
+
+const isRecord = (value: unknown): value is Record<PropertyKey, unknown> => typeof value === "object" && value !== null;
+
+const hasStringProperty = <Key extends PropertyKey>(
+	value: Record<PropertyKey, unknown>,
+	key: Key,
+): value is Record<Key, string> & Record<PropertyKey, unknown> => typeof value[key] === "string";
 
 /**
  * Lift one upstream `Response.AnyPart` into the pi `AgentEvent` view. Every
@@ -201,29 +214,28 @@ export interface Session {
  */
 const liftPart = (part: unknown): ReadonlyArray<AgentEvent> => {
 	const base = new LlmPart({ part });
-	if (typeof part !== "object" || part === null) return [base];
+	if (!isRecord(part)) return [base];
 
-	const tag = (part as { readonly type?: unknown }).type;
+	const tag = part.type;
 
-	if (tag === "tool-call") {
-		const p = part as {
-			readonly id: string;
-			readonly name: string;
-			readonly params: unknown;
-		};
-		return [base, new ToolDispatched({ toolName: p.name, toolCallId: p.id, params: p.params })];
+	if (tag === "tool-call" && hasStringProperty(part, "id") && hasStringProperty(part, "name")) {
+		return [base, new ToolDispatched({ toolName: part.name, toolCallId: part.id, params: part.params })];
 	}
 
-	if (tag === "tool-result") {
-		const p = part as {
-			readonly id: string;
-			readonly name: string;
-			readonly isFailure: boolean;
-			readonly result: unknown;
-		};
+	if (
+		tag === "tool-result" &&
+		hasStringProperty(part, "id") &&
+		hasStringProperty(part, "name") &&
+		typeof part.isFailure === "boolean"
+	) {
 		return [
 			base,
-			new ToolCompleted({ toolName: p.name, toolCallId: p.id, isFailure: p.isFailure, result: p.result }),
+			new ToolCompleted({
+				toolName: part.name,
+				toolCallId: part.id,
+				isFailure: part.isFailure,
+				result: part.result,
+			}),
 		];
 	}
 
@@ -269,7 +281,7 @@ const flushReasoning = (acc: AssistantContentAcc): AssistantContentAcc =>
 const flushAll = (acc: AssistantContentAcc): AssistantContentAcc => flushReasoning(flushText(acc));
 
 const absorbPart = (acc: AssistantContentAcc, part: unknown): AssistantContentAcc => {
-	if (typeof part !== "object" || part === null) return acc;
+	if (!isRecord(part)) return acc;
 	const p = part as { readonly type?: unknown; readonly delta?: unknown };
 
 	// Text boundaries flush BOTH accumulators (defensive — closes any prior
@@ -298,36 +310,41 @@ const absorbPart = (acc: AssistantContentAcc, part: unknown): AssistantContentAc
 	}
 
 	if (p.type === "tool-call") {
-		const tc = part as {
-			readonly id: string;
-			readonly name: string;
-			readonly params: unknown;
-		};
+		// Mirror liftPart's defensive guard: a malformed tool-call (missing
+		// string id/name) is skipped rather than written to history as a
+		// part `Prompt.make` would reject at the post-stream append.
+		if (!hasStringProperty(part, "id") || !hasStringProperty(part, "name")) {
+			return acc;
+		}
 		const flushed = flushAll(acc);
 		return {
 			pendingText: "",
 			pendingReasoning: "",
 			parts: [
 				...flushed.parts,
-				{ type: "tool-call", id: tc.id, name: tc.name, params: tc.params, providerExecuted: false },
+				{ type: "tool-call", id: part.id, name: part.name, params: part.params, providerExecuted: false },
 			],
 		};
 	}
 
 	if (p.type === "tool-result") {
-		const tr = part as {
-			readonly id: string;
-			readonly name: string;
-			readonly isFailure: boolean;
-			readonly result: unknown;
-		};
+		// Mirror liftPart's defensive guard: a malformed tool-result is
+		// skipped rather than written to history as a part `Prompt.make`
+		// would reject at the post-stream append.
+		if (
+			!hasStringProperty(part, "id") ||
+			!hasStringProperty(part, "name") ||
+			typeof part.isFailure !== "boolean"
+		) {
+			return acc;
+		}
 		const flushed = flushAll(acc);
 		return {
 			pendingText: "",
 			pendingReasoning: "",
 			parts: [
 				...flushed.parts,
-				{ type: "tool-result", id: tr.id, name: tr.name, isFailure: tr.isFailure, result: tr.result },
+				{ type: "tool-result", id: part.id, name: part.name, isFailure: part.isFailure, result: part.result },
 			],
 		};
 	}
@@ -411,11 +428,11 @@ export interface SessionConfig {
  * `Session.make(config?)` overrides the compaction defaults; `Session.empty`
  * is `Session.make({})` — the unconfigured session with module defaults.
  */
-const makeSession = (config: SessionConfig = {}): Effect.Effect<Session> =>
+export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect<Session> =>
 	Effect.gen(function* () {
-		const compactionThreshold = config.compactionThreshold ?? COMPACTION_THRESHOLD;
-		const keepRecentTokens = config.keepRecentTokens ?? KEEP_RECENT_TOKENS;
-		const state = yield* SubscriptionRef.make(SessionState.empty);
+		const compactionThreshold = options.compactionThreshold ?? COMPACTION_THRESHOLD;
+		const keepRecentTokens = options.keepRecentTokens ?? KEEP_RECENT_TOKENS;
+		const state = yield* SubscriptionRef.make(options.initialState);
 		return {
 			state,
 			send<Tools extends Record<string, Tool.Any> = {}>(
@@ -501,6 +518,13 @@ const makeSession = (config: SessionConfig = {}): Effect.Effect<Session> =>
 							return SessionState.advance(s, nextHistory);
 						});
 						const snapshot = yield* SubscriptionRef.get(state);
+
+						// 1a. Persist the post-bump snapshot so `Session.durable` reloads
+						//     the latest turnCount + history. Runs once per send, before
+						//     the upstream opens — a failed send still persists the
+						//     turnCount bump. For `Session.empty` / `Session.make` this is
+						//     a no-op (`persist: () => Effect.void`).
+						yield* options.persist(snapshot);
 
 						// 1b. Per-send attempt counter. Lives in the outer Effect.gen so the
 						//     Stream.retry re-runs of the inner Effect.gen below all share it —
@@ -647,15 +671,35 @@ const makeSession = (config: SessionConfig = {}): Effect.Effect<Session> =>
 	});
 
 /**
- * `Session.make(config?)` builds a session with optional per-session config;
- * `Session.empty` is the unconfigured session (`Session.make({})`) — module
- * defaults for compaction. Both are `Effect`s that produce a FRESH `Session`
- * (with its own `state` `SubscriptionRef`) each time they are run.
+ * `Session.durable(id)` loads/persists `SessionState` through `SessionStore`.
+ * Each load resolves the previous snapshot (or `SessionState.empty` for a new
+ * id) and every `send` persists the post-bump snapshot back to the store.
+ */
+export const durable = (sessionId: string): Effect.Effect<Session, AgentError, SessionStore> =>
+	Effect.gen(function* () {
+		const store = yield* SessionStore;
+		const stored = yield* store.load(sessionId);
+		return yield* makeSession({
+			initialState: Option.getOrElse(stored, () => SessionState.empty),
+			persist: (state) => store.save(sessionId, state),
+		});
+	});
+
+/**
+ * `Session.make(config?)` builds a non-durable session with optional
+ * per-session compaction config; `Session.empty` is the unconfigured session
+ * (`Session.make({})`) — module defaults for compaction, no-op `persist`.
+ * `Session.durable(id)` is the `SessionStore`-backed variant. All three are
+ * `Effect`s that produce a FRESH `Session` (with its own `state`
+ * `SubscriptionRef`) each time they are run.
  */
 export const Session: {
 	readonly empty: Effect.Effect<Session>;
 	readonly make: (config?: SessionConfig) => Effect.Effect<Session>;
+	readonly durable: typeof durable;
 } = {
-	make: makeSession,
-	empty: makeSession(),
+	make: (config: SessionConfig = {}) =>
+		makeSession({ initialState: SessionState.empty, persist: () => Effect.void, ...config }),
+	empty: makeSession({ initialState: SessionState.empty, persist: () => Effect.void }),
+	durable,
 };

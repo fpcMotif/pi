@@ -73,6 +73,10 @@ npm run check        # Lint, format, and type check
 
 > **Note:** `npm run check` requires `npm run build` to be run first. The web-ui package uses `tsc` which needs compiled `.d.ts` files from dependencies.
 
+## Editor setup
+
+Effect rewrite paths use `@effect/language-service` through `tsconfig.json`. Configure your editor to use the workspace TypeScript version so `tsserver` loads the plugin.
+
 ## License
 
 MIT

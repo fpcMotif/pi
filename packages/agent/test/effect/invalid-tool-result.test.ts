@@ -15,25 +15,39 @@ const GetWeather = Tool.make("GetWeather", {
 	description: "Get the current weather for a city.",
 	parameters: Schema.Struct({ city: Schema.String }),
 	success: Schema.Struct({ temperature: Schema.Number, condition: Schema.String }),
+	failure: Schema.Unknown,
 });
 
 const Weather = Toolkit.make(GetWeather);
 
+const failWithInternalSchemaError = Effect.flip(Schema.decodeUnknownEffect(InternalShape)({ x: "not a number" })).pipe(
+	Effect.flatMap((error) => Effect.fail(error)),
+);
+
 const SchemaFailHandlers = Weather.toLayer({
-	GetWeather: ((_params: unknown) => Schema.decodeUnknownEffect(InternalShape)({ x: "not a number" })) as never,
+	GetWeather: () => failWithInternalSchemaError,
 });
+
+const expectAiError = (error: unknown): AiError.AiError => {
+	expect(AiError.isAiError(error)).toBe(true);
+	if (!AiError.isAiError(error)) {
+		throw new Error("expected AiError");
+	}
+	return error;
+};
 
 describe("Tool handler Effect.fail(SchemaError) (the InvalidToolResultError branch)", () => {
 	it.effect("wraps a handler-side Schema.SchemaError as AiError.InvalidToolResultError", () =>
 		Effect.gen(function* () {
-			const error = yield* Effect.flip(
-				LanguageModel.generateText({
-					prompt: "What's the weather in Paris?",
-					toolkit: Weather,
-				}),
+			const error = expectAiError(
+				yield* Effect.flip(
+					LanguageModel.generateText({
+						prompt: "What's the weather in Paris?",
+						toolkit: Weather,
+					}),
+				),
 			);
 
-			expect(AiError.isAiError(error)).toBe(true);
 			expect(error.reason._tag).toBe("InvalidToolResultError");
 			expect(error.reason.isRetryable).toBe(false);
 			if (error.reason._tag === "InvalidToolResultError") {
