@@ -24,6 +24,11 @@ packages/*/dist-firefox/
 # Package specific
 .npm/
 coverage/
+coverage-fp/
+**/coverage-fp/
+*.cov.py
+*.uncov.cjs
+*.uncov.*
 .nyc_output/
 .pi_config/
 tui-debug.log
