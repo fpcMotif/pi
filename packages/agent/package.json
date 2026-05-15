@@ -30,6 +30,7 @@
 		"effect": "4.0.0-beta.65",
 		"ignore": "^7.0.5",
 		"typebox": "^1.1.24",
+		"uuid": "^14.0.0",
 		"yaml": "^2.8.2"
 	},
 	"keywords": [
