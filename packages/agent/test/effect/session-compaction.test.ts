@@ -199,4 +199,53 @@ describe("Session.send compaction triggers", () => {
 			),
 		),
 	);
+
+	it.effect("structured-checkpoint summary prompt: the summary call asks for explicit markdown sections", () =>
+		Effect.gen(function* () {
+			const session = yield* Session.empty;
+
+			const halfChars = (COMPACTION_THRESHOLD + 5000) * 2;
+			const bigHistory = Prompt.make([
+				{ role: "user", content: "u".repeat(halfChars) },
+				{ role: "assistant", content: [{ type: "text", text: "a".repeat(halfChars) }] },
+			] as never);
+			yield* SubscriptionRef.set(
+				session.state,
+				new SessionState({
+					turnCount: 3,
+					history: bigHistory,
+					inputTokens: 0,
+					outputTokens: 0,
+					compactionCount: 0,
+				}),
+			);
+
+			const recording = recordingLanguageModelDual({ summaryText: "## Summary", streamParts });
+			yield* Stream.runDrain(session.send("next question")).pipe(Effect.provide(recording.layer));
+
+			expect(recording.summaryCalls).toHaveLength(1);
+
+			// The summary call's prompt is the older history followed by a user
+			// message carrying the SUMMARIZATION_INSTRUCTION (per slice 38's
+			// structured-checkpoint shape). Pull the last user message's text and
+			// assert every section header is present.
+			const summaryPrompt = recording.summaryCalls[0].prompt as {
+				readonly content: ReadonlyArray<{ readonly role: string; readonly content: unknown }>;
+			};
+			const lastUser = [...summaryPrompt.content].reverse().find((m) => m.role === "user");
+			expect(lastUser).toBeDefined();
+			const lastContent = lastUser?.content;
+			const instructionText =
+				typeof lastContent === "string"
+					? lastContent
+					: ((lastContent as ReadonlyArray<{ readonly type: string; readonly text: string }>)[0]?.text ?? "");
+
+			expect(instructionText).toContain("## Goals");
+			expect(instructionText).toContain("## Decisions");
+			expect(instructionText).toContain("## Files Touched");
+			expect(instructionText).toContain("## Next Steps");
+			// And the slice-28 "context checkpoint" framing language survives.
+			expect(instructionText).toContain("context checkpoint");
+		}),
+	);
 });

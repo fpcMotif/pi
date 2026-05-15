@@ -27,7 +27,16 @@ const cases = [
 	{ status: 401, expectedTag: "AuthenticationError" as const },
 	{ status: 403, expectedTag: "AuthenticationError" as const },
 	{ status: 429, expectedTag: "RateLimitError" as const },
+	// 5xx — `reasonFromHttpStatus`'s `>= 500` branch is broad, not specific to 500.
 	{ status: 500, expectedTag: "InternalProviderError" as const },
+	{ status: 502, expectedTag: "InternalProviderError" as const },
+	{ status: 503, expectedTag: "InternalProviderError" as const },
+	{ status: 504, expectedTag: "InternalProviderError" as const },
+	// Unmapped status — `default` branch falls through to `UnknownError`.
+	// (Note: 404 is intentionally absent — the OpenAI provider maps it to
+	// `InvalidRequestError` rather than `UnknownError`, an HTTP-mapping
+	// override layered on top of `reasonFromHttpStatus`.)
+	{ status: 418, expectedTag: "UnknownError" as const },
 ];
 
 describe("HTTP-driven error mapping", () => {

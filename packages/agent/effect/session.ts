@@ -103,15 +103,19 @@
  *   update; runs in the outer `Stream.unwrap`) and a per-attempt factory (Ref
  *   creation + upstream open + accumulator pipeline; runs in an inner
  *   `Stream.unwrap` so each retry sees fresh Refs).
- * - The inner stream is wrapped with `Stream.retry(retrySchedule)` where
- *   `retrySchedule = Schedule.recurs(MAX_LLM_RETRIES).pipe(Schedule.while(({ input }) => input.aiError.isRetryable))`.
+ * - The inner stream is wrapped with `Stream.retry(makeRetrySchedule(maxLlmRetries))`,
+ *   where `maxLlmRetries = options.maxLlmRetries ?? MAX_LLM_RETRIES` -- a
+ *   per-session override that defaults to `MAX_LLM_RETRIES` and where `0`
+ *   disables retries entirely. The factory builds
+ *   `Schedule.recurs(maxLlmRetries).pipe(Schedule.while(({ input }) => input.aiError.isRetryable))`.
  * - Net effect: on a retryable failure (`RateLimitError`, `OverloadedError`,
  *   `TransportError`, …) the inner stream re-opens with fresh accRef/usageRef
- *   and a fresh upstream; up to `MAX_LLM_RETRIES` re-attempts. On a
- *   non-retryable failure (`AuthenticationError`, `ContentPolicyError`,
- *   `InvalidRequestError`, …) the predicate is false → schedule halts →
- *   error propagates after the first attempt. After the retry cap is
- *   exhausted, the last error propagates.
+ *   and a fresh upstream; up to `maxLlmRetries` re-attempts (default
+ *   `MAX_LLM_RETRIES`, `0` disables). On a non-retryable failure
+ *   (`AuthenticationError`, `ContentPolicyError`, `InvalidRequestError`, …)
+ *   the predicate is false → schedule halts → error propagates after the
+ *   first attempt. After the retry cap is exhausted, the last error
+ *   propagates.
  * - History + turnCount are bumped ONCE per `send` (not once per attempt) —
  *   they sit outside the retry boundary.
  * - Mid-stream retry caveat: if events flow then the upstream fails, the
@@ -168,10 +172,22 @@ import { SessionStore } from "./stores/session-store.js";
 /**
  * Instruction appended after the to-summarise history slice when compaction
  * fires. The provider sees the older conversation followed by this user
- * message and returns a concise context checkpoint.
+ * message and returns a structured context checkpoint another assistant can
+ * load to continue the work. The instruction asks for explicit markdown
+ * sections so the summary stays parseable and the next turn can rely on a
+ * predictable shape (slice 38 — structured-checkpoint summary prompt). Empty
+ * sections are omitted by the model rather than padded.
  */
 const SUMMARIZATION_INSTRUCTION =
-	"Summarize the conversation above into a concise context checkpoint that another assistant can use to continue the work. Preserve goals, decisions, exact file paths, and next steps.";
+	"Summarize the conversation above into a structured context checkpoint that another assistant can load to continue the work. Use the following markdown sections, omitting any that would be empty:\n\n" +
+	"## Goals\n" +
+	"- The user-facing goals of this session, prioritised.\n\n" +
+	"## Decisions\n" +
+	"- Material decisions made and their rationale.\n\n" +
+	"## Files Touched\n" +
+	"- Exact file paths read, written, edited, or referenced.\n\n" +
+	"## Next Steps\n" +
+	"- Concrete actions the next assistant should take.";
 
 /**
  * `Session.send` is generic over the toolkit's `Tools` map so that callers
@@ -331,11 +347,7 @@ const absorbPart = (acc: AssistantContentAcc, part: unknown): AssistantContentAc
 		// Mirror liftPart's defensive guard: a malformed tool-result is
 		// skipped rather than written to history as a part `Prompt.make`
 		// would reject at the post-stream append.
-		if (
-			!hasStringProperty(part, "id") ||
-			!hasStringProperty(part, "name") ||
-			typeof part.isFailure !== "boolean"
-		) {
+		if (!hasStringProperty(part, "id") || !hasStringProperty(part, "name") || typeof part.isFailure !== "boolean") {
 			return acc;
 		}
 		const flushed = flushAll(acc);
@@ -387,35 +399,42 @@ const captureUsage = (part: unknown): CapturedUsage | null => {
 };
 
 /**
- * Hardcoded retry cap. After this many re-attempts (4 total tries on a
- * persistently-retryable failure) the last error propagates. ADR-0009 marks
- * configurable retry policy as a follow-on slice.
+ * Default transient-error retry cap when `SessionConfig.maxLlmRetries` is
+ * omitted. With the default, a persistently-retryable failure gets 4 total
+ * tries (initial + 3 retries) before the last error propagates. Slice 35
+ * makes this per-session configurable via `SessionConfig.maxLlmRetries`.
  */
 const MAX_LLM_RETRIES = 3;
 
 /**
- * Retry schedule for the per-attempt inner stream. Recurs up to
- * `MAX_LLM_RETRIES` times, AND halts early if the failing error is
- * non-retryable (per `AiError.reason.isRetryable`).
+ * Build the retry schedule for the per-attempt inner stream. Recurs up to
+ * `maxRetries` times, AND halts early if the failing error is non-retryable
+ * (per `AiError.reason.isRetryable`).
  *
  * The schedule's `input` is the stream's error type — here that's `LlmError`
  * (we map `AiError → LlmError` before the retry boundary so the schedule sees
- * pi's error shape).
+ * pi's error shape). `maxRetries: 0` produces a schedule that never recurs,
+ * so the single attempt's failure propagates immediately.
  */
-const retrySchedule = Schedule.recurs(MAX_LLM_RETRIES).pipe(
-	Schedule.while(({ input }) => ((input as LlmError).aiError as { readonly isRetryable: boolean }).isRetryable),
-);
+const makeRetrySchedule = (maxRetries: number) =>
+	Schedule.recurs(maxRetries).pipe(
+		Schedule.while(({ input }) => ((input as LlmError).aiError as { readonly isRetryable: boolean }).isRetryable),
+	);
 
 /**
  * Per-session configuration. Omitted fields fall back to the module defaults
- * (`COMPACTION_THRESHOLD` / `KEEP_RECENT_TOKENS`). A configurable retry policy
- * is a follow-on slice.
+ * (`COMPACTION_THRESHOLD` / `KEEP_RECENT_TOKENS` / `MAX_LLM_RETRIES`).
  */
 export interface SessionConfig {
 	/** Token estimate above which `Session.send` compacts history before the turn. */
 	readonly compactionThreshold?: number;
 	/** Tokens of recent history `splitHistory` keeps verbatim during compaction. */
 	readonly keepRecentTokens?: number;
+	/**
+	 * Transient-error retry cap for the per-attempt LLM stream. Defaults to
+	 * `MAX_LLM_RETRIES` (3); `0` disables retries entirely. Slice 35.
+	 */
+	readonly maxLlmRetries?: number;
 }
 
 /**
@@ -432,6 +451,7 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 	Effect.gen(function* () {
 		const compactionThreshold = options.compactionThreshold ?? COMPACTION_THRESHOLD;
 		const keepRecentTokens = options.keepRecentTokens ?? KEEP_RECENT_TOKENS;
+		const maxLlmRetries = options.maxLlmRetries ?? MAX_LLM_RETRIES;
 		const state = yield* SubscriptionRef.make(options.initialState);
 		return {
 			state,
@@ -452,45 +472,18 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						// with a no-op default, so this never adds to `send`'s `R` channel.
 						const hooks = yield* Hooks;
 
-						// 0. COMPACTION CHECK — runs BEFORE the input-variant history update.
-						//    When `state.history` has grown past `COMPACTION_THRESHOLD`, summarise
-						//    the older portion via `LanguageModel.generateText` and rebuild
-						//    `state.history` as `[summary user message, ...recent kept messages]`.
-						//    The `CompactionApplied` event is prepended to the stream at the end
-						//    of this `Effect.gen` so consumers see it as the first element.
-						const preCompaction = yield* SubscriptionRef.get(state);
-						let compactionEvent: CompactionApplied | undefined;
-						const tokensBefore = estimateTokens(preCompaction.history);
-						if (tokensBefore > compactionThreshold) {
-							const { toSummarize, toKeep } = splitHistory(preCompaction.history, keepRecentTokens);
-							// A failed summarisation call surfaces as `CompactionError` in
-							// `send`'s error channel — distinct from the per-turn `LlmError`.
-							const summary = yield* LanguageModel.generateText({
-								prompt: Prompt.concat(toSummarize, Prompt.make(SUMMARIZATION_INSTRUCTION)),
-							}).pipe(Effect.mapError((aiError) => new CompactionError({ cause: aiError })));
-							const compactedHistory = Prompt.fromMessages([
-								Prompt.makeMessage("user", {
-									content: [Prompt.makePart("text", { text: summary.text })],
-								}),
-								...toKeep.content,
-							]);
-							yield* SubscriptionRef.update(state, (s) =>
-								SessionState.with(s, {
-									history: compactedHistory,
-									compactionCount: s.compactionCount + 1,
-								}),
-							);
-							compactionEvent = new CompactionApplied({
-								tokensBefore,
-								tokensAfter: estimateTokens(compactedHistory),
-								summarizedMessageCount: toSummarize.content.length,
-							});
-						}
+						// Lifecycle hook: fired at stream open with the normalised input.
+						// Observer-only — host code records turn metadata or pre-flight side
+						// effects. Runs BEFORE history mutation / compaction / retry.
+						yield* hooks.onStart(normalized);
 
-						// 1. ONCE PER SEND — compute the next history depending on the input variant,
-						//    then bump turnCount and commit the new history atomically. This runs
-						//    OUTSIDE the retry boundary so transient-error retries do not re-bump
-						//    `turnCount` or re-append the user message.
+						// 0. ONCE PER SEND — compute the next history depending on the input variant,
+						//    then bump turnCount and commit the new history atomically. Runs
+						//    BEFORE the compaction check (a) so `Retry`'s rollback drops the
+						//    trailing assistant turn before we decide whether to summarise, and
+						//    (b) so a fresh `NewPrompt` lands in `toKeep` (it is the most recent
+						//    message). All runs OUTSIDE the retry boundary so transient-error
+						//    retries do not re-bump `turnCount` or re-append the user message.
 						//
 						//    - NewPrompt: append a `user` message with the new prompt.
 						//    - AcceptedPromptEnvelope: append host-preflighted injected messages,
@@ -517,6 +510,53 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 							})();
 							return SessionState.advance(s, nextHistory);
 						});
+						const postInput = yield* SubscriptionRef.get(state);
+
+						// 1. COMPACTION CHECK — runs AFTER the input-variant update on the
+						//    post-input history. When that history has grown past
+						//    `COMPACTION_THRESHOLD`, summarise the older portion via
+						//    `LanguageModel.generateText` and rebuild `state.history` as
+						//    `[...systemMessages, summary user message, ...recent kept messages]`.
+						//    The `CompactionApplied` event is prepended to the stream at the end
+						//    of this `Effect.gen` so consumers see it as the first element.
+						//
+						//    **System messages survive compaction**: they are extracted from the
+						//    history before `splitHistory` runs (so they are never fed into the
+						//    summary call) and re-injected at the head of the compacted history
+						//    so they keep their system-role placement.
+						let compactionEvent: CompactionApplied | undefined;
+						const tokensBefore = estimateTokens(postInput.history);
+						if (tokensBefore > compactionThreshold) {
+							const systemMessages = postInput.history.content.filter((m) => m.role === "system");
+							const bodyHistory = Prompt.fromMessages(
+								postInput.history.content.filter((m) => m.role !== "system"),
+							);
+							const { toSummarize, toKeep } = splitHistory(bodyHistory, keepRecentTokens);
+							// A failed summarisation call surfaces as `CompactionError` in
+							// `send`'s error channel — distinct from the per-turn `LlmError`.
+							const summary = yield* LanguageModel.generateText({
+								prompt: Prompt.concat(toSummarize, Prompt.make(SUMMARIZATION_INSTRUCTION)),
+							}).pipe(Effect.mapError((aiError) => new CompactionError({ cause: aiError })));
+							const compactedHistory = Prompt.fromMessages([
+								...systemMessages,
+								Prompt.makeMessage("user", {
+									content: [Prompt.makePart("text", { text: summary.text })],
+								}),
+								...toKeep.content,
+							]);
+							yield* SubscriptionRef.update(state, (s) =>
+								SessionState.with(s, {
+									history: compactedHistory,
+									compactionCount: s.compactionCount + 1,
+								}),
+							);
+							compactionEvent = new CompactionApplied({
+								tokensBefore,
+								tokensAfter: estimateTokens(compactedHistory),
+								summarizedMessageCount: toSummarize.content.length,
+							});
+						}
+
 						const snapshot = yield* SubscriptionRef.get(state);
 
 						// 1a. Persist the post-bump snapshot so `Session.durable` reloads
@@ -640,11 +680,12 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						// 3. Wrap the per-attempt stream with a retry schedule + an outer
 						//    telemetry span. Bounded recurs + while-isRetryable predicate stops
 						//    early on AuthenticationError / InvalidRequestError / etc., and caps
-						//    the loop at MAX_LLM_RETRIES. The outer span wraps the whole send
-						//    (including all retries) so consumers see a parent span with N
+						//    the loop at `maxLlmRetries` (default `MAX_LLM_RETRIES`, configurable
+						//    via `SessionConfig.maxLlmRetries`). The outer span wraps the whole
+						//    send (including all retries) so consumers see a parent span with N
 						//    attempt-span children.
 						const mainStream = attemptStream.pipe(
-							Stream.retry(retrySchedule),
+							Stream.retry(makeRetrySchedule(maxLlmRetries)),
 							Stream.withSpan("pi.Session.send", {
 								attributes: {
 									"pi.input.tag": normalized._tag,
@@ -661,9 +702,15 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 								: Stream.concat(Stream.succeed<AgentEvent>(compactionEvent), mainStream);
 
 						// Observer hooks (ADR-0009): invoke `onAgentEvent` for every event the
-						// consumer sees, in stream order. The `Hooks` reference defaults to a
-						// no-op, so this is inert unless a host / extension / test provides one.
-						return fullStream.pipe(Stream.tap((event) => hooks.onAgentEvent(event)));
+						// consumer sees, in stream order; fire `onShutdown(exit)` once when
+						// the stream completes (success / failure / interrupt — `Stream.onExit`
+						// covers all three and threads the typed `Exit` to the hook). The
+						// `Hooks` reference defaults to no-ops, so this is inert unless a host
+						// / extension / test provides one.
+						return fullStream.pipe(
+							Stream.tap((event) => hooks.onAgentEvent(event)),
+							Stream.onExit((exit) => hooks.onShutdown(exit)),
+						);
 					}),
 				);
 			},

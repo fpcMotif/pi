@@ -118,7 +118,7 @@ export function createCustomMessage(
 	};
 }
 
-const harnessTranscriptAdapters = {
+export const harnessTranscriptAdapters = {
 	bashExecution: (message: AgentMessage): Message[] => {
 		if (message.role !== "bashExecution" || message.excludeFromContext) return [];
 		return [

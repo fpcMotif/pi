@@ -43,7 +43,7 @@ Future migration obligation: when ADR-0006 phase 4 moves the runtime into `src/`
 
 ## Status — Effect rewrite tracer bullets
 
-Thirty-four tracer bullets, all GREEN, all without an API key:
+Thirty-eight tracer bullets, all GREEN, all without an API key:
 
 1. **`stubLanguageModel({ text })`** — Layer that bypasses providers entirely; `LanguageModel.generateText` resolves to canned text. Proves the v4 runtime and `@effect/ai` API surface work.
 2. **`stubOpenAiClient({ text })` + `OpenAiLanguageModel.layer({ model })`** — Layer composition that exercises the real provider path (`OpenAiLanguageModel.make` calls `client.createResponse`, parses the OpenAI Responses-API body shape, builds the `GenerateTextResponse`). Proves the OpenAI integration path works without an API key.
@@ -430,6 +430,67 @@ Thirty-four tracer bullets, all GREEN, all without an API key:
 
 34.   **Effect LSP integration** (ADR-0017 — `@effect/language-service` as the editor TypeScript plugin). Wired at the workspace root: `tsconfig.json` adds the `@effect/language-service` plugin, `$schema` points at the plugin's bundled `schema.json`, and the first rewrite-critical diagnostics (`floatingEffect`, `missingEffectContext`, `missingEffectError`, `missingLayerContext`) are promoted to editor errors. `packages/agent/tsconfig.effect.json` carries the same plugin options for package-scoped editor sessions. `@effect/language-service@0.85.1` enters `devDependencies` and is installed in `node_modules`; `bun.lock` records the Bun install. The plugin runs only inside `tsserver` — it does **not** affect `tsgo` builds — so `bunx tsgo -p tsconfig.effect.json --noEmit` remains the build/typecheck gate. Workspace-version TypeScript is required in the editor so the plugin actually loads.
 
+35.   **Configurable transient-error retry cap on `SessionConfig`** (slice 35 — closes out the long-deferred "configurable retry policy" item from slice 24). Changes in `effect/session.ts`:
+
+
+    - `SessionConfig` gains `maxLlmRetries?: number`. Default is `MAX_LLM_RETRIES` (3); `0` disables retries entirely.
+    - The slice-24 `retrySchedule` constant becomes `makeRetrySchedule(maxRetries)`; `makeSession` reads `options.maxLlmRetries ?? MAX_LLM_RETRIES` once per session and the `Stream.retry` inside `send` calls `makeRetrySchedule(maxLlmRetries)`. The `while-isRetryable` predicate is unchanged — only the recurs count is configurable.
+    - Every public entry point (`Session.empty`, `Session.make`, `Session.durable`) threads the field through without breaking change; existing callers keep the historical cap of 3.
+
+    3 tests in `test/effect/session-retry-cap.test.ts` (each leans on `stubLanguageModelStreamScripted`'s die-past-script cursor to prove the *exact* attempt count):
+
+    - `Session.make({ maxLlmRetries: 1 })` + a 2-error script → 2 tries, cap exhausted, error propagates. A 3rd call (the old hardcoded cap) would die on the script-end path.
+    - `Session.make({ maxLlmRetries: 0 })` + a 1-error script → fails after the single attempt, no retry.
+    - `Session.empty` + a 3-error-then-success script → default cap 3 still gives 4 tries and resolves.
+
+    **Still deferred (within retry)**: production backoff between attempts (no delay yet; production wants exponential / `retryAfter`-respecting backoff). A `Schedule.addDelay` attempt under `effect@4.0.0-beta.65` hung the `it.effect` test fiber inside `Stream.retry`, the same v4-beta Stream/Channel timing-quirk class noted in slice 20's cancellation note; backoff stays deferred rather than shipping a hanging test.
+
+36.   **All 12 `AiError` reason variants round-trip** (slice 36 — closes out the deferred "remaining `AiError` reasons" item). `test/effect/error-reasons.test.ts`'s parametrized `cases` array grew from 5 to 14 rows, covering every reason `effect/unstable/ai`'s `AiError` exposes:
+
+
+    - Existing 5: `RateLimitError` (retryable), `AuthenticationError`, `ContentPolicyError`, `QuotaExhaustedError`, `InvalidRequestError`.
+    - New 9: `NetworkError` × 3 sub-reasons (`TransportError` retryable, `EncodeError` / `InvalidUrlError` not), `InternalProviderError` (retryable), `InvalidOutputError` (retryable), `StructuredOutputError` (retryable), `UnsupportedSchemaError`, `UnknownError`, `InvalidUserInputError`.
+    - `NetworkError`'s required `request: HttpRequestDetails` field is satisfied with a small `stubRequest` literal (`POST` to an example URL, no params/headers); `StructuredOutputError`'s required `responseText` is satisfied with a partial JSON snippet. The `metadata: providerMetadataWithDefaults<…>()` fields on `InternalProviderError` / `InvalidOutputError` / `StructuredOutputError` / `UnsupportedSchemaError` / `UnknownError` rely on the Schema's `withConstructorDefault(Effect.succeed({}))` — no `metadata: {}` boilerplate at the call site.
+    - Each row asserts `error.reason._tag === expectedTag` AND `error.reason.isRetryable === expectedRetryable` after the AiError round-trips through `stubOpenAiClient({ error })` → `OpenAiLanguageModel.layer` → `LanguageModel.generateText` → `Effect.flip`.
+
+    Companion: `test/effect/http-error-mapping.test.ts` (slice 31) gained four more status codes — `502` / `503` / `504` (the `>= 500` branch is broad, not 500-specific) and `418` (the `default` branch falls through to `UnknownError`). `404` is documented absent because the OpenAI provider layers an `InvalidRequestError` override on top of `reasonFromHttpStatus`'s `default` branch.
+
+37.   **Lifecycle hooks on `Session.send`** (slice 37 — extends slice 30's observer-only `Hooks` toward the ADR-0014 host-lifecycle target). The `Hooks` interface gains two siblings to `onAgentEvent`:
+
+
+    - `onStart(input: Input): Effect<void>` — fired once per `send` at stream open (when the consumer first pulls), with the normalised `Input`. Runs BEFORE history mutation / compaction / the retry boundary, so host code can record turn metadata or pre-flight side effects. Observer-only — the input is NOT replaced from the hook's return.
+    - `onShutdown(exit: Exit<unknown, AgentError>): Effect<void>` — fired once per `send` when the stream completes, regardless of outcome, carrying the stream's typed `Exit` so the host can branch on `Exit.isSuccess` vs `Exit.isFailure` (a `CompactionError` / `LlmError`) vs interrupt. Wired via `Stream.onExit` on the outer returned stream. TypeScript parameter contravariance means hosts that ignore the argument (`onShutdown: () => Effect.void`) still satisfy the typed shape.
+
+    The `Hooks` `Context.Reference` default now no-ops all three (`onAgentEvent`, `onStart`, `onShutdown`), so existing callers that never provide `Hooks` keep working unchanged. `test-support/recording-hooks.ts` grew `startInputs: ReadonlyArray<Input>` and `shutdownExits: ReadonlyArray<Exit<unknown, AgentError>>` for assertions.
+
+    5 tests in `test/effect/session-lifecycle-hooks.test.ts`:
+
+    - `onStart` fires once at stream open with the normalised `Input`, carrying the prompt text.
+    - `onStart` preserves an explicit `NewPrompt({ prompt })` (no double-normalisation).
+    - `onShutdown` fires exactly once on a successful stream; the recorded `Exit._tag === "Success"`.
+    - `onShutdown` fires exactly once on a stream that errors out (non-retryable `AuthenticationError` propagates after the single attempt; `Stream.onExit` still runs). The recorded `Exit` is `Failure` and `Cause.findErrorOption(cause)` yields the `LlmError` wrapping the upstream `AuthenticationError`.
+    - With no `Hooks` provided, the lifecycle paths use the no-op default — proving `send`'s R-channel is unchanged and the new hooks don't leak into the public type surface.
+
+    **Still deferred (within hooks)**: mutating hooks for tool-call approval / result patching (the hook can block or replace a tool call before / after it runs); lifecycle hooks adapter for host-specific lifecycle (e.g. extension load/unload, per ADR-0014).
+
+38.   **Structured-checkpoint summary prompt** (slice 38 — closes out a compaction follow-on). `SUMMARIZATION_INSTRUCTION` in `effect/session.ts` is upgraded from the one-line "preserve goals, decisions, paths, next steps" prose to an explicit markdown-section template:
+
+
+    - `## Goals` — user-facing goals of the session, prioritised.
+    - `## Decisions` — material decisions made and rationale.
+    - `## Files Touched` — exact file paths read, written, edited, or referenced.
+    - `## Next Steps` — concrete actions the next assistant should take.
+
+    Empty sections are omitted by the model rather than padded. The summarisation flow is unchanged — the new instruction is appended as the trailing user message of the summary call's prompt, exactly as before — only the *content* of that instruction changes.
+
+    `test-support/recording-language-model-dual.ts` gained a `summaryCalls: ReadonlyArray<Record<string, unknown>>` array next to `calls` so tests can assert on `generateText` invocations (the compaction summary path) as well as `streamText` ones. The existing single-arg consumers (`summaryText` / `streamParts`) keep working unchanged.
+
+    1 new test in `test/effect/session-compaction.test.ts`:
+
+    - An over-threshold history + a `NewPrompt` triggers compaction; the recorded summary call's prompt's last user message contains every section header (`## Goals` / `## Decisions` / `## Files Touched` / `## Next Steps`) and the original "context checkpoint" framing language.
+
+    **Still deferred (compaction)**: split-turn handling (cuts mid-message), iterative "previous summary" merge (carry forward an existing summary into the next one).
+
 ## Architecture stance (Effect rewrite)
 
 - **Idiomatic Effect throughout** (ADR-0001). No Promise facade beneath Effect. Public surface is `Effect`/`Stream`-shaped.
@@ -517,11 +578,11 @@ npm run fmt:effect:check
 
 - Streaming on the scripted / non-streaming stubs: only `stubOpenAiClientStreaming` implements `createResponseStream`; the others die on call. A future slice can unify (e.g. a per-call stream-or-body switch).
 - Multi-step streaming tool flow: the current `function_call` SSE shape (`output_item.added` + `function_call_arguments.done`) emits each call in one shot. A slice that exercises `function_call_arguments.delta` partial-argument streaming is still pending — same `buildSseEvents` extension, more events per call.
-- Remaining `AiError` reasons (`InvalidOutputError`, `StructuredOutputError`, `UnsupportedSchemaError`, `InternalProviderError`, `NetworkError`, `UnknownError`, `InvalidUserInputError`) — add to the `cases` array in `error-reasons.test.ts` when a slice needs them.
+- All 12 of `effect/unstable/ai`'s `AiError` reason variants now round-trip through `error-reasons.test.ts` (`NetworkError` × 3 sub-reasons + `InternalProviderError`, `InvalidOutputError`, `StructuredOutputError`, `UnsupportedSchemaError`, `UnknownError`, `InvalidUserInputError` joined the original 5 — slice 36).
 - HTTP-driven error mapping via `AiError.reasonFromHttpStatus({ status, body })` — once a stub `HttpClient` lands.
-- ADR-0009 wrapping follow-ons: the current `Hooks` service is observer-only (`onAgentEvent`). Mutating hooks for tool-call approval / result patching, lifecycle hooks (`onStart` / `onShutdown`), and host-specific hook adapters are still future slices. Skill-block parsing was **removed** from this target — it is a host (`pi-coding-agent`) concern (ADR-0009 amendment, 2026-05-14); the loop consumes already-expanded prompts.
-- Compaction follow-ons: structured-checkpoint summary prompt, split-turn handling, and iterative "previous summary" merge. (Configurable threshold / keep-recent via `Session.make` and the `compactionCount` field on `SessionState` landed in slice 32.)
-- Retry policy still needs production backoff and `retryAfter` support; the current tests cover no-delay retry of retryable at-open provider failures.
+- ADR-0009 wrapping follow-ons: lifecycle observer hooks `onStart(input)` and `onShutdown(exit: Exit<unknown, AgentError>)` landed in slice 37 alongside the existing `onAgentEvent`, with the stream's typed `Exit` carried through to the host via `Stream.onExit`. Still pending: mutating hooks for tool-call approval / result patching, and host-specific hook adapters. Skill-block parsing was **removed** from this target — it is a host (`pi-coding-agent`) concern (ADR-0009 amendment, 2026-05-14); the loop consumes already-expanded prompts.
+- Compaction follow-ons: split-turn handling and iterative "previous summary" merge are still pending. (Configurable threshold / keep-recent via `Session.make` and the `compactionCount` field on `SessionState` landed in slice 32; the structured-checkpoint summary prompt landed in slice 38; system-message preservation + Retry-before-compaction ordering landed in the post-merge fixes for the original `b2b47fa0` compaction tests.)
+- Retry cap is per-session configurable via `Session.make({ maxLlmRetries })` (slice 35); production backoff and `retryAfter` support are still pending — the current tests cover no-delay retry of retryable at-open provider failures. A `Schedule.addDelay` attempt under `effect@4.0.0-beta.65` hung the `it.effect` test fiber inside `Stream.retry`, same v4-beta Stream/Channel timing-quirk class as slice 20's cancellation note; backoff stays deferred rather than shipping a hanging test.
 - The other `test-support` fixtures per ADR-0015: `TestUI`, broader `TestStores` beyond `SessionStore`, and `TestBashOperations`.
 
 These land as TDD slices, in order - see `docs/agents/domain.md` for how the consumer skills (`/tdd`, `/diagnose`, `/improve-codebase-architecture`) should treat this package.

@@ -12,6 +12,7 @@ import {
 	createBranchSummaryMessage,
 	createCompactionSummaryMessage,
 	createCustomMessage,
+	harnessTranscriptAdapters,
 } from "../../src/harness/messages.js";
 import type { AgentMessage } from "../../src/types.js";
 
@@ -142,5 +143,25 @@ describe("harness messages", () => {
 		};
 
 		expect(convertToLlm([user, assistant, toolResult])).toEqual([user, assistant, toolResult]);
+	});
+
+	it("each transcript adapter ignores messages whose role does not match its slot", () => {
+		const bash: BashExecutionMessage = {
+			role: "bashExecution",
+			command: "printf ok",
+			output: "ok",
+			exitCode: 0,
+			cancelled: false,
+			truncated: false,
+			timestamp: 1,
+		};
+		const custom = createCustomMessage("note", "body", true, undefined, "2026-01-01T00:00:00.000Z");
+		const branch = createBranchSummaryMessage("branch", "from", "2026-01-01T00:00:00.000Z");
+		const compaction = createCompactionSummaryMessage("compact", 1, "2026-01-01T00:00:00.000Z");
+
+		expect(harnessTranscriptAdapters.bashExecution(compaction)).toEqual([]);
+		expect(harnessTranscriptAdapters.custom(bash)).toEqual([]);
+		expect(harnessTranscriptAdapters.branchSummary(custom)).toEqual([]);
+		expect(harnessTranscriptAdapters.compactionSummary(branch)).toEqual([]);
 	});
 });

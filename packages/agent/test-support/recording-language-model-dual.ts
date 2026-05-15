@@ -6,6 +6,8 @@ export interface RecordingLanguageModelDual {
 	readonly layer: Layer.Layer<LanguageModel.LanguageModel>;
 	/** Every options object `streamText` was called with, in call order. */
 	readonly calls: ReadonlyArray<Record<string, unknown>>;
+	/** Every options object `generateText` was called with, in call order. */
+	readonly summaryCalls: ReadonlyArray<Record<string, unknown>>;
 }
 
 export interface RecordingLanguageModelDualOptions {
@@ -22,21 +24,23 @@ export interface RecordingLanguageModelDualOptions {
  *
  * Needed when a test must assert on the prompt `Session.send` passes to
  * `streamText` in a flow that ALSO triggers compaction (which calls
- * `generateText`) — e.g. the Retry-after-compaction ordering regression.
+ * `generateText`) — e.g. the Retry-after-compaction ordering regression. The
+ * `summaryCalls` array additionally records every `generateText` options
+ * object so tests can assert on the summary call's prompt shape (e.g. the
+ * structured-checkpoint instruction landing in the summarisation request).
  */
-export const recordingLanguageModelDual = (
-	options: RecordingLanguageModelDualOptions,
-): RecordingLanguageModelDual => {
+export const recordingLanguageModelDual = (options: RecordingLanguageModelDualOptions): RecordingLanguageModelDual => {
 	const calls: Array<Record<string, unknown>> = [];
+	const summaryCalls: Array<Record<string, unknown>> = [];
 	const layer = Layer.succeed(
 		LanguageModel.LanguageModel,
 		LanguageModel.LanguageModel.of({
-			generateText: (() =>
-				Effect.succeed(
-					new LanguageModel.GenerateTextResponse([
-						Response.makePart("text", { text: options.summaryText ?? "" }),
-					]),
-				)) as never,
+			generateText: ((opts: Record<string, unknown>) => {
+				summaryCalls.push(opts);
+				return Effect.succeed(
+					new LanguageModel.GenerateTextResponse([Response.makePart("text", { text: options.summaryText ?? "" })]),
+				);
+			}) as never,
 			generateObject: (() => Effect.die("recordingLanguageModelDual: generateObject not implemented")) as never,
 			streamText: ((opts: Record<string, unknown>) => {
 				calls.push(opts);
@@ -44,5 +48,5 @@ export const recordingLanguageModelDual = (
 			}) as never,
 		}),
 	);
-	return { layer, calls };
+	return { layer, calls, summaryCalls };
 };

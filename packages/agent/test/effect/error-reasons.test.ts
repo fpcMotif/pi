@@ -6,6 +6,15 @@ import { describe, expect } from "vitest";
 
 import { stubOpenAiClient } from "../../test-support/stub-openai-client.js";
 
+/** Minimal `HttpRequestDetails` shape for `NetworkError` constructor calls. */
+const stubRequest = {
+	method: "POST" as const,
+	url: "https://api.example.com/v1/chat",
+	urlParams: [] as ReadonlyArray<readonly [string, string]>,
+	hash: undefined,
+	headers: {} as Record<string, string>,
+};
+
 const cases = [
 	{
 		label: "RateLimitError",
@@ -38,6 +47,64 @@ const cases = [
 			constraint: "must be > 0",
 		}),
 		expectedTag: "InvalidRequestError" as const,
+		expectedRetryable: false,
+	},
+	// NetworkError carries a sub-reason; isRetryable is true iff the sub-reason is "TransportError".
+	{
+		label: "NetworkError (TransportError)",
+		reason: new AiError.NetworkError({ reason: "TransportError", request: stubRequest }),
+		expectedTag: "NetworkError" as const,
+		expectedRetryable: true,
+	},
+	{
+		label: "NetworkError (EncodeError)",
+		reason: new AiError.NetworkError({ reason: "EncodeError", request: stubRequest }),
+		expectedTag: "NetworkError" as const,
+		expectedRetryable: false,
+	},
+	{
+		label: "NetworkError (InvalidUrlError)",
+		reason: new AiError.NetworkError({ reason: "InvalidUrlError", request: stubRequest }),
+		expectedTag: "NetworkError" as const,
+		expectedRetryable: false,
+	},
+	{
+		label: "InternalProviderError",
+		reason: new AiError.InternalProviderError({ description: "upstream 502" }),
+		expectedTag: "InternalProviderError" as const,
+		expectedRetryable: true,
+	},
+	{
+		label: "InvalidOutputError",
+		reason: new AiError.InvalidOutputError({ description: "model returned non-JSON" }),
+		expectedTag: "InvalidOutputError" as const,
+		expectedRetryable: true,
+	},
+	{
+		label: "StructuredOutputError",
+		reason: new AiError.StructuredOutputError({
+			description: "JSON did not satisfy schema",
+			responseText: '{"oops":',
+		}),
+		expectedTag: "StructuredOutputError" as const,
+		expectedRetryable: true,
+	},
+	{
+		label: "UnsupportedSchemaError",
+		reason: new AiError.UnsupportedSchemaError({ description: "recursive schema rejected" }),
+		expectedTag: "UnsupportedSchemaError" as const,
+		expectedRetryable: false,
+	},
+	{
+		label: "UnknownError",
+		reason: new AiError.UnknownError({ description: "unclassified provider error" }),
+		expectedTag: "UnknownError" as const,
+		expectedRetryable: false,
+	},
+	{
+		label: "InvalidUserInputError",
+		reason: new AiError.InvalidUserInputError({ description: "prompt exceeded model max tokens" }),
+		expectedTag: "InvalidUserInputError" as const,
 		expectedRetryable: false,
 	},
 ];
