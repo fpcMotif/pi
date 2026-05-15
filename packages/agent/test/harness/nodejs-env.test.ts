@@ -5,21 +5,13 @@ import { FileError, NodeExecutionEnv } from "../../src/harness/execution-env.js"
 import { createTempDir } from "./session-test-utils.js";
 import { tryCreateSymlink } from "./symlink-test-utils.js";
 
-const chmodRestorePaths: string[] = [];
+// Platform-specific shell-resolution branches (Windows Git bash, PATH lookup,
+// the "No bash shell found" throw) are covered without real spawns in
+// nodejs-env-branch-gaps.test.ts. This file keeps the real-process integration
+// tests, which run against an actual POSIX shell.
+const realShell = process.platform === "win32" ? undefined : "/bin/bash";
 
-async function findGitBash(): Promise<string | undefined> {
-	const candidates = [
-		process.env.ProgramFiles ? join(process.env.ProgramFiles, "Git/bin/bash.exe") : undefined,
-		process.env["ProgramFiles(x86)"] ? join(process.env["ProgramFiles(x86)"], "Git/bin/bash.exe") : undefined,
-	].filter((candidate): candidate is string => candidate !== undefined);
-	for (const candidate of candidates) {
-		try {
-			await access(candidate);
-			return candidate;
-		} catch {}
-	}
-	return undefined;
-}
+const chmodRestorePaths: string[] = [];
 
 afterEach(async () => {
 	for (const path of chmodRestorePaths.splice(0)) {
@@ -143,27 +135,30 @@ describe("NodeExecutionEnv", () => {
 		await expect(env.exists("\0")).rejects.toMatchObject({ code: "unknown" });
 	});
 
-	it("supports custom shell paths and reports missing custom shells", async () => {
+	it("reports missing and non-executable custom shell paths", async () => {
 		const root = createTempDir();
-		const bash = await findGitBash();
-		if (!bash) return;
 
+		const missingShellEnv = new NodeExecutionEnv({ cwd: root, shellPath: join(root, "missing-bash") });
+		await expect(missingShellEnv.exec("true")).rejects.toThrow("Custom shell path not found");
+
+		const baseEnv = new NodeExecutionEnv({ cwd: root });
+		await baseEnv.writeFile("not-shell.txt", "not executable");
+		const invalidShellEnv = new NodeExecutionEnv({ cwd: root, shellPath: join(root, "not-shell.txt") });
+		await expect(invalidShellEnv.exec("true")).rejects.toThrow();
+	});
+
+	it("runs commands through a custom shell with merged base and per-call env", async () => {
+		if (!realShell) return;
+		const root = createTempDir();
 		const env = new NodeExecutionEnv({
 			cwd: root,
-			shellPath: bash,
+			shellPath: realShell,
 			shellEnv: { BASE_ENV: "base" },
 		});
 		const result = await env.exec('printf "%s:%s" "$BASE_ENV" "$EXTRA_ENV"', {
 			env: { EXTRA_ENV: "extra" },
 		});
 		expect(result).toEqual({ stdout: "base:extra", stderr: "", exitCode: 0 });
-
-		const missingShellEnv = new NodeExecutionEnv({ cwd: root, shellPath: join(root, "missing-bash.exe") });
-		await expect(missingShellEnv.exec("true")).rejects.toThrow("Custom shell path not found");
-
-		await env.writeFile("not-shell.txt", "not executable");
-		const invalidShellEnv = new NodeExecutionEnv({ cwd: root, shellPath: join(root, "not-shell.txt") });
-		await expect(invalidShellEnv.exec("true")).rejects.toThrow();
 	});
 
 	it("executes commands in cwd with env overrides", async () => {
@@ -186,63 +181,6 @@ describe("NodeExecutionEnv", () => {
 
 		expect(result.exitCode).toBe(0);
 		expect(await env.exists("nested/cwd.txt")).toBe(true);
-	});
-
-	it("falls back to bash on PATH when configured Git paths are unavailable", async () => {
-		const root = createTempDir();
-		const previousProgramFiles = process.env.ProgramFiles;
-		const previousProgramFilesX86 = process.env["ProgramFiles(x86)"];
-		process.env.ProgramFiles = join(root, "missing-program-files");
-		delete process.env["ProgramFiles(x86)"];
-		try {
-			const env = new NodeExecutionEnv({ cwd: root });
-			const result = await env.exec('printf "%s" "path-ok"');
-			expect(result.stdout).toBe("path-ok");
-		} catch (error) {
-			expect(error).toBeInstanceOf(Error);
-			expect(String((error as Error).message)).toContain("No bash shell found");
-		} finally {
-			if (previousProgramFiles === undefined) {
-				delete process.env.ProgramFiles;
-			} else {
-				process.env.ProgramFiles = previousProgramFiles;
-			}
-			if (previousProgramFilesX86 === undefined) {
-				delete process.env["ProgramFiles(x86)"];
-			} else {
-				process.env["ProgramFiles(x86)"] = previousProgramFilesX86;
-			}
-		}
-	});
-
-	it("reports a missing shell when Git paths and PATH lookup are unavailable", async () => {
-		const root = createTempDir();
-		const previousProgramFiles = process.env.ProgramFiles;
-		const previousProgramFilesX86 = process.env["ProgramFiles(x86)"];
-		const previousPath = process.env.PATH;
-		process.env.ProgramFiles = join(root, "missing-program-files");
-		delete process.env["ProgramFiles(x86)"];
-		process.env.PATH = join(root, "missing-path");
-		try {
-			const env = new NodeExecutionEnv({ cwd: root });
-			await expect(env.exec("true")).rejects.toThrow("No bash shell found");
-		} finally {
-			if (previousProgramFiles === undefined) {
-				delete process.env.ProgramFiles;
-			} else {
-				process.env.ProgramFiles = previousProgramFiles;
-			}
-			if (previousProgramFilesX86 === undefined) {
-				delete process.env["ProgramFiles(x86)"];
-			} else {
-				process.env["ProgramFiles(x86)"] = previousProgramFilesX86;
-			}
-			if (previousPath === undefined) {
-				delete process.env.PATH;
-			} else {
-				process.env.PATH = previousPath;
-			}
-		}
 	});
 
 	it("streams stdout and stderr chunks", async () => {
