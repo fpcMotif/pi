@@ -2809,13 +2809,7 @@ export class AgentSession {
 			} else if (targetEntry.type === "custom_message") {
 				// Custom message: leaf = parent (null if root), text goes to editor
 				newLeafId = targetEntry.parentId;
-				editorText =
-					typeof targetEntry.content === "string"
-						? targetEntry.content
-						: targetEntry.content
-								.filter((c): c is { type: "text"; text: string } => c.type === "text")
-								.map((c) => c.text)
-								.join("");
+				editorText = extractUserMessageText(targetEntry.content);
 			} else {
 				// Non-user message: leaf = selected node
 				newLeafId = targetId;
@@ -2906,7 +2900,7 @@ export class AgentSession {
 
 	getContextUsage(): ContextUsage | undefined {
 		return getAgentSessionContextUsage({
-			model: this.model,
+			contextWindow: this.model?.contextWindow,
 			messages: this.messages,
 			sessionManager: this.sessionManager,
 		});

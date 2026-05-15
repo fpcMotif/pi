@@ -17,14 +17,18 @@ export interface OverlayLayout {
 	readonly maxHeight: number | undefined;
 }
 
+const PERCENT_PATTERN = /^(\d+(?:\.\d+)?)%$/;
+
+function parsePercent(value: string): number | undefined {
+	const match = value.match(PERCENT_PATTERN);
+	return match ? parseFloat(match[1]) / 100 : undefined;
+}
+
 function parseSizeValue(value: SizeValue | undefined, referenceSize: number): number | undefined {
 	if (value === undefined) return undefined;
 	if (typeof value === "number") return value;
-	const match = value.match(/^(\d+(?:\.\d+)?)%$/);
-	if (match) {
-		return Math.floor((referenceSize * parseFloat(match[1])) / 100);
-	}
-	return undefined;
+	const percent = parsePercent(value);
+	return percent === undefined ? undefined : Math.floor(referenceSize * percent);
 }
 
 function resolveAnchorRow(anchor: OverlayAnchor, height: number, availHeight: number, marginTop: number): number {
@@ -61,12 +65,23 @@ function resolveAnchorCol(anchor: OverlayAnchor, width: number, availWidth: numb
 	}
 }
 
-export function resolveOverlayLayout(
+interface OverlayMeasurement {
+	readonly opt: OverlayOptions;
+	readonly marginTop: number;
+	readonly marginRight: number;
+	readonly marginBottom: number;
+	readonly marginLeft: number;
+	readonly availWidth: number;
+	readonly availHeight: number;
+	readonly width: number;
+	readonly maxHeight: number | undefined;
+}
+
+function measureOverlay(
 	options: OverlayOptions | undefined,
-	overlayHeight: number,
 	termWidth: number,
 	termHeight: number,
-): OverlayLayout {
+): OverlayMeasurement {
 	const opt = options ?? {};
 
 	const margin =
@@ -92,6 +107,16 @@ export function resolveOverlayLayout(
 		maxHeight = Math.max(1, Math.min(maxHeight, availHeight));
 	}
 
+	return { opt, marginTop, marginRight, marginBottom, marginLeft, availWidth, availHeight, width, maxHeight };
+}
+
+function positionOverlay(
+	m: OverlayMeasurement,
+	overlayHeight: number,
+	termWidth: number,
+	termHeight: number,
+): OverlayLayout {
+	const { opt, marginTop, marginRight, marginBottom, marginLeft, availWidth, availHeight, width, maxHeight } = m;
 	const effectiveHeight = maxHeight !== undefined ? Math.min(overlayHeight, maxHeight) : overlayHeight;
 
 	let row: number;
@@ -99,10 +124,9 @@ export function resolveOverlayLayout(
 
 	if (opt.row !== undefined) {
 		if (typeof opt.row === "string") {
-			const match = opt.row.match(/^(\d+(?:\.\d+)?)%$/);
-			if (match) {
+			const percent = parsePercent(opt.row);
+			if (percent !== undefined) {
 				const maxRow = Math.max(0, availHeight - effectiveHeight);
-				const percent = parseFloat(match[1]) / 100;
 				row = marginTop + Math.floor(maxRow * percent);
 			} else {
 				row = resolveAnchorRow("center", effectiveHeight, availHeight, marginTop);
@@ -117,10 +141,9 @@ export function resolveOverlayLayout(
 
 	if (opt.col !== undefined) {
 		if (typeof opt.col === "string") {
-			const match = opt.col.match(/^(\d+(?:\.\d+)?)%$/);
-			if (match) {
+			const percent = parsePercent(opt.col);
+			if (percent !== undefined) {
 				const maxCol = Math.max(0, availWidth - width);
-				const percent = parseFloat(match[1]) / 100;
 				col = marginLeft + Math.floor(maxCol * percent);
 			} else {
 				col = resolveAnchorCol("center", width, availWidth, marginLeft);
@@ -140,6 +163,15 @@ export function resolveOverlayLayout(
 	col = Math.max(marginLeft, Math.min(col, termWidth - marginRight - width));
 
 	return { width, row, col, maxHeight };
+}
+
+export function resolveOverlayLayout(
+	options: OverlayOptions | undefined,
+	overlayHeight: number,
+	termWidth: number,
+	termHeight: number,
+): OverlayLayout {
+	return positionOverlay(measureOverlay(options, termWidth, termHeight), overlayHeight, termWidth, termHeight);
 }
 
 export function isOverlayVisible(entry: OverlayEntry, termWidth: number, termHeight: number): boolean {
@@ -184,14 +216,14 @@ export function compositeOverlays(
 	visibleEntries.sort((a, b) => a.focusOrder - b.focusOrder);
 	for (const entry of visibleEntries) {
 		const { component, options } = entry;
-		const { width, maxHeight } = resolveOverlayLayout(options, 0, termWidth, termHeight);
-		let overlayLines = component.render(width);
+		const measurement = measureOverlay(options, termWidth, termHeight);
+		let overlayLines = component.render(measurement.width);
 
-		if (maxHeight !== undefined && overlayLines.length > maxHeight) {
-			overlayLines = overlayLines.slice(0, maxHeight);
+		if (measurement.maxHeight !== undefined && overlayLines.length > measurement.maxHeight) {
+			overlayLines = overlayLines.slice(0, measurement.maxHeight);
 		}
 
-		const { row, col } = resolveOverlayLayout(options, overlayLines.length, termWidth, termHeight);
+		const { row, col, width } = positionOverlay(measurement, overlayLines.length, termWidth, termHeight);
 
 		rendered.push({ overlayLines, row, col, w: width });
 		minLinesNeeded = Math.max(minLinesNeeded, row + overlayLines.length);

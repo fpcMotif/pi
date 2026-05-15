@@ -431,16 +431,13 @@ const makeSession = (config: SessionConfig = {}): Effect.Effect<Session> =>
 					Effect.gen(function* () {
 						const normalized = normalizeInput(input);
 
-						// Observer hooks — read once per send. `Hooks` is a `Context.Reference`
-						// with a no-op default, so this never adds to `send`'s `R` channel.
+						// `Hooks` is a `Context.Reference` with a no-op default, so reading
+						// once here never adds to `send`'s `R` channel.
 						const hooks = yield* Hooks;
 
-						// 0. COMPACTION CHECK — runs BEFORE the input-variant history update.
-						//    When `state.history` has grown past `COMPACTION_THRESHOLD`, summarise
-						//    the older portion via `LanguageModel.generateText` and rebuild
-						//    `state.history` as `[summary user message, ...recent kept messages]`.
-						//    The `CompactionApplied` event is prepended to the stream at the end
-						//    of this `Effect.gen` so consumers see it as the first element.
+						// Compaction runs BEFORE the input-variant history update so the
+						// summary replaces older history before the new user message lands.
+						// `CompactionApplied` is prepended to the stream at the end of this gen.
 						const preCompaction = yield* SubscriptionRef.get(state);
 						let compactionEvent: CompactionApplied | undefined;
 						const tokensBefore = estimateTokens(preCompaction.history);
@@ -470,17 +467,9 @@ const makeSession = (config: SessionConfig = {}): Effect.Effect<Session> =>
 							});
 						}
 
-						// 1. ONCE PER SEND — compute the next history depending on the input variant,
-						//    then bump turnCount and commit the new history atomically. This runs
-						//    OUTSIDE the retry boundary so transient-error retries do not re-bump
-						//    `turnCount` or re-append the user message.
-						//
-						//    - NewPrompt: append a `user` message with the new prompt.
-						//    - AcceptedPromptEnvelope: append host-preflighted injected messages,
-						//      then the final user content, and optionally replace the system prompt.
-						//    - Continue:  leave history as-is; the existing conversation IS the prompt.
-						//    - Retry:     roll history back to the last `user` message (dropping the
-						//                 trailing assistant turn), then proceed like Continue.
+						// Compute next history per input variant and commit atomically. Runs
+						// OUTSIDE the retry boundary so transient-error retries do not re-bump
+						// `turnCount` or re-append the user message.
 						yield* SubscriptionRef.update(state, (s) => {
 							const nextHistory = ((): Prompt.Prompt => {
 								switch (normalized._tag) {
@@ -629,16 +618,11 @@ const makeSession = (config: SessionConfig = {}): Effect.Effect<Session> =>
 							}),
 						);
 
-						// Prepend the `CompactionApplied` event when compaction fired at the
-						// top of this send, so consumers observe it as the first element.
 						const fullStream =
 							compactionEvent === undefined
 								? mainStream
 								: Stream.concat(Stream.succeed<AgentEvent>(compactionEvent), mainStream);
 
-						// Observer hooks (ADR-0009): invoke `onAgentEvent` for every event the
-						// consumer sees, in stream order. The `Hooks` reference defaults to a
-						// no-op, so this is inert unless a host / extension / test provides one.
 						return fullStream.pipe(Stream.tap((event) => hooks.onAgentEvent(event)));
 					}),
 				);
