@@ -4,11 +4,38 @@
 
 ## What's where
 
-- **`src/cli/`** - command-line parsing and process entry behavior.
-- **`src/core/`** - tools, sessions, settings, auth/model selection, storage, hooks, exports, and extension plumbing.
-- **`src/modes/`** - interactive, print/json, and RPC user workflows.
-- **`src/bun/`** - Bun binary entry path for the post-rewrite CLI distribution.
+- **`src/cli/`** - command-line parsing and process entry behavior. _(legacy lane — rewrite-pending)_
+- **`src/core/`** - tools, sessions, settings, auth/model selection, storage, hooks, exports, and extension plumbing. _(legacy lane — rewrite-pending)_
+- **`src/modes/`** - interactive, print/json, and RPC user workflows. _(legacy lane — rewrite-pending)_
+- **`src/bun/`** - Bun binary entry path for the post-rewrite CLI distribution. _(legacy lane — rewrite-pending)_
+- **`effect/`** - _New, Effect v4 **production** code._ Folds into `src/` at the ADR-0006 phase-4 cutover. Currently: `effect/tools/` — the seven built-in tools as pure `Tool.make` definitions with pluggable `*Operations` Services (ADR-0010), plus the `BuiltinToolkit` registry.
+- **`test/effect/`** - _New, Effect-based._ Tracer-bullet tests for the `effect/` lane, run with `npm run test:effect`.
 - **`docs/` and `examples/`** - public user and extension documentation.
+
+## Effect rewrite status (`effect/` lane)
+
+Built-in tools — ADR-0010 slices, each a pure schema-only `Tool.make` with **zero `pi-tui` imports**, a pluggable `*Operations` `Context.Service` (default `*OperationsLive` Layer; tests swap stub Layers), and a typed `*Error` failure channel. All seven ported, all GREEN against stub Layers:
+
+1. **`ls`** — `LsOperations` (`exists` / `isDirectory` / `readdir`); sorted, `limit`-paginated entries.
+2. **`read`** — `ReadOperations` (`exists` / `isFile` / `readTextFile`); 1-indexed `offset`/`limit` slicing. _Image handling deferred._
+3. **`write`** — `WriteOperations` (`mkdirRecursive` / `writeTextFile`); recursive parent-dir creation, UTF-8 byte count.
+4. **`edit`** — `EditOperations` (`exists` / `readTextFile` / `writeTextFile`); exact-text + fuzzy replacement, multi-edit, BOM + line-ending preservation, unified diff. Pure algorithm in `effect/tools/edit-diff.ts`; `applyEditsToNormalizedContent` throws a typed `EditApplyError` mapped onto `EditError` reasons (no message-string matching).
+5. **`grep`** — `GrepOperations` (`isDirectory` / `readFile` / `search`); the ripgrep subprocess lives behind `search`, the handler does pure path-relativising, context blocks, long-line + byte truncation.
+6. **`find`** — `FindOperations` (`exists` / `search`); the `fd` subprocess lives behind `search`, the handler does pure relativising + byte truncation.
+7. **`bash`** — `BashOperations` (`exec`); the shell subprocess lives behind `exec`. A non-zero exit is a **success** result with `status: "nonzero-exit"` (the legacy tool threw and lost the exit code) — only a genuine inability to run (`cwd-not-found` / `spawn-failed`) is a `BashError`.
+
+`effect/tools/index.ts` exports the `BuiltinToolkit` (`Toolkit.make` over all seven), `builtinHandlers(cwd)` / `builtinToolkitLayer(cwd)` (cwd-bound handler wiring), and `BuiltinOperationsLive` (every `*OperationsLive` merged). Tools declare their Service via `Tool.make`'s `dependencies: [...]` so the toolkit handler's allowed requirements include it. Shared pure truncation helpers are copied into `effect/tools/truncate.ts` (rewrite-lane counterpart of `src/core/tools/truncate.ts`).
+
+Deferred across the subprocess tools (follow-on slices): on-demand `rg`/`fd` download when absent from `PATH` (legacy `ensureTool`); for `bash` — throttled live-output streaming, the rolling-buffer + temp-file `OutputAccumulator`, the `BashSpawnHook` Service, full process-tree teardown. Not yet started: tool renderers (`modes/interactive/tool-renderers/` per ADR-0010), typed Stores (ADR-0012), the extension API (ADR-0014), and the CLI/modes rewrite.
+
+## Running (`effect/` lane)
+
+From `packages/coding-agent/`:
+
+```sh
+bunx vitest --run test/effect            # run the Effect tracer bullets
+# typecheck (from repo root): node_modules/.bin/tsgo -p packages/coding-agent/tsconfig.effect.json --noEmit
+```
 
 ## Architecture stance
 

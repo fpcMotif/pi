@@ -73,6 +73,9 @@ export const Write = Tool.make("Write", {
 	parameters: WriteParameters,
 	success: WriteResult,
 	failure: WriteError,
+	// The handler reads its IO Service from context; declaring it here threads
+	// `WriteOperations` into the toolkit handler's allowed requirements (ADR-0010).
+	dependencies: [WriteOperations],
 });
 
 export const WriteToolkit = Toolkit.make(Write);

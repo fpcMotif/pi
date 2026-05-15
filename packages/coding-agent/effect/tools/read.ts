@@ -87,6 +87,9 @@ export const Read = Tool.make("Read", {
 	parameters: ReadParameters,
 	success: ReadResult,
 	failure: ReadError,
+	// The handler reads its IO Service from context; declaring it here threads
+	// `ReadOperations` into the toolkit handler's allowed requirements (ADR-0010).
+	dependencies: [ReadOperations],
 });
 
 export const ReadToolkit = Toolkit.make(Read);

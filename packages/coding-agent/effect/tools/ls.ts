@@ -80,6 +80,9 @@ export const Ls = Tool.make("Ls", {
 	parameters: LsParameters,
 	success: LsResult,
 	failure: LsError,
+	// The handler reads its IO Service from context; declaring it here threads
+	// `LsOperations` into the toolkit handler's allowed requirements (ADR-0010).
+	dependencies: [LsOperations],
 });
 
 /**

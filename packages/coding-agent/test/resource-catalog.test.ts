@@ -40,4 +40,12 @@ describe("ResourceCatalog", () => {
 		);
 		expect(resourcePrecedenceRank(metadata("anything", "project", "package"))).toBe(4);
 	});
+
+	it("ignores empty paths", () => {
+		const catalog = new ResourceCatalog();
+		catalog.add("themes", "", metadata("local", "user", "top-level"), true);
+
+		expect(catalog.toResolvedPaths().themes).toEqual([]);
+		expect(catalog.mapFor("themes").size).toBe(0);
+	});
 });
