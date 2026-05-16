@@ -2,6 +2,8 @@ import { Effect, Layer, Ref, Stream } from "effect";
 import type { AiError } from "effect/unstable/ai";
 import { LanguageModel } from "effect/unstable/ai";
 
+import { dieUnimplemented } from "./die-unimplemented.js";
+
 /**
  * One step in a scripted streaming session. A `parts` step has the stream emit
  * the canned `Response.StreamPart`-shaped sequence on that call; an `error`
@@ -33,9 +35,8 @@ export const stubLanguageModelStreamScripted = (script: ReadonlyArray<StubStream
 		Effect.gen(function* () {
 			const callIndex = yield* Ref.make(0);
 			return LanguageModel.LanguageModel.of({
-				generateText: (() => Effect.die("stubLanguageModelStreamScripted: generateText not implemented")) as never,
-				generateObject: (() =>
-					Effect.die("stubLanguageModelStreamScripted: generateObject not implemented")) as never,
+				generateText: dieUnimplemented("stubLanguageModelStreamScripted", "generateText"),
+				generateObject: dieUnimplemented("stubLanguageModelStreamScripted", "generateObject"),
 				streamText: ((..._args: ReadonlyArray<unknown>) => {
 					// Pull the call index synchronously off the Ref inside the stream so each
 					// invocation of `streamText` consumes exactly one step. The stream factory
