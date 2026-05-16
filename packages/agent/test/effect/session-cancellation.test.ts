@@ -34,28 +34,23 @@
  * guarantee.)
  */
 import { it } from "@effect/vitest";
-import { Duration, Effect, Exit, Layer, Stream, SubscriptionRef } from "effect";
-import { AiError, LanguageModel } from "effect/unstable/ai";
+import { Duration, Effect, Exit, Stream, SubscriptionRef } from "effect";
+import { AiError } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
 
 import { Session } from "../../effect/session.js";
+import { stubLanguageModelStreamScripted } from "../../test-support/stub-language-model-stream-scripted.js";
 
-/** A `LanguageModel` whose `streamText` fails immediately with an `AiError`. */
-const failingLanguageModel = Layer.succeed(
-	LanguageModel.LanguageModel,
-	LanguageModel.LanguageModel.of({
-		streamText: (() =>
-			Stream.fail(
-				AiError.make({
-					module: "TestStub",
-					method: "streamText",
-					reason: new AiError.RateLimitError({ retryAfter: Duration.seconds(1) }),
-				}),
-			)) as never,
-		generateText: (() => Effect.die("failingLanguageModel: generateText not implemented")) as never,
-		generateObject: (() => Effect.die("failingLanguageModel: generateObject not implemented")) as never,
-	}),
-);
+const failingLanguageModel = stubLanguageModelStreamScripted([
+	{
+		type: "error",
+		error: AiError.make({
+			module: "TestStub",
+			method: "streamText",
+			reason: new AiError.RateLimitError({ retryAfter: Duration.seconds(1) }),
+		}),
+	},
+]);
 
 describe("Session.send state consistency under abnormal termination", () => {
 	it.effect("upstream failure leaves state with only pre-upstream side effects (turnCount + user message)", () =>
