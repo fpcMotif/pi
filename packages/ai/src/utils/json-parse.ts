@@ -19,8 +19,12 @@ function escapeControlCharacter(char: string): string {
 			return "\\r";
 		case "\t":
 			return "\\t";
-		default:
-			return `\\u${char.codePointAt(0)?.toString(16).padStart(4, "0") ?? "0000"}`;
+		default: {
+			// Only ever called for a control character (see the `isControlCharacter`
+			// guard at the single call site), so `codePointAt(0)` is always a number.
+			const codePoint = char.codePointAt(0) as number;
+			return `\\u${codePoint.toString(16).padStart(4, "0")}`;
+		}
 	}
 }
 
@@ -114,8 +118,12 @@ export function parseStreamingJson<T = Record<string, unknown>>(partialJson: str
 			return (result ?? {}) as T;
 		} catch {
 			try {
-				const result = partialParse(repairJson(partialJson));
-				return (result ?? {}) as T;
+				// Reaching here means the raw partial-json parse threw. partial-json
+				// only throws on structurally broken input (e.g. a stray control
+				// character or closing bracket), and repairJson only rewrites content
+				// *inside* string literals — so the repaired input parsed here always
+				// yields a defined value (the only failure mode is another throw).
+				return partialParse(repairJson(partialJson)) as T;
 			} catch {
 				return {} as T;
 			}

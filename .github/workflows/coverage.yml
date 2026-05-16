@@ -1,0 +1,52 @@
+name: Coverage
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: coverage-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev fd-find ripgrep
+          sudo ln -s $(which fdfind) /usr/local/bin/fd
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # ADR-0017: every workspace's test:coverage:100 enforces lines /
+      # branches / functions / statements all = 100 via its package.json
+      # script flags. The aggregator script (coverage-aggregate.mjs) reads
+      # each workspace's coverage-summary.json and prints a unified report,
+      # failing if any package is below 100%.
+      - name: Coverage (monorepo-wide 100%)
+        run: npm run coverage:all:100
+
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-reports
+          path: packages/*/coverage/
+          retention-days: 14

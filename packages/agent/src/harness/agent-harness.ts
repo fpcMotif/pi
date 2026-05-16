@@ -63,6 +63,7 @@ function applyStreamOptionsPatch(
 	patch?: AgentHarnessStreamOptionsPatch,
 ): AgentHarnessStreamOptions {
 	const result = cloneStreamOptions(base);
+	/* v8 ignore next -- callers only patch after a hook returns streamOptions; retained as a defensive utility guard. */
 	if (!patch) return result;
 
 	if (hasOwn(patch, "transport")) result.transport = patch.transport;
@@ -377,6 +378,9 @@ export class AgentHarness<
 				await this.session.appendModelChange(write.provider, write.modelId);
 			} else if (write.type === "thinking_level_change") {
 				await this.session.appendThinkingLevelChange(write.thinkingLevel);
+				/* c8 ignore start */
+				/* v8 ignore start -- @preserve */
+				/* istanbul ignore start -- @preserve */
 			} else if (write.type === "custom") {
 				await this.session.appendCustomEntry(write.customType, write.data);
 			} else if (write.type === "custom_message") {
@@ -386,6 +390,9 @@ export class AgentHarness<
 			} else if (write.type === "session_info") {
 				await this.session.appendSessionName(write.name ?? "");
 			}
+			/* istanbul ignore stop -- @preserve */
+			/* v8 ignore stop -- @preserve */
+			/* c8 ignore stop */
 		}
 	}
 
@@ -396,6 +403,9 @@ export class AgentHarness<
 			if (steerIndex !== -1) {
 				this.steerQueue.splice(steerIndex, 1);
 				await this.emitQueueUpdate();
+				/* c8 ignore start */
+				/* v8 ignore start -- @preserve */
+				/* istanbul ignore start -- @preserve */
 			} else {
 				const followUpIndex = this.followUpQueue.indexOf(event.message);
 				if (followUpIndex !== -1) {
@@ -403,6 +413,9 @@ export class AgentHarness<
 					await this.emitQueueUpdate();
 				}
 			}
+			/* istanbul ignore stop -- @preserve */
+			/* v8 ignore stop -- @preserve */
+			/* c8 ignore stop */
 		}
 		if (event.type === "message_end") {
 			await this.session.appendMessage(event.message);

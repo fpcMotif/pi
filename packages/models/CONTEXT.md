@@ -14,7 +14,7 @@
 
 - **Pure leaf package** (ADR-0005). `pi-agent-core`, `pi-coding-agent`, and `pi-web-ui` depend on it; it must not depend back on them.
 - **No Effect and no provider clients.** Runtime streaming/auth/provider behavior lives in `@effect/ai-*` or `pi-agent-core`.
-- **Generators own generated files.** Do not edit generated registries directly; update the generator scripts in `packages/ai/scripts/`.
+- **Generated registries are not normal edit targets.** `image-models.generated.ts` is refreshed by `packages/ai/scripts/generate-image-models.ts`; the text-model generator was removed during ADR-0006 phase 2, so the narrowed `models.generated.ts` stays in its checked-in form until a slim post-rewrite generator is rebuilt.
 
 ## Glossary
 
@@ -28,10 +28,10 @@
 
 ## Relationships
 
-- **pi-agent-core -> pi-models**: selects models and calculates usage cost without importing provider runtime code.
-- **pi-coding-agent -> pi-models**: displays model choices, thinking levels, and cost data in the CLI.
-- **pi-web-ui -> pi-models**: uses the browser-safe registry directly.
-- **pi-ai -> pi-models**: temporary ADR-0006 phase-1 compatibility path only; `pi-ai` is deleted in the target architecture.
+- **pi-agent-core -> pi-models**: target post-rewrite relationship; selects models and calculates usage cost without importing provider runtime code.
+- **pi-coding-agent -> pi-models**: target post-rewrite relationship; displays model choices, thinking levels, and cost data in the CLI.
+- **pi-web-ui -> pi-models**: target post-rewrite relationship; uses the browser-safe registry directly.
+- **pi-ai -> pi-models**: current ADR-0006 compatibility path only; `pi-ai` is deleted in the target architecture.
 
 ## Example dialogue
 

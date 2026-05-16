@@ -24,6 +24,11 @@ packages/*/dist-firefox/
 # Package specific
 .npm/
 coverage/
+coverage-fp/
+**/coverage-fp/
+*.cov.py
+*.uncov.cjs
+*.uncov.*
 .nyc_output/
 .pi_config/
 tui-debug.log
@@ -39,3 +44,13 @@ plans/
 .pi/hf-sessions/
 .pi/hf-sessions-backup/
 collect.sh
+
+# External reference repos (effect-ts ecosystem)
+effect-main/
+effect-smol-main/
+language-service-main/
+tsgo-main/
+
+# Local dev artifacts
+.omx/
+coverage-fresh/

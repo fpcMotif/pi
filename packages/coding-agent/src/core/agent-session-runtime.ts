@@ -1,6 +1,7 @@
 import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import type { AgentSession } from "./agent-session.js";
+import { extractUserMessageText } from "./agent-session-messages.js";
 import type { AgentSessionRuntimeDiagnostic, AgentSessionServices } from "./agent-session-services.js";
 import type { ReplacedSessionContext, SessionShutdownEvent, SessionStartEvent } from "./extensions/index.js";
 import { emitSessionShutdownEvent } from "./extensions/runner.js";
@@ -44,17 +45,6 @@ export class SessionImportFileNotFoundError extends Error {
 		this.name = "SessionImportFileNotFoundError";
 		this.filePath = filePath;
 	}
-}
-
-function extractUserMessageText(content: string | Array<{ type: string; text?: string }>): string {
-	if (typeof content === "string") {
-		return content;
-	}
-
-	return content
-		.filter((part): part is { type: "text"; text: string } => part.type === "text" && typeof part.text === "string")
-		.map((part) => part.text)
-		.join("");
 }
 
 /**

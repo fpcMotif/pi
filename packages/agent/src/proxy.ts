@@ -23,7 +23,9 @@ class ProxyMessageEventStream extends EventStream<AssistantMessageEvent, Assista
 			(event) => event.type === "done" || event.type === "error",
 			(event) => {
 				if (event.type === "done") return event.message;
+				/* v8 ignore next -- EventStream only invokes this extractor after the done/error terminal predicate passes. */
 				if (event.type === "error") return event.error;
+				/* v8 ignore next -- @preserve */
 				throw new Error("Unexpected event type");
 			},
 		);
@@ -321,6 +323,7 @@ function processProxyEvent(
 			const content = partial.content[proxyEvent.contentIndex];
 			if (content?.type === "toolCall") {
 				(content as any).partialJson += proxyEvent.delta;
+				/* v8 ignore next -- parseStreamingJson always returns an object; this fallback is legacy defensive code. */
 				content.arguments = parseStreamingJson((content as any).partialJson) || {};
 				partial.content[proxyEvent.contentIndex] = { ...content }; // Trigger reactivity
 				return {

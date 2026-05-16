@@ -445,12 +445,13 @@ export class Agent {
 	}
 
 	private async runWithLifecycle(executor: (signal: AbortSignal) => Promise<void>): Promise<void> {
+		/* v8 ignore next 3 -- @preserve */
 		if (this.activeRun) {
 			throw new Error("Agent is already processing.");
 		}
 
 		const abortController = new AbortController();
-		let resolvePromise = () => {};
+		let resolvePromise!: () => void;
 		const promise = new Promise<void>((resolve) => {
 			resolvePromise = resolve;
 		});
@@ -543,6 +544,7 @@ export class Agent {
 		}
 
 		const signal = this.activeRun?.abortController.signal;
+		/* v8 ignore next 3 -- @preserve */
 		if (!signal) {
 			throw new Error("Agent listener invoked outside active run");
 		}

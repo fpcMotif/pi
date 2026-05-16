@@ -1,11 +1,26 @@
 import { it } from "@effect/vitest";
 import { Effect, Layer, Schema } from "effect";
+import { Prompt } from "effect/unstable/ai";
 import { KeyValueStore } from "effect/unstable/persistence";
 import { describe, expect } from "vitest";
 
 import { SchemaError } from "../../../effect/agent-error.js";
 import { SessionState } from "../../../effect/session-state.js";
 import { layerKeyValueStore, SessionStore } from "../../../effect/stores/session-store.js";
+
+/**
+ * Build a full `SessionState` from a partial spec. Fills the fields added in
+ * later slices (`history`, `inputTokens`, `outputTokens`) with their empty
+ * defaults so these store tests keep expressing fixtures as just a `turnCount`.
+ */
+const makeSessionState = (fields: { readonly turnCount: number }): SessionState =>
+	new SessionState({
+		turnCount: fields.turnCount,
+		history: Prompt.empty,
+		inputTokens: 0,
+		outputTokens: 0,
+		compactionCount: 0,
+	});
 
 /**
  * Slice 18 (d) -- defensive `Schema.isSchemaError(error)` true branches of
@@ -49,10 +64,7 @@ const schemaErroringKvLayer = (
 						// but we return a `Schema.SchemaError`-shaped value so the
 						// downstream `Schema.isSchemaError(error)` discriminator picks
 						// the true branch.
-						(Effect.fail(aRealSchemaError) as unknown as Effect.Effect<
-							void,
-							KeyValueStore.KeyValueStoreError
-						>)
+						(Effect.fail(aRealSchemaError) as unknown as Effect.Effect<void, KeyValueStore.KeyValueStoreError>)
 					: Effect.sync(() => {
 							values.set(key, typeof value === "string" ? value : decoder.decode(value));
 						}),
@@ -70,7 +82,7 @@ describe("SessionStore (KV-backed) -- defensive Schema.isSchemaError branch on s
 	it.effect("save: records.set returning Schema.SchemaError is mapped via mapSchemaError", () =>
 		Effect.gen(function* () {
 			const store = yield* SessionStore;
-			const error = yield* Effect.flip(store.save("s1", new SessionState({ turnCount: 1 })));
+			const error = yield* Effect.flip(store.save("s1", makeSessionState({ turnCount: 1 })));
 			expect(error).toBeInstanceOf(SchemaError);
 		}).pipe(
 			Effect.provide(layerKeyValueStore.pipe(Layer.provide(schemaErroringKvLayer((k) => k === "sessions/s1")))),
@@ -80,12 +92,10 @@ describe("SessionStore (KV-backed) -- defensive Schema.isSchemaError branch on s
 	it.effect("save: indexes.set returning Schema.SchemaError is mapped via mapSchemaError", () =>
 		Effect.gen(function* () {
 			const store = yield* SessionStore;
-			const error = yield* Effect.flip(store.save("s1", new SessionState({ turnCount: 1 })));
+			const error = yield* Effect.flip(store.save("s1", makeSessionState({ turnCount: 1 })));
 			expect(error).toBeInstanceOf(SchemaError);
 		}).pipe(
-			Effect.provide(
-				layerKeyValueStore.pipe(Layer.provide(schemaErroringKvLayer((k) => k === "indexes/sessions"))),
-			),
+			Effect.provide(layerKeyValueStore.pipe(Layer.provide(schemaErroringKvLayer((k) => k === "indexes/sessions")))),
 		),
 	);
 

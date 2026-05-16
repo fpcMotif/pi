@@ -71,7 +71,7 @@ export function detectInstallMethod(): InstallMethod {
 	if (resolvedPath.includes("/yarn/") || resolvedPath.includes("/.yarn/")) {
 		return "yarn";
 	}
-	if (isBunRuntime || resolvedPath.includes("/install/global/node_modules/")) {
+	if (isBunRuntime || resolvedPath.includes("/install/global/node_modules/") || isPackageInBunGlobalRoot()) {
 		return "bun";
 	}
 	if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/")) {
@@ -164,20 +164,31 @@ function readCommandOutput(
 	return undefined;
 }
 
+function getBunGlobalPackageRoots(command = "bun", args: string[] = [], requireSuccess = false): string[] {
+	const bunBin = readCommandOutput(command, [...args, "pm", "bin", "-g"], { requireSuccess });
+	const roots = [join(homedir(), ".bun", "install", "global", "node_modules")];
+	if (bunBin) {
+		const bunHome = dirname(bunBin);
+		roots.push(join(bunHome, "install", "global", "node_modules"));
+		if (process.platform === "win32") {
+			roots.push(join(dirname(bunHome), "node_modules"));
+		}
+	}
+	return Array.from(new Set(roots));
+}
+
+function isPackageInBunGlobalRoot(): boolean {
+	const packageDir = normalizeExistingPathForComparison(getPackageDir());
+	return !!packageDir && getBunGlobalPackageRoots().some((root) => isPathUnderRoot(packageDir, root));
+}
+
 function getGlobalPackageRoots(method: InstallMethod, _packageName: string, npmCommand?: string[]): string[] {
 	switch (method) {
 		case "npm": {
 			const configured = !!npmCommand?.length;
 			const [command = "npm", ...npmArgs] = npmCommand ?? [];
 			if (configured && command === "bun") {
-				const bunBin = readCommandOutput(command, [...npmArgs, "pm", "bin", "-g"], {
-					requireSuccess: true,
-				});
-				const roots = [join(homedir(), ".bun", "install", "global", "node_modules")];
-				if (bunBin) {
-					roots.push(join(dirname(bunBin), "install", "global", "node_modules"));
-				}
-				return roots;
+				return getBunGlobalPackageRoots(command, npmArgs, true);
 			}
 			const root = readCommandOutput(command, [...npmArgs, "root", "-g"], {
 				requireSuccess: configured,
@@ -193,14 +204,8 @@ function getGlobalPackageRoots(method: InstallMethod, _packageName: string, npmC
 			const dir = readCommandOutput("yarn", ["global", "dir"]);
 			return dir ? [dir, join(dir, "node_modules")] : [];
 		}
-		case "bun": {
-			const bunBin = readCommandOutput("bun", ["pm", "bin", "-g"]);
-			const roots = [join(homedir(), ".bun", "install", "global", "node_modules")];
-			if (bunBin) {
-				roots.push(join(dirname(bunBin), "install", "global", "node_modules"));
-			}
-			return roots;
-		}
+		case "bun":
+			return getBunGlobalPackageRoots();
 		case "bun-binary":
 		case "unknown":
 			return [];
@@ -235,17 +240,18 @@ function isSelfUpdatePathWritable(): boolean {
 	}
 }
 
+function isPathUnderRoot(path: string, root: string): boolean {
+	const normalizedRoot = normalizeExistingPathForComparison(root);
+	return (
+		!!normalizedRoot && path.startsWith(normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`)
+	);
+}
+
 function isManagedByGlobalPackageManager(method: InstallMethod, packageName: string, npmCommand?: string[]): boolean {
 	const packageDir = normalizeExistingPathForComparison(getPackageDir());
 	return (
 		!!packageDir &&
-		getGlobalPackageRoots(method, packageName, npmCommand).some((root) => {
-			const normalizedRoot = normalizeExistingPathForComparison(root);
-			return (
-				!!normalizedRoot &&
-				packageDir.startsWith(normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`)
-			);
-		})
+		getGlobalPackageRoots(method, packageName, npmCommand).some((root) => isPathUnderRoot(packageDir, root))
 	);
 }
 

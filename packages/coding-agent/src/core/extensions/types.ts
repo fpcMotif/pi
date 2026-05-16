@@ -117,11 +117,56 @@ export interface WorkingIndicatorOptions {
 export type AutocompleteProviderFactory = (current: AutocompleteProvider) => AutocompleteProvider;
 export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: KeybindingsManager) => EditorComponent;
 
+export type ExtensionUICapabilityName = "dialogs" | "editor";
+
+export interface ExtensionUIDialogsCapability {
+	select(title: string, options: string[], opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
+	confirm(title: string, message: string, opts?: ExtensionUIDialogOptions): Promise<boolean>;
+	input(title: string, placeholder?: string, opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
+	notify(message: string, type?: "info" | "warning" | "error"): void;
+	custom<T>(
+		factory: (
+			tui: TUI,
+			theme: Theme,
+			keybindings: KeybindingsManager,
+			done: (result: T) => void,
+		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
+		options?: {
+			overlay?: boolean;
+			overlayOptions?: OverlayOptions | (() => OverlayOptions);
+			onHandle?: (handle: OverlayHandle) => void;
+		},
+	): Promise<T>;
+}
+
+export interface ExtensionUIEditorCapability {
+	pasteToEditor(text: string): void;
+	setEditorText(text: string): void;
+	getEditorText(): string;
+	editor(title: string, prefill?: string): Promise<string | undefined>;
+	addAutocompleteProvider(factory: AutocompleteProviderFactory): void;
+	setEditorComponent(factory: EditorFactory | undefined): void;
+	getEditorComponent(): EditorFactory | undefined;
+}
+
+export interface ExtensionUICapabilities {
+	dialogs?: ExtensionUIDialogsCapability;
+	editor?: ExtensionUIEditorCapability;
+}
+
+export interface ExtensionUICapabilityDeclaration {
+	required?: ExtensionUICapabilityName[];
+	optional?: ExtensionUICapabilityName[];
+}
+
 /**
  * UI context for extensions to request interactive UI.
  * Each mode (interactive, RPC, print) provides its own implementation.
  */
 export interface ExtensionUIContext {
+	/** Focused UI capability Interfaces. Unsupported capabilities are absent. */
+	readonly capabilities: ExtensionUICapabilities;
+
 	/** Show a selector and return the user's choice. */
 	select(title: string, options: string[], opts?: ExtensionUIDialogOptions): Promise<string | undefined>;
 
@@ -393,7 +438,7 @@ export interface ToolRenderResultOptions {
 }
 
 /** Context passed to tool renderers. */
-export interface ToolRenderContext<TState = any, TArgs = any> {
+export interface ToolRenderContext<TState = unknown, TArgs = unknown> {
 	/** Current tool call arguments. Shared across call/result renders for the same tool call. */
 	args: TArgs;
 	/** Unique id for this tool execution. Stable across call/result renders for the same tool call. */
@@ -420,10 +465,25 @@ export interface ToolRenderContext<TState = any, TArgs = any> {
 	isError: boolean;
 }
 
+/** Interactive renderer registered separately from a tool definition. */
+export interface ToolRenderer<TArgs = unknown, TDetails = unknown, TState = unknown> {
+	/** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
+	renderShell?: "default" | "self";
+	/** Custom rendering for tool call display. */
+	renderCall?(args: TArgs, theme: Theme, context: ToolRenderContext<TState, TArgs>): Component;
+	/** Custom rendering for tool result display. */
+	renderResult?(
+		result: AgentToolResult<TDetails>,
+		options: ToolRenderResultOptions,
+		theme: Theme,
+		context: ToolRenderContext<TState, TArgs>,
+	): Component;
+}
+
 /**
  * Tool definition for registerTool().
  */
-export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = unknown, TState = any> {
+export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = unknown, TState = unknown> {
 	/** Tool name (used in LLM tool calls) */
 	name: string;
 	/** Human-readable label for UI */
@@ -460,19 +520,19 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
 		ctx: ExtensionContext,
 	): Promise<AgentToolResult<TDetails>>;
 
-	/** Custom rendering for tool call display */
-	renderCall?: (args: Static<TParams>, theme: Theme, context: ToolRenderContext<TState, Static<TParams>>) => Component;
+	/** Custom rendering for tool call display. Prefer registerToolRenderer() for new tools. */
+	renderCall?(args: Static<TParams>, theme: Theme, context: ToolRenderContext<TState, Static<TParams>>): Component;
 
-	/** Custom rendering for tool result display */
-	renderResult?: (
+	/** Custom rendering for tool result display. Prefer registerToolRenderer() for new tools. */
+	renderResult?(
 		result: AgentToolResult<TDetails>,
 		options: ToolRenderResultOptions,
 		theme: Theme,
 		context: ToolRenderContext<TState, Static<TParams>>,
-	) => Component;
+	): Component;
 }
 
-type AnyToolDefinition = ToolDefinition<any, any, any>;
+type AnyToolDefinition = ToolDefinition<TSchema, unknown, unknown>;
 
 /**
  * Preserve parameter inference for standalone tool definitions.
@@ -481,7 +541,7 @@ type AnyToolDefinition = ToolDefinition<any, any, any>;
  * as `customTools`, where contextual typing would otherwise widen params to
  * `unknown`.
  */
-export function defineTool<TParams extends TSchema, TDetails = unknown, TState = any>(
+export function defineTool<TParams extends TSchema, TDetails = unknown, TState = unknown>(
 	tool: ToolDefinition<TParams, TDetails, TState>,
 ): ToolDefinition<TParams, TDetails, TState> & AnyToolDefinition {
 	return tool as ToolDefinition<TParams, TDetails, TState> & AnyToolDefinition;
@@ -1125,13 +1185,22 @@ export interface ExtensionAPI {
 	on(event: "user_bash", handler: ExtensionHandler<UserBashEvent, UserBashEventResult>): void;
 	on(event: "input", handler: ExtensionHandler<InputEvent, InputEventResult>): void;
 
+	/** Declare which focused UI capabilities this extension requires or can optionally use. */
+	declareUICapabilities(declaration: ExtensionUICapabilityDeclaration): void;
+
 	// =========================================================================
 	// Tool Registration
 	// =========================================================================
 
 	/** Register a tool that the LLM can call. */
-	registerTool<TParams extends TSchema = TSchema, TDetails = unknown, TState = any>(
+	registerTool<TParams extends TSchema = TSchema, TDetails = unknown, TState = unknown>(
 		tool: ToolDefinition<TParams, TDetails, TState>,
+	): void;
+
+	/** Register an interactive renderer for a tool. */
+	registerToolRenderer<TArgs = unknown, TDetails = unknown, TState = unknown>(
+		toolName: string,
+		renderer: ToolRenderer<TArgs, TDetails, TState>,
 	): void;
 
 	// =========================================================================
@@ -1387,6 +1456,12 @@ export interface RegisteredTool {
 	sourceInfo: SourceInfo;
 }
 
+export interface RegisteredToolRenderer {
+	toolName: string;
+	renderer: ToolRenderer;
+	sourceInfo: SourceInfo;
+}
+
 export interface ExtensionFlag {
 	name: string;
 	description?: string;
@@ -1541,6 +1616,8 @@ export interface Extension {
 	sourceInfo: SourceInfo;
 	handlers: Map<string, HandlerFn[]>;
 	tools: Map<string, RegisteredTool>;
+	toolRenderers: Map<string, RegisteredToolRenderer>;
+	uiCapabilityDeclaration: ExtensionUICapabilityDeclaration;
 	messageRenderers: Map<string, MessageRenderer>;
 	commands: Map<string, RegisteredCommand>;
 	flags: Map<string, ExtensionFlag>;
