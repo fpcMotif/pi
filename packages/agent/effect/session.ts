@@ -156,40 +156,21 @@
 import { Effect, Option, Ref, Stream, SubscriptionRef, type Types } from "effect";
 import { LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
 
-import { type AgentError, CompactionError, LlmError } from "./agent-error.js";
-import { type AgentEvent, CompactionApplied } from "./agent-event.js";
+import type { AgentError } from "./agent-error.js";
+import type { AgentEvent, CompactionApplied } from "./agent-event.js";
 import {
 	type Input,
 	normalize as normalizeInput,
 	promptFromAcceptedEnvelope,
 	rollbackToLastUserMessage,
 } from "./agent-input.js";
-import { COMPACTION_THRESHOLD, estimateTokens, KEEP_RECENT_TOKENS, splitHistory } from "./compaction.js";
+import { COMPACTION_THRESHOLD, KEEP_RECENT_TOKENS } from "./compaction.js";
 import { makeAttemptStream } from "./attempt-stream.js";
+import { runCompactionStep } from "./compaction-step.js";
 import { Hooks } from "./hooks.js";
 import { DEFAULT_MAX_LLM_RETRIES, makeRetrySchedule } from "./retry.js";
 import { SessionState } from "./session-state.js";
 import { SessionStore } from "./stores/session-store.js";
-
-/**
- * Instruction appended after the to-summarise history slice when compaction
- * fires. The provider sees the older conversation followed by this user
- * message and returns a structured context checkpoint another assistant can
- * load to continue the work. The instruction asks for explicit markdown
- * sections so the summary stays parseable and the next turn can rely on a
- * predictable shape (slice 38 — structured-checkpoint summary prompt). Empty
- * sections are omitted by the model rather than padded.
- */
-const SUMMARIZATION_INSTRUCTION =
-	"Summarize the conversation above into a structured context checkpoint that another assistant can load to continue the work. Use the following markdown sections, omitting any that would be empty:\n\n" +
-	"## Goals\n" +
-	"- The user-facing goals of this session, prioritised.\n\n" +
-	"## Decisions\n" +
-	"- Material decisions made and their rationale.\n\n" +
-	"## Files Touched\n" +
-	"- Exact file paths read, written, edited, or referenced.\n\n" +
-	"## Next Steps\n" +
-	"- Concrete actions the next assistant should take.";
 
 /**
  * `Session.send` is generic over the toolkit's `Tools` map so that callers
@@ -309,49 +290,13 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						const postInput = yield* SubscriptionRef.get(state);
 
 						// 1. COMPACTION CHECK — runs AFTER the input-variant update on the
-						//    post-input history. When that history has grown past
-						//    `COMPACTION_THRESHOLD`, summarise the older portion via
-						//    `LanguageModel.generateText` and rebuild `state.history` as
-						//    `[...systemMessages, summary user message, ...recent kept messages]`.
-						//    The `CompactionApplied` event is prepended to the stream at the end
-						//    of this `Effect.gen` so consumers see it as the first element.
-						//
-						//    **System messages survive compaction**: they are extracted from the
-						//    history before `splitHistory` runs (so they are never fed into the
-						//    summary call) and re-injected at the head of the compacted history
-						//    so they keep their system-role placement.
-						let compactionEvent: CompactionApplied | undefined;
-						const tokensBefore = estimateTokens(postInput.history);
-						if (tokensBefore > compactionThreshold) {
-							const systemMessages = postInput.history.content.filter((m) => m.role === "system");
-							const bodyHistory = Prompt.fromMessages(
-								postInput.history.content.filter((m) => m.role !== "system"),
-							);
-							const { toSummarize, toKeep } = splitHistory(bodyHistory, keepRecentTokens);
-							// A failed summarisation call surfaces as `CompactionError` in
-							// `send`'s error channel — distinct from the per-turn `LlmError`.
-							const summary = yield* LanguageModel.generateText({
-								prompt: Prompt.concat(toSummarize, Prompt.make(SUMMARIZATION_INSTRUCTION)),
-							}).pipe(Effect.mapError((aiError) => new CompactionError({ cause: aiError })));
-							const compactedHistory = Prompt.fromMessages([
-								...systemMessages,
-								Prompt.makeMessage("user", {
-									content: [Prompt.makePart("text", { text: summary.text })],
-								}),
-								...toKeep.content,
-							]);
-							yield* SubscriptionRef.update(state, (s) =>
-								SessionState.with(s, {
-									history: compactedHistory,
-									compactionCount: s.compactionCount + 1,
-								}),
-							);
-							compactionEvent = new CompactionApplied({
-								tokensBefore,
-								tokensAfter: estimateTokens(compactedHistory),
-								summarizedMessageCount: toSummarize.content.length,
-							});
-						}
+						//    post-input history. See `compaction-step.ts`. The returned
+						//    `CompactionApplied` event is prepended to the stream below so
+						//    consumers observe it as the first element.
+						const compactionEvent = yield* runCompactionStep(state, postInput, {
+							compactionThreshold,
+							keepRecentTokens,
+						});
 
 						const snapshot = yield* SubscriptionRef.get(state);
 
