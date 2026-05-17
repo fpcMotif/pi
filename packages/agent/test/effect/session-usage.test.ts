@@ -104,6 +104,32 @@ describe("Session.send captures token usage from upstream finish parts", () => {
 		),
 	);
 
+	it.effect("non-record finish usage is treated as zero usage", () =>
+		Effect.gen(function* () {
+			const session = yield* Session.empty;
+			const events = yield* Stream.runCollect(session.send("hello"));
+
+			const finish = events.find((e) => e._tag === "Finish") as Finish | undefined;
+			expect(finish?.inputTokens).toBe(0);
+			expect(finish?.outputTokens).toBe(0);
+
+			const snapshot = yield* SubscriptionRef.get(session.state);
+			expect(snapshot.inputTokens).toBe(0);
+			expect(snapshot.outputTokens).toBe(0);
+		}).pipe(
+			Effect.provide(
+				stubLanguageModelStream([
+					{
+						type: "finish",
+						reason: "stop",
+						usage: "not-a-usage-object",
+						response: undefined,
+					},
+				]),
+			),
+		),
+	);
+
 	it.effect("finish-only streams update usage totals without appending an empty assistant message", () =>
 		Effect.gen(function* () {
 			const session = yield* Session.empty;

@@ -20,6 +20,16 @@ import { SessionState } from "../../effect/session-state.js";
 import { openAiStreamingLayer } from "../../test-support/openai-language-model.js";
 
 describe("Session.state -- SubscriptionRef<SessionState>", () => {
+	it("SessionState.with preserves untouched fields", () => {
+		const next = SessionState.with(SessionState.empty, { turnCount: 7 });
+
+		expect(next.turnCount).toBe(7);
+		expect(next.history).toBe(SessionState.empty.history);
+		expect(next.inputTokens).toBe(SessionState.empty.inputTokens);
+		expect(next.outputTokens).toBe(SessionState.empty.outputTokens);
+		expect(next.compactionCount).toBe(SessionState.empty.compactionCount);
+	});
+
 	it.effect("Session.empty initialises state to SessionState.empty (turnCount: 0)", () =>
 		Effect.gen(function* () {
 			const session = yield* Session.empty;
