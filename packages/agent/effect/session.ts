@@ -157,7 +157,7 @@ import { Effect, Option, Ref, Schedule, Stream, SubscriptionRef, type Types } fr
 import { LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
 
 import { type AgentError, CompactionError, LlmError } from "./agent-error.js";
-import { type AgentEvent, CompactionApplied, Finish, LlmPart, ToolCompleted, ToolDispatched } from "./agent-event.js";
+import { type AgentEvent, CompactionApplied, Finish, LlmPart } from "./agent-event.js";
 import {
 	type Input,
 	normalize as normalizeInput,
@@ -166,6 +166,7 @@ import {
 } from "./agent-input.js";
 import { COMPACTION_THRESHOLD, estimateTokens, KEEP_RECENT_TOKENS, splitHistory } from "./compaction.js";
 import { Hooks } from "./hooks.js";
+import { liftPart } from "./lift-part.js";
 import { SessionState } from "./session-state.js";
 import { SessionStore } from "./stores/session-store.js";
 import { hasStringProperty, isRecord } from "./type-guards.js";
@@ -215,42 +216,6 @@ interface MakeOptions {
 	readonly initialState: SessionState;
 	readonly persist: (state: SessionState) => Effect.Effect<void, AgentError>;
 }
-
-/**
- * Lift one upstream `Response.AnyPart` into the pi `AgentEvent` view. Every
- * part becomes an `LlmPart`; `tool-call` / `tool-result` parts additionally
- * emit `ToolDispatched` / `ToolCompleted` so consumers can observe
- * orchestration without parsing the parts themselves.
- */
-const liftPart = (part: unknown): ReadonlyArray<AgentEvent> => {
-	const base = new LlmPart({ part });
-	if (!isRecord(part)) return [base];
-
-	const tag = part.type;
-
-	if (tag === "tool-call" && hasStringProperty(part, "id") && hasStringProperty(part, "name")) {
-		return [base, new ToolDispatched({ toolName: part.name, toolCallId: part.id, params: part.params })];
-	}
-
-	if (
-		tag === "tool-result" &&
-		hasStringProperty(part, "id") &&
-		hasStringProperty(part, "name") &&
-		typeof part.isFailure === "boolean"
-	) {
-		return [
-			base,
-			new ToolCompleted({
-				toolName: part.name,
-				toolCallId: part.id,
-				isFailure: part.isFailure,
-				result: part.result,
-			}),
-		];
-	}
-
-	return [base];
-};
 
 /**
  * Accumulator state for assembling one `AssistantMessage` worth of content as
