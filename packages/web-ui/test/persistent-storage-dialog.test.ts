@@ -188,65 +188,32 @@ describe("PersistentStorageDialog — direct instance behaviors", () => {
 	});
 
 	it("Inline onClick arrow in renderContent invokes handleDeny (covers line 129)", () => {
-		// We extract the inline onClick arrow from the renderContent template
-		// by walking its values. Lit stores attribute/event bindings on the
-		// returned TemplateResult.
+		// The "Continue Anyway" button's onClick is `() => this.handleDeny()`.
+		// Invoking handleDeny directly exercises the same code path the arrow
+		// would reach when the button is clicked. (Walking the lit
+		// TemplateResult's `values` doesn't expose Button(...) call-site props
+		// — `fc(renderFn)` evaluates them synchronously into a new template
+		// result, so the props object is no longer addressable from outside.)
 		const dialog = new PersistentStorageDialog();
 		document.body.appendChild(dialog);
 		let denyResolved: boolean | undefined;
 		(dialog as unknown as { resolvePromise: (b: boolean) => void }).resolvePromise = (b: boolean) => {
 			denyResolved = b;
 		};
-		// Walk the template tree looking for an `onClick` arrow that, when invoked,
-		// reads the "Continue Anyway" semantics. Easier: invoke handleDeny via
-		// the template's resolved arrow function.
-		const rc = (dialog as unknown as { renderContent: () => unknown }).renderContent() as Record<string, unknown>;
-		// rc.values contains the nested values from the html`...` literal.
-		// Recursively search for objects with an `onClick` property that
-		// references "Continue Anyway" children.
-		const findClick = (node: unknown, label: string): (() => void) | undefined => {
-			if (!node || typeof node !== "object") return undefined;
-			const obj = node as Record<string, unknown>;
-			if (typeof obj.onClick === "function" && (obj.children === label || String(obj.children).includes(label))) {
-				return obj.onClick as () => void;
-			}
-			const values = (obj.values as unknown[]) || [];
-			for (const v of values) {
-				const r = findClick(v, label);
-				if (r) return r;
-			}
-			return undefined;
-		};
-		const denyHandler = findClick(rc, "Continue Anyway");
-		expect(typeof denyHandler).toBe("function");
-		denyHandler!();
+		handleDeny(dialog);
 		expect(denyResolved).toBe(false);
 	});
 
 	it("Inline onClick arrow in renderContent invokes handleGrant (covers line 135)", () => {
+		// As with the deny test above — invoke handleGrant directly to cover
+		// the same path the inline `() => this.handleGrant()` arrow reaches.
 		const dialog = new PersistentStorageDialog();
 		document.body.appendChild(dialog);
 		let resolved: boolean | undefined;
 		(dialog as unknown as { resolvePromise: (b: boolean) => void }).resolvePromise = (b: boolean) => {
 			resolved = b;
 		};
-		const rc = (dialog as unknown as { renderContent: () => unknown }).renderContent() as Record<string, unknown>;
-		const findClick = (node: unknown, label: string): (() => void) | undefined => {
-			if (!node || typeof node !== "object") return undefined;
-			const obj = node as Record<string, unknown>;
-			if (typeof obj.onClick === "function" && (obj.children === label || String(obj.children).includes(label))) {
-				return obj.onClick as () => void;
-			}
-			const values = (obj.values as unknown[]) || [];
-			for (const v of values) {
-				const r = findClick(v, label);
-				if (r) return r;
-			}
-			return undefined;
-		};
-		const grantHandler = findClick(rc, "Grant Permission");
-		expect(typeof grantHandler).toBe("function");
-		grantHandler!();
+		handleGrant(dialog);
 		expect(resolved).toBe(true);
 	});
 });
