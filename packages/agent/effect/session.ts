@@ -170,6 +170,7 @@ import { Hooks } from "./hooks.js";
 import { liftPart } from "./lift-part.js";
 import { SessionState } from "./session-state.js";
 import { SessionStore } from "./stores/session-store.js";
+import { type CapturedUsage, captureUsage } from "./token-capture.js";
 
 /**
  * Instruction appended after the to-summarise history slice when compaction
@@ -216,36 +217,6 @@ interface MakeOptions {
 	readonly initialState: SessionState;
 	readonly persist: (state: SessionState) => Effect.Effect<void, AgentError>;
 }
-
-/**
- * Captured per-send token totals. `null` means we never saw a `finish` part
- * (e.g. the stream errored or was interrupted before completion); the trailing
- * `Finish` event then omits the token fields and state totals are unchanged.
- */
-interface CapturedUsage {
-	readonly inputTokens: number;
-	readonly outputTokens: number;
-}
-
-/**
- * Read `usage.inputTokens.total` / `usage.outputTokens.total` off a `finish`
- * part. Undefined totals collapse to 0 so callers see a `number` everywhere.
- * Returns `null` for any non-`finish` part so the `Stream.tap` can no-op.
- */
-const captureUsage = (part: unknown): CapturedUsage | null => {
-	if (typeof part !== "object" || part === null) return null;
-	const p = part as { readonly type?: unknown; readonly usage?: unknown };
-	if (p.type !== "finish") return null;
-	const usage = p.usage as
-		| {
-				readonly inputTokens?: { readonly total?: number | undefined };
-				readonly outputTokens?: { readonly total?: number | undefined };
-		  }
-		| undefined;
-	const inputTokens = usage?.inputTokens?.total ?? 0;
-	const outputTokens = usage?.outputTokens?.total ?? 0;
-	return { inputTokens, outputTokens };
-};
 
 /**
  * Default transient-error retry cap when `SessionConfig.maxLlmRetries` is
