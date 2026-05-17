@@ -134,6 +134,14 @@ describe("JsonlSessionStorage", () => {
 		await expect(JsonlSessionStorage.open(filePath)).rejects.toThrow("first line is not a valid session header");
 	});
 
+	it("throws for missing session headers", async () => {
+		const dir = createTempDir();
+		const filePath = join(dir, "session.jsonl");
+		writeFileSync(filePath, "\n");
+		await expect(JsonlSessionStorage.open(filePath)).rejects.toThrow("missing session header");
+		await expect(loadJsonlSessionMetadata(filePath)).rejects.toThrow("missing session header");
+	});
+
 	it("ignores malformed entry lines", async () => {
 		const dir = createTempDir();
 		const filePath = join(dir, "session.jsonl");
@@ -205,6 +213,7 @@ describe("JsonlSessionStorage", () => {
 		expect(await loaded.getLeafId()).toBe("child");
 		expect((await loaded.getEntries()).map((entry) => entry.id)).toEqual(["root", "child"]);
 		expect((await loaded.getPathToRoot("child")).map((entry) => entry.id)).toEqual(["root", "child"]);
+		await expect(loaded.setLeafId("missing")).rejects.toThrow("Entry missing not found");
 	});
 
 	it("finds entries by type", async () => {

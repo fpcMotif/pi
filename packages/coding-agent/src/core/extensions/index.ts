@@ -19,6 +19,7 @@ export type {
 	SwitchSessionHandler,
 } from "./runner.js";
 export { ExtensionRunner } from "./runner.js";
+export { composeToolRenderers, toolRendererFromDefinition } from "./tool-renderer.js";
 export type {
 	AfterProviderResponseEvent,
 	AgentEndEvent,
@@ -69,8 +70,13 @@ export type {
 	// Runtime
 	ExtensionRuntime,
 	ExtensionShortcut,
+	ExtensionUICapabilities,
+	ExtensionUICapabilityDeclaration,
+	ExtensionUICapabilityName,
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
+	ExtensionUIDialogsCapability,
+	ExtensionUIEditorCapability,
 	ExtensionWidgetOptions,
 	FindToolCallEvent,
 	FindToolResultEvent,
@@ -105,6 +111,7 @@ export type {
 	// Commands
 	RegisteredCommand,
 	RegisteredTool,
+	RegisteredToolRenderer,
 	ReplacedSessionContext,
 	ResolvedCommand,
 	// Events - Resources
@@ -143,6 +150,8 @@ export type {
 	ToolExecutionStartEvent,
 	ToolExecutionUpdateEvent,
 	ToolInfo,
+	ToolRenderContext,
+	ToolRenderer,
 	ToolRenderResultOptions,
 	ToolResultEvent,
 	ToolResultEventResult,

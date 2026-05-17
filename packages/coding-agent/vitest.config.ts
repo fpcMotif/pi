@@ -4,7 +4,11 @@ import { defineConfig } from "vitest/config";
 const aiSrcIndex = fileURLToPath(new URL("../ai/src/index.ts", import.meta.url));
 const aiSrcOAuth = fileURLToPath(new URL("../ai/src/oauth.ts", import.meta.url));
 const agentSrcIndex = fileURLToPath(new URL("../agent/src/index.ts", import.meta.url));
+const tuiSrcIndex = fileURLToPath(new URL("../tui/src/index.ts", import.meta.url));
 
+// ADR-0017: monorepo-wide 100% on all four v8 metrics. Covers both
+// src/** (legacy CLI, characterised in phase B) and effect/** (the
+// Effect-shaped tool ports landing one slice at a time).
 export default defineConfig({
 	test: {
 		globals: true,
@@ -15,15 +19,29 @@ export default defineConfig({
 				external: [/@silvia-odwyer\/photon-node/],
 			},
 		},
+		coverage: {
+			provider: "v8",
+			include: ["src/**/*.ts", "effect/**/*.ts"],
+			exclude: ["**/*.test.ts", "**/*.d.ts", "dist/**", "test/**"],
+			reporter: ["text", "json-summary", "html", "lcov"],
+			thresholds: {
+				lines: 100,
+				branches: 100,
+				functions: 100,
+				statements: 100,
+			},
+		},
 	},
 	resolve: {
 		alias: [
 			{ find: /^@earendil-works\/pi-ai$/, replacement: aiSrcIndex },
 			{ find: /^@earendil-works\/pi-ai\/oauth$/, replacement: aiSrcOAuth },
 			{ find: /^@earendil-works\/pi-agent-core$/, replacement: agentSrcIndex },
+			{ find: /^@earendil-works\/pi-tui$/, replacement: tuiSrcIndex },
 			{ find: /^@mariozechner\/pi-ai$/, replacement: aiSrcIndex },
 			{ find: /^@mariozechner\/pi-ai\/oauth$/, replacement: aiSrcOAuth },
 			{ find: /^@mariozechner\/pi-agent-core$/, replacement: agentSrcIndex },
+			{ find: /^@mariozechner\/pi-tui$/, replacement: tuiSrcIndex },
 		],
 	},
 });

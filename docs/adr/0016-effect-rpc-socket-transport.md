@@ -4,9 +4,9 @@ The `pi rpc` mode is rewritten on `effect/unstable/rpc` and its wire transport c
 
 The transport break is deliberate: 1.0 is already breaking, the JSONL-over-stdio framing was tied to a single-client embedding model, and Socket cleanly supports long-lived headless-daemon use cases, multiple concurrent clients, and bidirectional streaming. Existing consumers of pi-rpc JSONL stdio migrate to the new transport during the 1.0 transition. HTTP / WebSocket / Worker transports are explicitly **not** added in this ADR — they can layer on later if browser-attach or worker-embed becomes a real product requirement.
 
-The previous `rpc-client.ts` (515 LOC for tests + ad-hoc debugging) is replaced by `RpcClient.make({ transport })` exported through `@earendil-works/pi-agent-core/test-support` (ADR-0015), and a `pi rpc-call` CLI subcommand for interactive debugging.
+The previous bespoke `rpc-client.ts` test/debug client is replaced by `RpcClient.make({ transport })` exported through `@earendil-works/pi-agent-core/test-support` (ADR-0015), and a `pi rpc-call` CLI subcommand for interactive debugging.
 
-Rejected: keeping the JSONL-over-stdio wire (option 18A) — comfortable but leaves the rewrite carrying ~1.6 KLOC of custom dispatch/framing/correlation that effect-rpc already provides; and HTTP-only transport — fine for browser attach but worse than Socket for the dominant headless-embedding use case.
+Rejected: keeping the JSONL-over-stdio wire (option 18A) — comfortable but leaves the rewrite carrying custom dispatch/framing/correlation that effect-rpc already provides; and HTTP-only transport — fine for browser attach but worse than Socket for the dominant headless-embedding use case.
 
 ## Consequences
 

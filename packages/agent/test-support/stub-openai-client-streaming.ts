@@ -3,13 +3,7 @@ import { Effect, Layer, Stream } from "effect";
 import type { AiError } from "effect/unstable/ai";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
-import {
-	makeStubHttpResponse,
-	notImplementedCreateEmbedding,
-	notImplementedCreateResponse,
-	stubHttpClient,
-	type StubOpenAiResponse,
-} from "./stub-openai-client.js";
+import { makeStubHttpResponse, makeStubOpenAiClient, type StubOpenAiResponse } from "./stub-openai-client.js";
 
 /**
  * One scripted output for the streaming stub. `text` items are split across
@@ -146,13 +140,5 @@ export const stubOpenAiClientStreaming = (options: StubStreamingOptions) => {
 		return Effect.succeed(tuple);
 	};
 
-	return Layer.succeed(
-		OpenAiClient.OpenAiClient,
-		OpenAiClient.OpenAiClient.of({
-			client: stubHttpClient,
-			createResponse: notImplementedCreateResponse,
-			createResponseStream,
-			createEmbedding: notImplementedCreateEmbedding,
-		}),
-	);
+	return Layer.succeed(OpenAiClient.OpenAiClient, makeStubOpenAiClient({ createResponseStream }));
 };

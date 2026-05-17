@@ -1,9 +1,24 @@
 import { it } from "@effect/vitest";
 import { Effect, Option } from "effect";
+import { Prompt } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
 
 import { SessionState } from "../../../effect/session-state.js";
 import { MemoryLayer, SessionStore } from "../../../effect/stores/session-store.js";
+
+/**
+ * Build a full `SessionState` from a partial spec. Fills the fields added in
+ * later slices (`history`, `inputTokens`, `outputTokens`) with their empty
+ * defaults so these store tests keep expressing fixtures as just a `turnCount`.
+ */
+const makeSessionState = (fields: { readonly turnCount: number }): SessionState =>
+	new SessionState({
+		turnCount: fields.turnCount,
+		history: Prompt.empty,
+		inputTokens: 0,
+		outputTokens: 0,
+		compactionCount: 0,
+	});
 
 /**
  * Slice 18 — first durable-state Service per ADR-0012 (`SessionStore`).
@@ -27,7 +42,7 @@ describe("SessionStore (memory layer)", () => {
 	it.effect("save then load round-trips the SessionState by id", () =>
 		Effect.gen(function* () {
 			const store = yield* SessionStore;
-			const state = new SessionState({ turnCount: 7 });
+			const state = makeSessionState({ turnCount: 7 });
 
 			yield* store.save("session-a", state);
 			const loaded = yield* store.load("session-a");
@@ -49,9 +64,9 @@ describe("SessionStore (memory layer)", () => {
 	it.effect("list returns every saved id (set-equality)", () =>
 		Effect.gen(function* () {
 			const store = yield* SessionStore;
-			yield* store.save("s1", new SessionState({ turnCount: 1 }));
-			yield* store.save("s2", new SessionState({ turnCount: 2 }));
-			yield* store.save("s3", new SessionState({ turnCount: 3 }));
+			yield* store.save("s1", makeSessionState({ turnCount: 1 }));
+			yield* store.save("s2", makeSessionState({ turnCount: 2 }));
+			yield* store.save("s3", makeSessionState({ turnCount: 3 }));
 
 			const ids = yield* store.list;
 			expect(new Set(ids)).toEqual(new Set(["s1", "s2", "s3"]));
@@ -61,8 +76,8 @@ describe("SessionStore (memory layer)", () => {
 	it.effect("save overwrites the prior value for the same id", () =>
 		Effect.gen(function* () {
 			const store = yield* SessionStore;
-			yield* store.save("s1", new SessionState({ turnCount: 1 }));
-			yield* store.save("s1", new SessionState({ turnCount: 42 }));
+			yield* store.save("s1", makeSessionState({ turnCount: 1 }));
+			yield* store.save("s1", makeSessionState({ turnCount: 42 }));
 
 			const loaded = yield* store.load("s1");
 			expect(Option.getOrThrow(loaded).turnCount).toBe(42);
@@ -72,7 +87,7 @@ describe("SessionStore (memory layer)", () => {
 	it.effect("remove deletes the saved state and removes the id from list", () =>
 		Effect.gen(function* () {
 			const store = yield* SessionStore;
-			yield* store.save("s1", new SessionState({ turnCount: 1 }));
+			yield* store.save("s1", makeSessionState({ turnCount: 1 }));
 			yield* store.remove("s1");
 
 			const loaded = yield* store.load("s1");
@@ -89,7 +104,7 @@ describe("SessionStore (memory layer)", () => {
 			// isolation is automatic (no global state, no shared map).
 			const firstIds = yield* Effect.gen(function* () {
 				const s = yield* SessionStore;
-				yield* s.save("a", new SessionState({ turnCount: 1 }));
+				yield* s.save("a", makeSessionState({ turnCount: 1 }));
 				return yield* s.list;
 			}).pipe(Effect.provide(MemoryLayer));
 

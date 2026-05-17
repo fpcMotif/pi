@@ -114,6 +114,20 @@ describe("Session.send lifts tool-call / tool-result parts into ToolDispatched /
 								params: { city: "Paris" },
 								providerExecuted: false,
 							},
+							// The permissive `stubLanguageModelStream` does not run toolkit
+							// dispatch, so the tool-result is scripted directly into the
+							// stream — the same part shape `LanguageModel.streamText` would
+							// synthesise from a `GetWeather` dispatch. `WeatherHandlers` and
+							// the `Weather` toolkit arg stay wired so the test still
+							// exercises the real `send(prompt, toolkit)` signature.
+							{
+								type: "tool-result",
+								id: "call_w1",
+								name: "GetWeather",
+								isFailure: false,
+								result: { temperature: 72, condition: "sunny" },
+								providerExecuted: false,
+							},
 						]),
 					),
 				),

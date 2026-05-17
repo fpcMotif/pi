@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { parseArgs } from "../src/cli/args.js";
+import { describe, expect, test, vi } from "vitest";
+import { isValidThinkingLevel, parseArgs, printHelp } from "../src/cli/args.js";
 
 describe("parseArgs", () => {
 	describe("--version flag", () => {
@@ -370,5 +370,123 @@ describe("parseArgs", () => {
 			expect(result.fileArgs).toEqual(["prompt.md"]);
 			expect(result.messages).toEqual(["Do the task"]);
 		});
+	});
+});
+
+describe("isValidThinkingLevel", () => {
+	test("accepts known levels", () => {
+		for (const level of ["off", "minimal", "low", "medium", "high", "xhigh"]) {
+			expect(isValidThinkingLevel(level)).toBe(true);
+		}
+	});
+
+	test("rejects unknown levels", () => {
+		expect(isValidThinkingLevel("super")).toBe(false);
+		expect(isValidThinkingLevel("")).toBe(false);
+		expect(isValidThinkingLevel("HIGH")).toBe(false);
+	});
+});
+
+describe("printHelp", () => {
+	test("prints help text with usage and tools", () => {
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		printHelp();
+		const output = logSpy.mock.calls.flat().join("\n");
+		expect(output).toContain("Usage:");
+		expect(output).toContain("--provider");
+		expect(output).toContain("--model");
+		expect(output).toContain("bash");
+		expect(output).toContain("read");
+		expect(output).toContain("edit");
+		expect(output).toContain("write");
+		logSpy.mockRestore();
+	});
+
+	test("prints help text with no extension flags", () => {
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		printHelp([]);
+		const output = logSpy.mock.calls.flat().join("\n");
+		expect(output).toContain("Usage:");
+		expect(output).not.toContain("Extension CLI Flags:");
+		logSpy.mockRestore();
+	});
+
+	test("prints help text with extension flags", () => {
+		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+		printHelp([
+			{ name: "plan", type: "boolean", description: "Plan mode", extensionPath: "plan.ts" },
+			{ name: "myflag", type: "string", extensionPath: "ext.ts" },
+		]);
+		const output = logSpy.mock.calls.flat().join("\n");
+		expect(output).toContain("Extension CLI Flags:");
+		expect(output).toContain("--plan");
+		expect(output).toContain("--myflag");
+		expect(output).toContain("<value>");
+		expect(output).toContain("Plan mode");
+		expect(output).toContain("Registered by ext.ts");
+		logSpy.mockRestore();
+	});
+});
+
+describe("parseArgs - more edge cases", () => {
+	test("handles unknown flag with =value", () => {
+		const result = parseArgs(["--my-flag=hello"]);
+		expect(result.unknownFlags.get("my-flag")).toBe("hello");
+	});
+
+	test("handles unknown flag without value", () => {
+		const result = parseArgs(["--unknown-bool"]);
+		expect(result.unknownFlags.get("unknown-bool")).toBe(true);
+	});
+
+	test("handles unknown flag with following value", () => {
+		const result = parseArgs(["--myflag", "value"]);
+		expect(result.unknownFlags.get("myflag")).toBe("value");
+	});
+
+	test("handles unknown flag followed by another flag", () => {
+		const result = parseArgs(["--myflag", "--continue"]);
+		expect(result.unknownFlags.get("myflag")).toBe(true);
+		expect(result.continue).toBe(true);
+	});
+
+	test("handles unknown short flag as error", () => {
+		const result = parseArgs(["-q"]);
+		expect(result.diagnostics.some((d) => d.type === "error" && d.message.includes("Unknown option"))).toBe(true);
+	});
+
+	test("invalid thinking level produces warning", () => {
+		const result = parseArgs(["--thinking", "bogus"]);
+		expect(result.diagnostics.some((d) => d.type === "warning" && d.message.includes("Invalid thinking level"))).toBe(
+			true,
+		);
+		expect(result.thinking).toBeUndefined();
+	});
+
+	test("--list-models without search", () => {
+		const result = parseArgs(["--list-models"]);
+		expect(result.listModels).toBe(true);
+	});
+
+	test("--list-models with search pattern", () => {
+		const result = parseArgs(["--list-models", "gpt"]);
+		expect(result.listModels).toBe("gpt");
+	});
+
+	test("--list-models followed by flag => no search", () => {
+		const result = parseArgs(["--list-models", "--print"]);
+		expect(result.listModels).toBe(true);
+		expect(result.print).toBe(true);
+	});
+
+	test("--verbose/--offline", () => {
+		const result = parseArgs(["--verbose", "--offline"]);
+		expect(result.verbose).toBe(true);
+		expect(result.offline).toBe(true);
+	});
+
+	test("--mode with invalid value is ignored", () => {
+		const result = parseArgs(["--mode", "garbage"]);
+		expect(result.mode).toBeUndefined();
 	});
 });

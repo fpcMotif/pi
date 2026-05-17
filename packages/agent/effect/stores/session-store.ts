@@ -4,7 +4,7 @@
  * `Context.Service`, tests provide an in-memory Layer, and host code can swap
  * in an Effect persistence KeyValueStore Layer without changing call sites.
  */
-import { Context, Effect, HashMap, Layer, Option, Ref, Schema } from "effect";
+import { Context, Effect, HashMap, Layer, Option, Ref, Schema, Semaphore } from "effect";
 import { KeyValueStore } from "effect/unstable/persistence";
 
 import { SchemaError, StoreError } from "../agent-error.js";
@@ -83,6 +83,16 @@ const makeSessionIndex = (ids: ReadonlyArray<string>): Effect.Effect<SessionInde
 		catch: mapUnknownSchemaError,
 	});
 
+const kvIndexLocks = new WeakMap<KeyValueStore.KeyValueStore, Semaphore.Semaphore>();
+
+const indexLockFor = (kv: KeyValueStore.KeyValueStore): Semaphore.Semaphore => {
+	const existing = kvIndexLocks.get(kv);
+	if (existing !== undefined) return existing;
+	const semaphore = Semaphore.makeUnsafe(1);
+	kvIndexLocks.set(kv, semaphore);
+	return semaphore;
+};
+
 export const MemoryLayer: Layer.Layer<SessionStore> = Layer.effect(SessionStore)(
 	Effect.gen(function* () {
 		const records = yield* Ref.make(HashMap.empty<string, SessionRecord>());
@@ -101,6 +111,7 @@ export const layerKeyValueStore: Layer.Layer<SessionStore, never, KeyValueStore.
 		const kv = yield* KeyValueStore.KeyValueStore;
 		const records = KeyValueStore.toSchemaStore(KeyValueStore.prefix(kv, "sessions/"), SessionRecord);
 		const indexes = KeyValueStore.toSchemaStore(KeyValueStore.prefix(kv, "indexes/"), SessionIndexV1);
+		const indexLock = indexLockFor(kv);
 
 		const loadIndex = indexes.get("sessions").pipe(
 			Effect.map(Option.getOrElse(() => SessionIndexV1.empty)),
@@ -123,20 +134,22 @@ export const layerKeyValueStore: Layer.Layer<SessionStore, never, KeyValueStore.
 
 		return SessionStore.of({
 			save: (id, state) =>
-				Effect.gen(function* () {
-					const record = yield* makeSessionRecord(state);
-					yield* records
-						.set(id, record)
-						.pipe(
-							Effect.mapError((error) =>
-								Schema.isSchemaError(error) ? mapSchemaError(error) : mapStoreError("save")(error),
-							),
-						);
-					const index = yield* loadIndex;
-					if (!index.ids.includes(id)) {
-						yield* saveIndex([...index.ids, id], "save-index");
-					}
-				}),
+				indexLock.withPermit(
+					Effect.gen(function* () {
+						const record = yield* makeSessionRecord(state);
+						yield* records
+							.set(id, record)
+							.pipe(
+								Effect.mapError((error) =>
+									Schema.isSchemaError(error) ? mapSchemaError(error) : mapStoreError("save")(error),
+								),
+							);
+						const index = yield* loadIndex;
+						if (!index.ids.includes(id)) {
+							yield* saveIndex([...index.ids, id], "save-index");
+						}
+					}),
+				),
 			load: (id) =>
 				records.get(id).pipe(
 					Effect.map(Option.map((record) => record.state)),
@@ -145,17 +158,19 @@ export const layerKeyValueStore: Layer.Layer<SessionStore, never, KeyValueStore.
 					),
 				),
 			remove: (id) =>
-				Effect.gen(function* () {
-					yield* records.remove(id).pipe(Effect.mapError(mapStoreError("remove")));
-					const index = yield* loadIndex;
-					if (index.ids.includes(id)) {
-						yield* saveIndex(
-							index.ids.filter((existing) => existing !== id),
-							"remove-index",
-						);
-					}
-				}),
-			list: loadIndex.pipe(Effect.map((index) => index.ids)),
+				indexLock.withPermit(
+					Effect.gen(function* () {
+						yield* records.remove(id).pipe(Effect.mapError(mapStoreError("remove")));
+						const index = yield* loadIndex;
+						if (index.ids.includes(id)) {
+							yield* saveIndex(
+								index.ids.filter((existing) => existing !== id),
+								"remove-index",
+							);
+						}
+					}),
+				),
+			list: indexLock.withPermit(loadIndex.pipe(Effect.map((index) => index.ids))),
 		});
 	}),
 );

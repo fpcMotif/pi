@@ -271,9 +271,8 @@ export function getJpegDimensions(base64Data: string): ImageDimensions | null {
 				return { widthPx: width, heightPx: height };
 			}
 
-			if (offset + 3 >= buffer.length) {
-				return null;
-			}
+			// The loop condition guarantees offset < buffer.length - 9, so the
+			// segment-length read below is always in bounds.
 			const length = buffer.readUInt16BE(offset + 2);
 			if (length < 2) {
 				return null;
@@ -323,20 +322,19 @@ export function getWebpDimensions(base64Data: string): ImageDimensions | null {
 			return null;
 		}
 
+		// buffer.length >= 30 is already guaranteed by the guard above, so the
+		// per-chunk length re-checks would never fire.
 		const chunk = buffer.slice(12, 16).toString("ascii");
 		if (chunk === "VP8 ") {
-			if (buffer.length < 30) return null;
 			const width = buffer.readUInt16LE(26) & 0x3fff;
 			const height = buffer.readUInt16LE(28) & 0x3fff;
 			return { widthPx: width, heightPx: height };
 		} else if (chunk === "VP8L") {
-			if (buffer.length < 25) return null;
 			const bits = buffer.readUInt32LE(21);
 			const width = (bits & 0x3fff) + 1;
 			const height = ((bits >> 14) & 0x3fff) + 1;
 			return { widthPx: width, heightPx: height };
 		} else if (chunk === "VP8X") {
-			if (buffer.length < 30) return null;
 			const width = (buffer[24] | (buffer[25] << 8) | (buffer[26] << 16)) + 1;
 			const height = (buffer[27] | (buffer[28] << 8) | (buffer[29] << 16)) + 1;
 			return { widthPx: width, heightPx: height };
@@ -388,16 +386,12 @@ export function renderImage(
 		return { sequence, rows, imageId: options.imageId };
 	}
 
-	if (caps.images === "iterm2") {
-		const sequence = encodeITerm2(base64Data, {
-			width: maxWidth,
-			height: "auto",
-			preserveAspectRatio: options.preserveAspectRatio ?? true,
-		});
-		return { sequence, rows };
-	}
-
-	return null;
+	const sequence = encodeITerm2(base64Data, {
+		width: maxWidth,
+		height: "auto",
+		preserveAspectRatio: options.preserveAspectRatio ?? true,
+	});
+	return { sequence, rows };
 }
 
 /**

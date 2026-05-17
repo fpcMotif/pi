@@ -5,7 +5,7 @@ The monorepo restructures to five packages: **`pi-tui`** (untouched), **`pi-mode
 ## Consequences
 
 - `pi-models` becomes a foundational leaf: depended on by `pi-agent-core`, `pi-coding-agent`, and `pi-web-ui`. It must stay free of `effect` and Node-only imports so the browser bundle stays clean.
-- The image-model registry (`image-models.generated.ts`, `images.ts`, `images-api-registry.ts`) co-locates with the text registry in `pi-models` — same shape, same generator.
+- The image-model registry (`image-models.generated.ts`, `image-models.ts`) co-locates with the text registry in `pi-models` — same registry shape, while generator ownership can differ during the ADR-0006 migration.
 - The Codex Responses provider is in-repo Effect code inside `pi-agent-core`. If `@effect/ai` later ships a Codex package upstream, we can swap our in-repo provider for it at low cost and even consider splitting it out (the 7C option) for upstream contribution.
 - The lockstep `1.0.0` understates the scope of breakage but signals "Effect rewrite line" clearly versus continuing the `0.x` line.
 - The `@earendil-works/pi-ai` npm name is permanently retired; any future provider-abstraction work goes under `@effect/ai-*` upstream or in `pi-agent-core`.

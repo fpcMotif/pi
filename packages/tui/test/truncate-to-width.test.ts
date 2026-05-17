@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import { normalizeTerminalOutput, truncateToWidth, visibleWidth } from "../src/utils.js";
 
 describe("truncateToWidth", () => {

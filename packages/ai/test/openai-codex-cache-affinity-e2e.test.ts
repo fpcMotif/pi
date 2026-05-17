@@ -4,10 +4,13 @@ import { complete } from "../src/stream.js";
 import type { Context } from "../src/types.js";
 import { resolveApiKey } from "./oauth.js";
 
-const codexToken = await resolveApiKey("openai-codex");
+// E2E tests hit live provider APIs, so they are opt-in: set PI_E2E=1 to run
+// them. Without the flag they stay skipped even when a cached OAuth token
+// exists in ~/.pi/agent/auth.json, keeping the unit suite deterministic.
+const codexToken = process.env.PI_E2E === "1" ? await resolveApiKey("openai-codex") : undefined;
 
 describe("openai-codex cache affinity e2e", () => {
-	it.skipIf(!codexToken)("handles SSE requests with aligned cache-affinity identifiers", async () => {
+	it.skipIf(!codexToken)("handles SSE requests with aligned cache-affinity identifiers", { retry: 2 }, async () => {
 		const model = getModel("openai-codex", "gpt-5.3-codex");
 		const sessionId = "0195d6e4-4cf9-7f44-a2d8-f8f7f49ee9d3";
 		const context: Context = {

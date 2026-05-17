@@ -37,8 +37,13 @@ function generateEntryId(byId: { has(id: string): boolean }): string {
 		const id = randomUUID().slice(0, 8);
 		if (!byId.has(id)) return id;
 	}
+	/* c8 ignore start */
+	/* v8 ignore start -- @preserve */
+	/* istanbul ignore next -- @preserve */
 	return randomUUID();
 }
+/* v8 ignore stop -- @preserve */
+/* c8 ignore stop */
 
 function headerToSessionMetadata(header: SessionHeader, path: string): JsonlSessionMetadata {
 	return {

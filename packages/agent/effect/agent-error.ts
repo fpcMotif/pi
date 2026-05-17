@@ -72,6 +72,18 @@ export class StoreError extends Schema.TaggedErrorClass<StoreError>()("StoreErro
 export class CancellationError extends Schema.TaggedErrorClass<CancellationError>()("CancellationError", {}) {}
 
 /**
+ * History compaction failed — the `LanguageModel.generateText` call that
+ * summarises the older portion of `state.history` errored. `cause` wraps the
+ * underlying `AiError` (`Schema.Unknown` for the same reason as `LlmError`'s
+ * `aiError` — the upstream class is itself a reason union). Distinct from
+ * `LlmError` so consumers can tell "the turn's LLM call failed" from "the
+ * pre-turn summarisation failed".
+ */
+export class CompactionError extends Schema.TaggedErrorClass<CompactionError>()("CompactionError", {
+	cause: Schema.Unknown,
+}) {}
+
+/**
  * The closed union of every `AgentError` variant.
  */
-export type AgentError = LlmError | ToolError | SchemaError | StoreError | CancellationError;
+export type AgentError = LlmError | ToolError | SchemaError | StoreError | CancellationError | CompactionError;

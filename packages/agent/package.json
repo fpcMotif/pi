@@ -14,10 +14,10 @@
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "vitest --run",
-		"test:coverage": "vitest --run --coverage",
-		"test:coverage:100": "vitest --run --coverage --coverage.thresholds.lines=100 --coverage.thresholds.statements=100 --coverage.thresholds.functions=100 --coverage.thresholds.branches=100",
+		"test:coverage": "vitest --run --coverage --no-file-parallelism --maxWorkers=1 --minWorkers=1",
+		"test:coverage:100": "vitest --run --coverage --no-file-parallelism --maxWorkers=1 --minWorkers=1 --coverage.thresholds.lines=100 --coverage.thresholds.branches=100 --coverage.thresholds.functions=100 --coverage.thresholds.statements=100",
 		"test:effect": "vitest --run test/effect",
-		"test:coverage:effect": "vitest --run test/effect --coverage",
+		"test:coverage:effect": "vitest --run test/effect --coverage --coverage.include='effect/**/*.ts' --no-file-parallelism --maxWorkers=1 --minWorkers=1",
 		"check:effect": "tsgo -p tsconfig.build.json --noEmit",
 		"lint:effect": "oxlint test-support test/effect",
 		"fmt:effect": "oxfmt test-support test/effect CONTEXT.md",
@@ -30,6 +30,7 @@
 		"effect": "4.0.0-beta.65",
 		"ignore": "^7.0.5",
 		"typebox": "^1.1.24",
+		"uuid": "^14.0.0",
 		"yaml": "^2.8.2"
 	},
 	"keywords": [

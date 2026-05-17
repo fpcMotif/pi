@@ -8,30 +8,24 @@ import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import { isKeyRelease, matchesKey } from "./keys.js";
 import type { Terminal } from "./terminal.js";
-import { deleteKittyImage, getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.js";
-import { extractSegments, normalizeTerminalOutput, sliceByColumn, sliceWithWidth, visibleWidth } from "./utils.js";
-
-const KITTY_SEQUENCE_PREFIX = "\x1b_G";
-
-function extractKittyImageIds(line: string): number[] {
-	const sequenceStart = line.indexOf(KITTY_SEQUENCE_PREFIX);
-	if (sequenceStart === -1) return [];
-
-	const paramsStart = sequenceStart + KITTY_SEQUENCE_PREFIX.length;
-	const paramsEnd = line.indexOf(";", paramsStart);
-	if (paramsEnd === -1) return [];
-
-	const params = line.slice(paramsStart, paramsEnd);
-	for (const param of params.split(",")) {
-		const [key, value] = param.split("=", 2);
-		if (key !== "i" || value === undefined) continue;
-		const id = Number(value);
-		if (Number.isInteger(id) && id > 0 && id <= 0xffffffff) {
-			return [id];
-		}
-	}
-	return [];
-}
+import { getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.js";
+import { applyInputListeners, type InputListener, parseCellSizeResponse } from "./tui-input.js";
+import {
+	compositeOverlays,
+	getTopmostVisibleOverlay as findTopmostVisibleOverlay,
+	hasVisibleOverlay,
+	type OverlayEntry,
+	isOverlayVisible as overlayIsVisible,
+} from "./tui-overlay.js";
+import {
+	applyLineResets,
+	collectKittyImageIds,
+	deleteChangedKittyImages,
+	deleteKittyImages,
+	expandLastChangedForKittyImages,
+	extractCursorPosition,
+} from "./tui-render-helpers.js";
+import { visibleWidth } from "./utils.js";
 
 /**
  * Component interface - all components must implement this
@@ -61,9 +55,6 @@ export interface Component {
 	 */
 	invalidate(): void;
 }
-
-type InputListenerResult = { consume?: boolean; data?: string } | undefined;
-type InputListener = (data: string) => InputListenerResult;
 
 /**
  * Interface for components that can receive focus and display a hardware cursor.
@@ -117,18 +108,6 @@ export interface OverlayMargin {
 
 /** Value that can be absolute (number) or percentage (string like "50%") */
 export type SizeValue = number | `${number}%`;
-
-/** Parse a SizeValue into absolute value given a reference size */
-function parseSizeValue(value: SizeValue | undefined, referenceSize: number): number | undefined {
-	if (value === undefined) return undefined;
-	if (typeof value === "number") return value;
-	// Parse percentage string like "50%"
-	const match = value.match(/^(\d+(?:\.\d+)?)%$/);
-	if (match) {
-		return Math.floor((referenceSize * parseFloat(match[1])) / 100);
-	}
-	return undefined;
-}
 
 function isTermuxSession(): boolean {
 	return Boolean(process.env.TERMUX_VERSION);
@@ -262,13 +241,9 @@ export class TUI extends Container {
 
 	// Overlay stack for modal components rendered on top of base content
 	private focusOrderCounter = 0;
-	private overlayStack: {
-		component: Component;
-		options?: OverlayOptions;
+	private overlayStack: (OverlayEntry & {
 		preFocus: Component | null;
-		hidden: boolean;
-		focusOrder: number;
-	}[] = [];
+	})[] = [];
 
 	constructor(terminal: Terminal, showHardwareCursor?: boolean) {
 		super();
@@ -410,27 +385,17 @@ export class TUI extends Container {
 
 	/** Check if there are any visible overlays */
 	hasOverlay(): boolean {
-		return this.overlayStack.some((o) => this.isOverlayVisible(o));
+		return hasVisibleOverlay(this.overlayStack, this.terminal.columns, this.terminal.rows);
 	}
 
 	/** Check if an overlay entry is currently visible */
 	private isOverlayVisible(entry: (typeof this.overlayStack)[number]): boolean {
-		if (entry.hidden) return false;
-		if (entry.options?.visible) {
-			return entry.options.visible(this.terminal.columns, this.terminal.rows);
-		}
-		return true;
+		return overlayIsVisible(entry, this.terminal.columns, this.terminal.rows);
 	}
 
 	/** Find the topmost visible capturing overlay, if any */
 	private getTopmostVisibleOverlay(): (typeof this.overlayStack)[number] | undefined {
-		for (let i = this.overlayStack.length - 1; i >= 0; i--) {
-			if (this.overlayStack[i].options?.nonCapturing) continue;
-			if (this.isOverlayVisible(this.overlayStack[i])) {
-				return this.overlayStack[i];
-			}
-		}
-		return undefined;
+		return findTopmostVisibleOverlay(this.overlayStack, this.terminal.columns, this.terminal.rows);
 	}
 
 	override invalidate(): void {
@@ -543,20 +508,11 @@ export class TUI extends Container {
 
 	private handleInput(data: string): void {
 		if (this.inputListeners.size > 0) {
-			let current = data;
-			for (const listener of this.inputListeners) {
-				const result = listener(current);
-				if (result?.consume) {
-					return;
-				}
-				if (result?.data !== undefined) {
-					current = result.data;
-				}
-			}
-			if (current.length === 0) {
+			const result = applyInputListeners(data, this.inputListeners);
+			if (result.consume) {
 				return;
 			}
-			data = current;
+			data = result.data;
 		}
 
 		// Consume terminal cell size responses without blocking unrelated input.
@@ -597,357 +553,20 @@ export class TUI extends Container {
 	}
 
 	private consumeCellSizeResponse(data: string): boolean {
-		// Response format: ESC [ 6 ; height ; width t
-		const match = data.match(/^\x1b\[6;(\d+);(\d+)t$/);
-		if (!match) {
+		const response = parseCellSizeResponse(data);
+		if (response === undefined) {
 			return false;
 		}
 
-		const heightPx = parseInt(match[1], 10);
-		const widthPx = parseInt(match[2], 10);
-		if (heightPx <= 0 || widthPx <= 0) {
+		if (response._tag === "invalid") {
 			return true;
 		}
 
-		setCellDimensions({ widthPx, heightPx });
+		setCellDimensions({ widthPx: response.widthPx, heightPx: response.heightPx });
 		// Invalidate all components so images re-render with correct dimensions.
 		this.invalidate();
 		this.requestRender();
 		return true;
-	}
-
-	/**
-	 * Resolve overlay layout from options.
-	 * Returns { width, row, col, maxHeight } for rendering.
-	 */
-	private resolveOverlayLayout(
-		options: OverlayOptions | undefined,
-		overlayHeight: number,
-		termWidth: number,
-		termHeight: number,
-	): { width: number; row: number; col: number; maxHeight: number | undefined } {
-		const opt = options ?? {};
-
-		// Parse margin (clamp to non-negative)
-		const margin =
-			typeof opt.margin === "number"
-				? { top: opt.margin, right: opt.margin, bottom: opt.margin, left: opt.margin }
-				: (opt.margin ?? {});
-		const marginTop = Math.max(0, margin.top ?? 0);
-		const marginRight = Math.max(0, margin.right ?? 0);
-		const marginBottom = Math.max(0, margin.bottom ?? 0);
-		const marginLeft = Math.max(0, margin.left ?? 0);
-
-		// Available space after margins
-		const availWidth = Math.max(1, termWidth - marginLeft - marginRight);
-		const availHeight = Math.max(1, termHeight - marginTop - marginBottom);
-
-		// === Resolve width ===
-		let width = parseSizeValue(opt.width, termWidth) ?? Math.min(80, availWidth);
-		// Apply minWidth
-		if (opt.minWidth !== undefined) {
-			width = Math.max(width, opt.minWidth);
-		}
-		// Clamp to available space
-		width = Math.max(1, Math.min(width, availWidth));
-
-		// === Resolve maxHeight ===
-		let maxHeight = parseSizeValue(opt.maxHeight, termHeight);
-		// Clamp to available space
-		if (maxHeight !== undefined) {
-			maxHeight = Math.max(1, Math.min(maxHeight, availHeight));
-		}
-
-		// Effective overlay height (may be clamped by maxHeight)
-		const effectiveHeight = maxHeight !== undefined ? Math.min(overlayHeight, maxHeight) : overlayHeight;
-
-		// === Resolve position ===
-		let row: number;
-		let col: number;
-
-		if (opt.row !== undefined) {
-			if (typeof opt.row === "string") {
-				// Percentage: 0% = top, 100% = bottom (overlay stays within bounds)
-				const match = opt.row.match(/^(\d+(?:\.\d+)?)%$/);
-				if (match) {
-					const maxRow = Math.max(0, availHeight - effectiveHeight);
-					const percent = parseFloat(match[1]) / 100;
-					row = marginTop + Math.floor(maxRow * percent);
-				} else {
-					// Invalid format, fall back to center
-					row = this.resolveAnchorRow("center", effectiveHeight, availHeight, marginTop);
-				}
-			} else {
-				// Absolute row position
-				row = opt.row;
-			}
-		} else {
-			// Anchor-based (default: center)
-			const anchor = opt.anchor ?? "center";
-			row = this.resolveAnchorRow(anchor, effectiveHeight, availHeight, marginTop);
-		}
-
-		if (opt.col !== undefined) {
-			if (typeof opt.col === "string") {
-				// Percentage: 0% = left, 100% = right (overlay stays within bounds)
-				const match = opt.col.match(/^(\d+(?:\.\d+)?)%$/);
-				if (match) {
-					const maxCol = Math.max(0, availWidth - width);
-					const percent = parseFloat(match[1]) / 100;
-					col = marginLeft + Math.floor(maxCol * percent);
-				} else {
-					// Invalid format, fall back to center
-					col = this.resolveAnchorCol("center", width, availWidth, marginLeft);
-				}
-			} else {
-				// Absolute column position
-				col = opt.col;
-			}
-		} else {
-			// Anchor-based (default: center)
-			const anchor = opt.anchor ?? "center";
-			col = this.resolveAnchorCol(anchor, width, availWidth, marginLeft);
-		}
-
-		// Apply offsets
-		if (opt.offsetY !== undefined) row += opt.offsetY;
-		if (opt.offsetX !== undefined) col += opt.offsetX;
-
-		// Clamp to terminal bounds (respecting margins)
-		row = Math.max(marginTop, Math.min(row, termHeight - marginBottom - effectiveHeight));
-		col = Math.max(marginLeft, Math.min(col, termWidth - marginRight - width));
-
-		return { width, row, col, maxHeight };
-	}
-
-	private resolveAnchorRow(anchor: OverlayAnchor, height: number, availHeight: number, marginTop: number): number {
-		switch (anchor) {
-			case "top-left":
-			case "top-center":
-			case "top-right":
-				return marginTop;
-			case "bottom-left":
-			case "bottom-center":
-			case "bottom-right":
-				return marginTop + availHeight - height;
-			case "left-center":
-			case "center":
-			case "right-center":
-				return marginTop + Math.floor((availHeight - height) / 2);
-		}
-	}
-
-	private resolveAnchorCol(anchor: OverlayAnchor, width: number, availWidth: number, marginLeft: number): number {
-		switch (anchor) {
-			case "top-left":
-			case "left-center":
-			case "bottom-left":
-				return marginLeft;
-			case "top-right":
-			case "right-center":
-			case "bottom-right":
-				return marginLeft + availWidth - width;
-			case "top-center":
-			case "center":
-			case "bottom-center":
-				return marginLeft + Math.floor((availWidth - width) / 2);
-		}
-	}
-
-	/** Composite all overlays into content lines (sorted by focusOrder, higher = on top). */
-	private compositeOverlays(lines: string[], termWidth: number, termHeight: number): string[] {
-		if (this.overlayStack.length === 0) return lines;
-		const result = [...lines];
-
-		// Pre-render all visible overlays and calculate positions
-		const rendered: { overlayLines: string[]; row: number; col: number; w: number }[] = [];
-		let minLinesNeeded = result.length;
-
-		const visibleEntries = this.overlayStack.filter((e) => this.isOverlayVisible(e));
-		visibleEntries.sort((a, b) => a.focusOrder - b.focusOrder);
-		for (const entry of visibleEntries) {
-			const { component, options } = entry;
-
-			// Get layout with height=0 first to determine width and maxHeight
-			// (width and maxHeight don't depend on overlay height)
-			const { width, maxHeight } = this.resolveOverlayLayout(options, 0, termWidth, termHeight);
-
-			// Render component at calculated width
-			let overlayLines = component.render(width);
-
-			// Apply maxHeight if specified
-			if (maxHeight !== undefined && overlayLines.length > maxHeight) {
-				overlayLines = overlayLines.slice(0, maxHeight);
-			}
-
-			// Get final row/col with actual overlay height
-			const { row, col } = this.resolveOverlayLayout(options, overlayLines.length, termWidth, termHeight);
-
-			rendered.push({ overlayLines, row, col, w: width });
-			minLinesNeeded = Math.max(minLinesNeeded, row + overlayLines.length);
-		}
-
-		// Pad to at least terminal height so overlays have screen-relative positions.
-		// Excludes maxLinesRendered: the historical high-water mark caused self-reinforcing
-		// inflation that pushed content into scrollback on terminal widen.
-		const workingHeight = Math.max(result.length, termHeight, minLinesNeeded);
-
-		// Extend result with empty lines if content is too short for overlay placement or working area
-		while (result.length < workingHeight) {
-			result.push("");
-		}
-
-		const viewportStart = Math.max(0, workingHeight - termHeight);
-
-		// Composite each overlay
-		for (const { overlayLines, row, col, w } of rendered) {
-			for (let i = 0; i < overlayLines.length; i++) {
-				const idx = viewportStart + row + i;
-				if (idx >= 0 && idx < result.length) {
-					// Defensive: truncate overlay line to declared width before compositing
-					// (components should already respect width, but this ensures it)
-					const truncatedOverlayLine =
-						visibleWidth(overlayLines[i]) > w ? sliceByColumn(overlayLines[i], 0, w, true) : overlayLines[i];
-					result[idx] = this.compositeLineAt(result[idx], truncatedOverlayLine, col, w, termWidth);
-				}
-			}
-		}
-
-		return result;
-	}
-
-	private static readonly SEGMENT_RESET = "\x1b[0m\x1b]8;;\x07";
-
-	private applyLineResets(lines: string[]): string[] {
-		const reset = TUI.SEGMENT_RESET;
-		for (let i = 0; i < lines.length; i++) {
-			const line = lines[i];
-			if (!isImageLine(line)) {
-				lines[i] = normalizeTerminalOutput(line) + reset;
-			}
-		}
-		return lines;
-	}
-
-	private collectKittyImageIds(lines: string[]): Set<number> {
-		const ids = new Set<number>();
-		for (const line of lines) {
-			for (const id of extractKittyImageIds(line)) {
-				ids.add(id);
-			}
-		}
-		return ids;
-	}
-
-	private deleteKittyImages(ids: Iterable<number>): string {
-		let buffer = "";
-		for (const id of ids) {
-			buffer += deleteKittyImage(id);
-		}
-		return buffer;
-	}
-
-	private expandLastChangedForKittyImages(firstChanged: number, lastChanged: number): number {
-		let expandedLastChanged = lastChanged;
-		for (let i = firstChanged; i < this.previousLines.length; i++) {
-			if (extractKittyImageIds(this.previousLines[i]).length > 0) {
-				expandedLastChanged = Math.max(expandedLastChanged, i);
-			}
-		}
-		return expandedLastChanged;
-	}
-
-	private deleteChangedKittyImages(firstChanged: number, lastChanged: number): string {
-		if (firstChanged < 0 || lastChanged < firstChanged) return "";
-
-		const ids = new Set<number>();
-		const maxLine = Math.min(lastChanged, this.previousLines.length - 1);
-		for (let i = firstChanged; i <= maxLine; i++) {
-			for (const id of extractKittyImageIds(this.previousLines[i] ?? "")) {
-				ids.add(id);
-			}
-		}
-
-		return this.deleteKittyImages(ids);
-	}
-
-	/** Splice overlay content into a base line at a specific column. Single-pass optimized. */
-	private compositeLineAt(
-		baseLine: string,
-		overlayLine: string,
-		startCol: number,
-		overlayWidth: number,
-		totalWidth: number,
-	): string {
-		if (isImageLine(baseLine)) return baseLine;
-
-		// Single pass through baseLine extracts both before and after segments
-		const afterStart = startCol + overlayWidth;
-		const base = extractSegments(baseLine, startCol, afterStart, totalWidth - afterStart, true);
-
-		// Extract overlay with width tracking (strict=true to exclude wide chars at boundary)
-		const overlay = sliceWithWidth(overlayLine, 0, overlayWidth, true);
-
-		// Pad segments to target widths
-		const beforePad = Math.max(0, startCol - base.beforeWidth);
-		const overlayPad = Math.max(0, overlayWidth - overlay.width);
-		const actualBeforeWidth = Math.max(startCol, base.beforeWidth);
-		const actualOverlayWidth = Math.max(overlayWidth, overlay.width);
-		const afterTarget = Math.max(0, totalWidth - actualBeforeWidth - actualOverlayWidth);
-		const afterPad = Math.max(0, afterTarget - base.afterWidth);
-
-		// Compose result
-		const r = TUI.SEGMENT_RESET;
-		const result =
-			base.before +
-			" ".repeat(beforePad) +
-			r +
-			overlay.text +
-			" ".repeat(overlayPad) +
-			r +
-			base.after +
-			" ".repeat(afterPad);
-
-		// CRITICAL: Always verify and truncate to terminal width.
-		// This is the final safeguard against width overflow which would crash the TUI.
-		// Width tracking can drift from actual visible width due to:
-		// - Complex ANSI/OSC sequences (hyperlinks, colors)
-		// - Wide characters at segment boundaries
-		// - Edge cases in segment extraction
-		const resultWidth = visibleWidth(result);
-		if (resultWidth <= totalWidth) {
-			return result;
-		}
-		// Truncate with strict=true to ensure we don't exceed totalWidth
-		return sliceByColumn(result, 0, totalWidth, true);
-	}
-
-	/**
-	 * Find and extract cursor position from rendered lines.
-	 * Searches for CURSOR_MARKER, calculates its position, and strips it from the output.
-	 * Only scans the bottom terminal height lines (visible viewport).
-	 * @param lines - Rendered lines to search
-	 * @param height - Terminal height (visible viewport size)
-	 * @returns Cursor position { row, col } or null if no marker found
-	 */
-	private extractCursorPosition(lines: string[], height: number): { row: number; col: number } | null {
-		// Only scan the bottom `height` lines (visible viewport)
-		const viewportTop = Math.max(0, lines.length - height);
-		for (let row = lines.length - 1; row >= viewportTop; row--) {
-			const line = lines[row];
-			const markerIndex = line.indexOf(CURSOR_MARKER);
-			if (markerIndex !== -1) {
-				// Calculate visual column (width of text before marker)
-				const beforeMarker = line.slice(0, markerIndex);
-				const col = visibleWidth(beforeMarker);
-
-				// Strip marker from the line
-				lines[row] = line.slice(0, markerIndex) + line.slice(markerIndex + CURSOR_MARKER.length);
-
-				return { row, col };
-			}
-		}
-		return null;
 	}
 
 	private doRender(): void {
@@ -971,20 +590,20 @@ export class TUI extends Container {
 
 		// Composite overlays into the rendered lines (before differential compare)
 		if (this.overlayStack.length > 0) {
-			newLines = this.compositeOverlays(newLines, width, height);
+			newLines = compositeOverlays(newLines, this.overlayStack, width, height);
 		}
 
 		// Extract cursor position before applying line resets (marker must be found first)
-		const cursorPos = this.extractCursorPosition(newLines, height);
+		const cursorPos = extractCursorPosition(newLines, height, CURSOR_MARKER);
 
-		newLines = this.applyLineResets(newLines);
+		newLines = applyLineResets(newLines);
 
 		// Helper to clear scrollback and viewport and render all new lines
 		const fullRender = (clear: boolean): void => {
 			this.fullRedrawCount += 1;
 			let buffer = "\x1b[?2026h"; // Begin synchronized output
 			if (clear) {
-				buffer += this.deleteKittyImages(this.previousKittyImageIds);
+				buffer += deleteKittyImages(this.previousKittyImageIds);
 				buffer += "\x1b[2J\x1b[H\x1b[3J"; // Clear screen, home, then clear scrollback
 			}
 			for (let i = 0; i < newLines.length; i++) {
@@ -1005,7 +624,7 @@ export class TUI extends Container {
 			this.previousViewportTop = Math.max(0, bufferLength - height);
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
-			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
+			this.previousKittyImageIds = collectKittyImageIds(newLines);
 			this.previousWidth = width;
 			this.previousHeight = height;
 		};
@@ -1073,7 +692,7 @@ export class TUI extends Container {
 			lastChanged = newLines.length - 1;
 		}
 		if (firstChanged !== -1) {
-			lastChanged = this.expandLastChangedForKittyImages(firstChanged, lastChanged);
+			lastChanged = expandLastChangedForKittyImages(this.previousLines, firstChanged, lastChanged);
 		}
 		const appendStart = appendedLines && firstChanged === this.previousLines.length && firstChanged > 0;
 
@@ -1089,7 +708,7 @@ export class TUI extends Container {
 		if (firstChanged >= newLines.length) {
 			if (this.previousLines.length > newLines.length) {
 				let buffer = "\x1b[?2026h";
-				buffer += this.deleteChangedKittyImages(firstChanged, lastChanged);
+				buffer += deleteChangedKittyImages(this.previousLines, firstChanged, lastChanged);
 				// Move to end of new content (clamp to 0 for empty content)
 				const targetRow = Math.max(0, newLines.length - 1);
 				if (targetRow < prevViewportTop) {
@@ -1125,7 +744,7 @@ export class TUI extends Container {
 			}
 			this.positionHardwareCursor(cursorPos, newLines.length);
 			this.previousLines = newLines;
-			this.previousKittyImageIds = this.collectKittyImageIds(newLines);
+			this.previousKittyImageIds = collectKittyImageIds(newLines);
 			this.previousWidth = width;
 			this.previousHeight = height;
 			this.previousViewportTop = prevViewportTop;
@@ -1143,7 +762,7 @@ export class TUI extends Container {
 		// Render from first changed line to end
 		// Build buffer with all updates wrapped in synchronized output
 		let buffer = "\x1b[?2026h"; // Begin synchronized output
-		buffer += this.deleteChangedKittyImages(firstChanged, lastChanged);
+		buffer += deleteChangedKittyImages(this.previousLines, firstChanged, lastChanged);
 		const prevViewportBottom = prevViewportTop + height - 1;
 		const moveTargetRow = appendStart ? firstChanged - 1 : firstChanged;
 		if (moveTargetRow > prevViewportBottom) {
@@ -1274,7 +893,7 @@ export class TUI extends Container {
 		this.positionHardwareCursor(cursorPos, newLines.length);
 
 		this.previousLines = newLines;
-		this.previousKittyImageIds = this.collectKittyImageIds(newLines);
+		this.previousKittyImageIds = collectKittyImageIds(newLines);
 		this.previousWidth = width;
 		this.previousHeight = height;
 	}

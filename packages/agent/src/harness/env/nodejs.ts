@@ -21,8 +21,9 @@ function fileInfoFromStats(
 	path: string,
 	stats: { isFile(): boolean; isDirectory(): boolean; isSymbolicLink(): boolean; size: number; mtimeMs: number },
 ): FileInfo {
+	const normalizedPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
 	return {
-		name: path.replace(/\/+$/, "").split("/").pop() ?? path,
+		name: normalizedPath.split("/").pop() ?? path,
 		path,
 		kind: fileKindFromStats(stats),
 		size: stats.size,

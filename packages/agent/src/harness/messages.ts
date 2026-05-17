@@ -1,4 +1,5 @@
 import type { ImageContent, Message, TextContent } from "@earendil-works/pi-ai";
+import { type TranscriptAdapters, toLlm } from "../transcript/index.js";
 import type { AgentMessage } from "../types.js";
 
 export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
@@ -117,48 +118,53 @@ export function createCustomMessage(
 	};
 }
 
+export const harnessTranscriptAdapters = {
+	bashExecution: (message: AgentMessage): Message[] => {
+		if (message.role !== "bashExecution" || message.excludeFromContext) return [];
+		return [
+			{
+				role: "user",
+				content: [{ type: "text", text: bashExecutionToText(message) }],
+				timestamp: message.timestamp,
+			},
+		];
+	},
+	custom: (message: AgentMessage): Message[] => {
+		if (message.role !== "custom") return [];
+		const content =
+			typeof message.content === "string" ? [{ type: "text" as const, text: message.content }] : message.content;
+		return [
+			{
+				role: "user",
+				content,
+				timestamp: message.timestamp,
+			},
+		];
+	},
+	branchSummary: (message: AgentMessage): Message[] => {
+		if (message.role !== "branchSummary") return [];
+		return [
+			{
+				role: "user",
+				content: [{ type: "text" as const, text: BRANCH_SUMMARY_PREFIX + message.summary + BRANCH_SUMMARY_SUFFIX }],
+				timestamp: message.timestamp,
+			},
+		];
+	},
+	compactionSummary: (message: AgentMessage): Message[] => {
+		if (message.role !== "compactionSummary") return [];
+		return [
+			{
+				role: "user",
+				content: [
+					{ type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + message.summary + COMPACTION_SUMMARY_SUFFIX },
+				],
+				timestamp: message.timestamp,
+			},
+		];
+	},
+} satisfies TranscriptAdapters;
+
 export function convertToLlm(messages: AgentMessage[]): Message[] {
-	return messages
-		.map((m): Message | undefined => {
-			switch (m.role) {
-				case "bashExecution":
-					if (m.excludeFromContext) {
-						return undefined;
-					}
-					return {
-						role: "user",
-						content: [{ type: "text", text: bashExecutionToText(m) }],
-						timestamp: m.timestamp,
-					};
-				case "custom": {
-					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
-					return {
-						role: "user",
-						content,
-						timestamp: m.timestamp,
-					};
-				}
-				case "branchSummary":
-					return {
-						role: "user",
-						content: [{ type: "text" as const, text: BRANCH_SUMMARY_PREFIX + m.summary + BRANCH_SUMMARY_SUFFIX }],
-						timestamp: m.timestamp,
-					};
-				case "compactionSummary":
-					return {
-						role: "user",
-						content: [
-							{ type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + m.summary + COMPACTION_SUMMARY_SUFFIX },
-						],
-						timestamp: m.timestamp,
-					};
-				case "user":
-				case "assistant":
-				case "toolResult":
-					return m;
-				default:
-					return undefined;
-			}
-		})
-		.filter((m): m is Message => m !== undefined);
+	return toLlm(messages, harnessTranscriptAdapters);
 }

@@ -20,6 +20,12 @@ import {
 import type { Attachment } from "../../utils/attachment-utils.js";
 import { i18n } from "../../utils/i18n.js";
 import type { ArtifactElement } from "./ArtifactElement.js";
+import {
+	type Artifact,
+	ArtifactWorkspace,
+	type ArtifactWorkspaceResult,
+	formatArtifactWorkspaceResult,
+} from "./artifact-workspace.js";
 import { DocxArtifact } from "./DocxArtifact.js";
 import { ExcelArtifact } from "./ExcelArtifact.js";
 import { GenericArtifact } from "./GenericArtifact.js";
@@ -30,13 +36,7 @@ import { PdfArtifact } from "./PdfArtifact.js";
 import { SvgArtifact } from "./SvgArtifact.js";
 import { TextArtifact } from "./TextArtifact.js";
 
-// Simple artifact model
-export interface Artifact {
-	filename: string;
-	content: string;
-	createdAt: Date;
-	updatedAt: Date;
-}
+export type { Artifact } from "./artifact-workspace.js";
 
 // JSON-schema friendly parameters object (LLM-facing)
 const artifactsParamsSchema = Type.Object({
@@ -54,6 +54,8 @@ export type ArtifactsParams = Static<typeof artifactsParamsSchema>;
 export class ArtifactsPanel extends LitElement {
 	@state() private _artifacts = new Map<string, Artifact>();
 	@state() private _activeFilename: string | null = null;
+
+	private readonly workspace = new ArtifactWorkspace();
 
 	// Programmatically managed artifact elements
 	private artifactElements = new Map<string, ArtifactElement>();
@@ -75,6 +77,10 @@ export class ArtifactsPanel extends LitElement {
 	// Public getter for artifacts
 	get artifacts() {
 		return this._artifacts;
+	}
+
+	private syncArtifactsFromWorkspace(): void {
+		this._artifacts = this.workspace.artifacts;
 	}
 
 	// Get runtime providers for HTML artifacts (read-only: attachments + artifacts)
@@ -385,13 +391,13 @@ export class ArtifactsPanel extends LitElement {
 		}
 
 		// 4) Reset current UI state before bulk create
-		this._artifacts.clear();
+		this.workspace.clear();
+		this.syncArtifactsFromWorkspace();
 		this.artifactElements.forEach((el) => {
 			el.remove();
 		});
 		this.artifactElements.clear();
 		this._activeFilename = null;
-		this._artifacts = new Map(this._artifacts);
 
 		// 5) Create artifacts in a single pass without waiting for iframe execution or tab switching
 		for (const [filename, content] of finalArtifacts.entries()) {
@@ -464,28 +470,29 @@ export class ArtifactsPanel extends LitElement {
 		});
 	}
 
+	private async formatWorkspaceResultWithHtmlLogs(
+		result: ArtifactWorkspaceResult,
+		options: { skipWait?: boolean } = {},
+	): Promise<string> {
+		if (result.ok && this.getFileType(result.filename) === "html" && !options.skipWait) {
+			const logs = await this.waitForHtmlExecution(result.filename);
+			this.workspace.setLastRunLogs(result.filename, logs);
+			this.syncArtifactsFromWorkspace();
+			return formatArtifactWorkspaceResult({ ...result, logs });
+		}
+		return formatArtifactWorkspaceResult(result);
+	}
+
 	private async createArtifact(
 		params: ArtifactsParams,
 		options: { skipWait?: boolean; silent?: boolean } = {},
 	): Promise<string> {
-		if (!params.filename || !params.content) {
-			return "Error: create command requires filename and content";
-		}
-		if (this._artifacts.has(params.filename)) {
-			return `Error: File ${params.filename} already exists`;
-		}
-
-		const artifact: Artifact = {
-			filename: params.filename,
-			content: params.content,
-			createdAt: new Date(),
-			updatedAt: new Date(),
-		};
-		this._artifacts.set(params.filename, artifact);
-		this._artifacts = new Map(this._artifacts);
+		const result = this.workspace.execute({ command: "create", filename: params.filename, content: params.content });
+		this.syncArtifactsFromWorkspace();
+		if (!result.ok) return formatArtifactWorkspaceResult(result);
 
 		// Create or update element
-		this.getOrCreateArtifactElement(params.filename, params.content);
+		this.getOrCreateArtifactElement(params.filename, params.content ?? "");
 		if (!options.silent) {
 			this.showArtifact(params.filename);
 			this.onArtifactsChange?.();
@@ -495,39 +502,24 @@ export class ArtifactsPanel extends LitElement {
 		// Reload all HTML artifacts since they might depend on this new artifact
 		this.reloadAllHtmlArtifacts();
 
-		// For HTML files, wait for execution
-		let result = `Created file ${params.filename}`;
-		if (this.getFileType(params.filename) === "html" && !options.skipWait) {
-			const logs = await this.waitForHtmlExecution(params.filename);
-			result += `\n${logs}`;
-		}
-
-		return result;
+		return await this.formatWorkspaceResultWithHtmlLogs(result, options);
 	}
 
 	private async updateArtifact(
 		params: ArtifactsParams,
 		options: { skipWait?: boolean; silent?: boolean } = {},
 	): Promise<string> {
-		const artifact = this._artifacts.get(params.filename);
-		if (!artifact) {
-			const files = Array.from(this._artifacts.keys());
-			if (files.length === 0) return `Error: File ${params.filename} not found. No files have been created yet.`;
-			return `Error: File ${params.filename} not found. Available files: ${files.join(", ")}`;
-		}
-		if (!params.old_str || params.new_str === undefined) {
-			return "Error: update command requires old_str and new_str";
-		}
-		if (!artifact.content.includes(params.old_str)) {
-			return `Error: String not found in file. Here is the full content:\n\n${artifact.content}`;
-		}
-
-		artifact.content = artifact.content.replace(params.old_str, params.new_str);
-		artifact.updatedAt = new Date();
-		this._artifacts.set(params.filename, artifact);
+		const result = this.workspace.execute({
+			command: "update",
+			filename: params.filename,
+			old_str: params.old_str,
+			new_str: params.new_str,
+		});
+		this.syncArtifactsFromWorkspace();
+		if (!result.ok) return formatArtifactWorkspaceResult(result);
 
 		// Update element
-		this.getOrCreateArtifactElement(params.filename, artifact.content);
+		this.getOrCreateArtifactElement(params.filename, result.artifact?.content ?? "");
 		if (!options.silent) {
 			this.onArtifactsChange?.();
 			this.requestUpdate();
@@ -539,36 +531,19 @@ export class ArtifactsPanel extends LitElement {
 		// Reload all HTML artifacts since they might depend on this updated artifact
 		this.reloadAllHtmlArtifacts();
 
-		// For HTML files, wait for execution
-		let result = `Updated file ${params.filename}`;
-		if (this.getFileType(params.filename) === "html" && !options.skipWait) {
-			const logs = await this.waitForHtmlExecution(params.filename);
-			result += `\n${logs}`;
-		}
-
-		return result;
+		return await this.formatWorkspaceResultWithHtmlLogs(result, options);
 	}
 
 	private async rewriteArtifact(
 		params: ArtifactsParams,
 		options: { skipWait?: boolean; silent?: boolean } = {},
 	): Promise<string> {
-		const artifact = this._artifacts.get(params.filename);
-		if (!artifact) {
-			const files = Array.from(this._artifacts.keys());
-			if (files.length === 0) return `Error: File ${params.filename} not found. No files have been created yet.`;
-			return `Error: File ${params.filename} not found. Available files: ${files.join(", ")}`;
-		}
-		if (!params.content) {
-			return "Error: rewrite command requires content";
-		}
-
-		artifact.content = params.content;
-		artifact.updatedAt = new Date();
-		this._artifacts.set(params.filename, artifact);
+		const result = this.workspace.execute({ command: "rewrite", filename: params.filename, content: params.content });
+		this.syncArtifactsFromWorkspace();
+		if (!result.ok) return formatArtifactWorkspaceResult(result);
 
 		// Update element
-		this.getOrCreateArtifactElement(params.filename, artifact.content);
+		this.getOrCreateArtifactElement(params.filename, result.artifact?.content ?? "");
 		if (!options.silent) {
 			this.onArtifactsChange?.();
 		}
@@ -579,36 +554,17 @@ export class ArtifactsPanel extends LitElement {
 		// Reload all HTML artifacts since they might depend on this rewritten artifact
 		this.reloadAllHtmlArtifacts();
 
-		// For HTML files, wait for execution
-		let result = "";
-		if (this.getFileType(params.filename) === "html" && !options.skipWait) {
-			const logs = await this.waitForHtmlExecution(params.filename);
-			result += `\n${logs}`;
-		}
-
-		return result;
+		return await this.formatWorkspaceResultWithHtmlLogs(result, options);
 	}
 
 	private getArtifact(params: ArtifactsParams): string {
-		const artifact = this._artifacts.get(params.filename);
-		if (!artifact) {
-			const files = Array.from(this._artifacts.keys());
-			if (files.length === 0) return `Error: File ${params.filename} not found. No files have been created yet.`;
-			return `Error: File ${params.filename} not found. Available files: ${files.join(", ")}`;
-		}
-		return artifact.content;
+		return formatArtifactWorkspaceResult(this.workspace.execute({ command: "get", filename: params.filename }));
 	}
 
 	private deleteArtifact(params: ArtifactsParams): string {
-		const artifact = this._artifacts.get(params.filename);
-		if (!artifact) {
-			const files = Array.from(this._artifacts.keys());
-			if (files.length === 0) return `Error: File ${params.filename} not found. No files have been created yet.`;
-			return `Error: File ${params.filename} not found. Available files: ${files.join(", ")}`;
-		}
-
-		this._artifacts.delete(params.filename);
-		this._artifacts = new Map(this._artifacts);
+		const result = this.workspace.execute({ command: "delete", filename: params.filename });
+		this.syncArtifactsFromWorkspace();
+		if (!result.ok) return formatArtifactWorkspaceResult(result);
 
 		// Remove element
 		const element = this.artifactElements.get(params.filename);
@@ -633,7 +589,7 @@ export class ArtifactsPanel extends LitElement {
 		// Reload all HTML artifacts since they might have depended on this deleted artifact
 		this.reloadAllHtmlArtifacts();
 
-		return `Deleted file ${params.filename}`;
+		return formatArtifactWorkspaceResult(result);
 	}
 
 	private getLogs(params: ArtifactsParams): string {

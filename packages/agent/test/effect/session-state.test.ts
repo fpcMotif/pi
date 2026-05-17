@@ -11,19 +11,25 @@
  * field, accumulated usage / cost, pending tool calls, observable change
  * stream wiring (`SubscriptionRef.changes`).
  */
-import { OpenAiLanguageModel } from "@effect/ai-openai";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Stream, SubscriptionRef } from "effect";
+import { Effect, Stream, SubscriptionRef } from "effect";
 import { describe, expect } from "vitest";
 
 import { Session } from "../../effect/session.js";
 import { SessionState } from "../../effect/session-state.js";
-import { stubOpenAiClientStreaming } from "../../test-support/stub-openai-client-streaming.js";
-
-const openAiStreamingLayer = (text: string, chunkCount = 1) =>
-	OpenAiLanguageModel.layer({ model: "gpt-4" }).pipe(Layer.provide(stubOpenAiClientStreaming({ text, chunkCount })));
+import { openAiStreamingLayer } from "../../test-support/openai-language-model.js";
 
 describe("Session.state -- SubscriptionRef<SessionState>", () => {
+	it("SessionState.with preserves untouched fields", () => {
+		const next = SessionState.with(SessionState.empty, { turnCount: 7 });
+
+		expect(next.turnCount).toBe(7);
+		expect(next.history).toBe(SessionState.empty.history);
+		expect(next.inputTokens).toBe(SessionState.empty.inputTokens);
+		expect(next.outputTokens).toBe(SessionState.empty.outputTokens);
+		expect(next.compactionCount).toBe(SessionState.empty.compactionCount);
+	});
+
 	it.effect("Session.empty initialises state to SessionState.empty (turnCount: 0)", () =>
 		Effect.gen(function* () {
 			const session = yield* Session.empty;
