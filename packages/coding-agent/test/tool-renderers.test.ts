@@ -1,6 +1,8 @@
 import type { TUI } from "@earendil-works/pi-tui";
 import stripAnsi from "strip-ansi";
 import { beforeAll, describe, expect, test } from "vitest";
+import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.js";
+import { initTheme } from "../src/modes/interactive/theme/theme.js";
 import {
 	bashToolRenderer,
 	createBuiltinToolRendererRegistry,
@@ -11,8 +13,6 @@ import {
 	readToolRenderer,
 	writeToolRenderer,
 } from "../src/modes/interactive/tool-renderers/index.js";
-import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.js";
-import { initTheme } from "../src/modes/interactive/theme/theme.js";
 
 function fakeTui(): TUI {
 	return { requestRender: () => {} } as unknown as TUI;
@@ -54,7 +54,15 @@ describe("tool-renderer registry", () => {
 
 describe("bash tool renderer", () => {
 	test("renders bash call with command", () => {
-		const c = new ToolExecutionComponent("bash", "id-1", { command: "echo hi" }, {}, undefined, fakeTui(), process.cwd());
+		const c = new ToolExecutionComponent(
+			"bash",
+			"id-1",
+			{ command: "echo hi" },
+			{},
+			undefined,
+			fakeTui(),
+			process.cwd(),
+		);
 		const out = stripAnsi(c.render(120).join("\n"));
 		expect(out).toContain("echo hi");
 	});
@@ -74,7 +82,15 @@ describe("bash tool renderer", () => {
 	});
 
 	test("renders bash result with stdout", () => {
-		const c = new ToolExecutionComponent("bash", "id-3", { command: "echo hi" }, {}, undefined, fakeTui(), process.cwd());
+		const c = new ToolExecutionComponent(
+			"bash",
+			"id-3",
+			{ command: "echo hi" },
+			{},
+			undefined,
+			fakeTui(),
+			process.cwd(),
+		);
 		c.updateResult({ content: [{ type: "text", text: "hi\nthere" }], details: undefined, isError: false }, false);
 		const out = stripAnsi(c.render(120).join("\n"));
 		expect(out).toContain("hi");
@@ -140,7 +156,15 @@ describe("bash tool renderer", () => {
 
 describe("read tool renderer", () => {
 	test("renders read call with path", () => {
-		const c = new ToolExecutionComponent("read", "r-1", { path: "/test/file.ts" }, {}, undefined, fakeTui(), process.cwd());
+		const c = new ToolExecutionComponent(
+			"read",
+			"r-1",
+			{ path: "/test/file.ts" },
+			{},
+			undefined,
+			fakeTui(),
+			process.cwd(),
+		);
 		const out = stripAnsi(c.render(120).join("\n"));
 		expect(out).toContain("read");
 		expect(out).toContain("file.ts");
@@ -156,21 +180,45 @@ describe("read tool renderer", () => {
 
 describe("find tool renderer", () => {
 	test("renders find call with pattern", () => {
-		const c = new ToolExecutionComponent("find", "f-1", { pattern: "*.ts", path: "src" }, {}, undefined, fakeTui(), process.cwd());
+		const c = new ToolExecutionComponent(
+			"find",
+			"f-1",
+			{ pattern: "*.ts", path: "src" },
+			{},
+			undefined,
+			fakeTui(),
+			process.cwd(),
+		);
 		const out = stripAnsi(c.render(120).join("\n"));
 		expect(out).toContain("find");
 		expect(out).toContain("*.ts");
 	});
 
 	test("renders find call with limit", () => {
-		const c = new ToolExecutionComponent("find", "f-2", { pattern: "*.ts", path: ".", limit: 100 }, {}, undefined, fakeTui(), process.cwd());
+		const c = new ToolExecutionComponent(
+			"find",
+			"f-2",
+			{ pattern: "*.ts", path: ".", limit: 100 },
+			{},
+			undefined,
+			fakeTui(),
+			process.cwd(),
+		);
 		const out = stripAnsi(c.render(120).join("\n"));
 		expect(out).toContain("limit");
 		expect(out).toContain("100");
 	});
 
 	test("renders find result with content", () => {
-		const c = new ToolExecutionComponent("find", "f-3", { pattern: "*", path: "." }, {}, undefined, fakeTui(), process.cwd());
+		const c = new ToolExecutionComponent(
+			"find",
+			"f-3",
+			{ pattern: "*", path: "." },
+			{},
+			undefined,
+			fakeTui(),
+			process.cwd(),
+		);
 		c.updateResult(
 			{ content: [{ type: "text", text: "src/file1.ts\nsrc/file2.ts" }], details: undefined, isError: false },
 			false,
@@ -218,7 +266,15 @@ describe("find tool renderer", () => {
 
 describe("grep tool renderer", () => {
 	test("renders grep call with pattern", () => {
-		const c = new ToolExecutionComponent("grep", "g-1", { pattern: "TODO", path: "src" }, {}, undefined, fakeTui(), process.cwd());
+		const c = new ToolExecutionComponent(
+			"grep",
+			"g-1",
+			{ pattern: "TODO", path: "src" },
+			{},
+			undefined,
+			fakeTui(),
+			process.cwd(),
+		);
 		const out = stripAnsi(c.render(120).join("\n"));
 		expect(out).toContain("grep");
 		expect(out).toContain("TODO");
@@ -226,7 +282,10 @@ describe("grep tool renderer", () => {
 
 	test("renders grep result with hits", () => {
 		const c = new ToolExecutionComponent("grep", "g-2", { pattern: "test" }, {}, undefined, fakeTui(), process.cwd());
-		c.updateResult({ content: [{ type: "text", text: "file.ts:10: test()" }], details: undefined, isError: false }, false);
+		c.updateResult(
+			{ content: [{ type: "text", text: "file.ts:10: test()" }], details: undefined, isError: false },
+			false,
+		);
 		const out = stripAnsi(c.render(120).join("\n"));
 		expect(out).toContain("file.ts");
 	});
@@ -252,14 +311,30 @@ describe("ls tool renderer", () => {
 
 describe("write tool renderer", () => {
 	test("renders write call with path", () => {
-		const c = new ToolExecutionComponent("write", "w-1", { path: "new.ts", content: "x" }, {}, undefined, fakeTui(), process.cwd());
+		const c = new ToolExecutionComponent(
+			"write",
+			"w-1",
+			{ path: "new.ts", content: "x" },
+			{},
+			undefined,
+			fakeTui(),
+			process.cwd(),
+		);
 		const out = stripAnsi(c.render(120).join("\n"));
 		expect(out).toContain("write");
 		expect(out).toContain("new.ts");
 	});
 
 	test("renders write result success", () => {
-		const c = new ToolExecutionComponent("write", "w-2", { path: "f.ts", content: "x" }, {}, undefined, fakeTui(), process.cwd());
+		const c = new ToolExecutionComponent(
+			"write",
+			"w-2",
+			{ path: "f.ts", content: "x" },
+			{},
+			undefined,
+			fakeTui(),
+			process.cwd(),
+		);
 		c.updateResult({ content: [{ type: "text", text: "written" }], details: undefined, isError: false }, false);
 		const out = stripAnsi(c.render(120).join("\n"));
 		expect(out.length).toBeGreaterThan(0);
@@ -292,7 +367,11 @@ describe("edit tool renderer", () => {
 			process.cwd(),
 		);
 		c.updateResult(
-			{ content: [{ type: "text", text: "updated" }], details: { diff: "@@ -1 +1 @@\n-a\n+b\n", firstChangedLine: 1 }, isError: false },
+			{
+				content: [{ type: "text", text: "updated" }],
+				details: { diff: "@@ -1 +1 @@\n-a\n+b\n", firstChangedLine: 1 },
+				isError: false,
+			},
 			false,
 		);
 		const out = stripAnsi(c.render(120).join("\n"));

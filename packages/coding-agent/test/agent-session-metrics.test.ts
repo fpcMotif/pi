@@ -3,11 +3,14 @@ import { describe, expect, it } from "vitest";
 import { getAgentSessionContextUsage } from "../src/core/agent-session-metrics.js";
 import { SessionManager } from "../src/core/session-manager.js";
 
-function userMsg(text: string, ts = 1): AgentMessage {
+function userMsg(text: string, ts = 1): Extract<AgentMessage, { role: "user" }> {
 	return { role: "user", content: text, timestamp: ts };
 }
 
-function assistantMsg(text: string, opts?: { stopReason?: string; tokens?: number; ts?: number }): AgentMessage {
+function assistantMsg(
+	text: string,
+	opts?: { stopReason?: string; tokens?: number; ts?: number },
+): Extract<AgentMessage, { role: "assistant" }> {
 	return {
 		role: "assistant",
 		content: [{ type: "text", text }],

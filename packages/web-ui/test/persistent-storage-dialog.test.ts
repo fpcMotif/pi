@@ -30,10 +30,8 @@ import { PersistentStorageDialog } from "../src/dialogs/PersistentStorageDialog.
 // Helper: trigger the dialog's handleGrant via the public surface.
 // Since happy-dom + Lit has trouble rendering adjacent template-result
 // children, we drive the dialog through its private handlers directly.
-const handleGrant = (d: PersistentStorageDialog) =>
-	(d as unknown as { handleGrant: () => void }).handleGrant();
-const handleDeny = (d: PersistentStorageDialog) =>
-	(d as unknown as { handleDeny: () => void }).handleDeny();
+const handleGrant = (d: PersistentStorageDialog) => (d as unknown as { handleGrant: () => void }).handleGrant();
+const handleDeny = (d: PersistentStorageDialog) => (d as unknown as { handleDeny: () => void }).handleDeny();
 
 beforeEach(() => {
 	vi.spyOn(console, "log").mockImplementation(() => {});
@@ -202,10 +200,7 @@ describe("PersistentStorageDialog — direct instance behaviors", () => {
 		// Walk the template tree looking for an `onClick` arrow that, when invoked,
 		// reads the "Continue Anyway" semantics. Easier: invoke handleDeny via
 		// the template's resolved arrow function.
-		const rc = (dialog as unknown as { renderContent: () => unknown }).renderContent() as Record<
-			string,
-			unknown
-		>;
+		const rc = (dialog as unknown as { renderContent: () => unknown }).renderContent() as Record<string, unknown>;
 		// rc.values contains the nested values from the html`...` literal.
 		// Recursively search for objects with an `onClick` property that
 		// references "Continue Anyway" children.
@@ -235,10 +230,7 @@ describe("PersistentStorageDialog — direct instance behaviors", () => {
 		(dialog as unknown as { resolvePromise: (b: boolean) => void }).resolvePromise = (b: boolean) => {
 			resolved = b;
 		};
-		const rc = (dialog as unknown as { renderContent: () => unknown }).renderContent() as Record<
-			string,
-			unknown
-		>;
+		const rc = (dialog as unknown as { renderContent: () => unknown }).renderContent() as Record<string, unknown>;
 		const findClick = (node: unknown, label: string): (() => void) | undefined => {
 			if (!node || typeof node !== "object") return undefined;
 			const obj = node as Record<string, unknown>;

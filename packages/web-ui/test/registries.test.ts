@@ -107,7 +107,10 @@ describe("renderCollapsibleHeader", () => {
 		content.classList.add(defaultExpanded ? "max-h-[2000px]" : "max-h-0");
 		contentRef.value = content;
 		const container = document.createElement("div");
-		render(renderCollapsibleHeader(state, "tool-icon", "Header text", contentRef, chevronRef, defaultExpanded), container);
+		render(
+			renderCollapsibleHeader(state, "tool-icon", "Header text", contentRef, chevronRef, defaultExpanded),
+			container,
+		);
 		const button = container.querySelector("button") as HTMLButtonElement;
 		return { button, content, chevronRef, container };
 	};

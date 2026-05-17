@@ -3,8 +3,8 @@
 // and keyboard input handling.
 import assert from "node:assert";
 import { describe, it } from "vitest";
-import type { Component } from "../src/tui.js";
 import { type SettingItem, SettingsList, type SettingsListTheme } from "../src/components/settings-list.js";
+import type { Component } from "../src/tui.js";
 
 const theme: SettingsListTheme = {
 	label: (text) => text,
@@ -52,7 +52,9 @@ describe("SettingsList", () => {
 	});
 
 	it("renders a description for the selected item", () => {
-		const items: SettingItem[] = [{ id: "a", label: "Theme", currentValue: "dark", description: "Pick a color theme" }];
+		const items: SettingItem[] = [
+			{ id: "a", label: "Theme", currentValue: "dark", description: "Pick a color theme" },
+		];
 		const list = new SettingsList(
 			items,
 			5,

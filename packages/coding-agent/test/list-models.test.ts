@@ -112,11 +112,7 @@ describe("listModels", () => {
 	});
 
 	it("sorts by provider then id", async () => {
-		const models = [
-			makeModel("z-prov", "z"),
-			makeModel("a-prov", "z"),
-			makeModel("a-prov", "a"),
-		];
+		const models = [makeModel("z-prov", "z"), makeModel("a-prov", "z"), makeModel("a-prov", "a")];
 		await listModels(makeRegistry(models));
 		const calls = logSpy.mock.calls.flat() as string[];
 		const dataRows = calls.filter((l) => l.includes("a-prov") || l.includes("z-prov"));

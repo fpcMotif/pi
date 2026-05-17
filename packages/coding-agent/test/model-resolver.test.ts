@@ -217,10 +217,7 @@ describe("resolveModelScope", () => {
 	});
 
 	it("matches glob with provider prefix", async () => {
-		const reg = makeRegistry([
-			makeModel("anthropic", "claude"),
-			makeModel("openai", "claude"),
-		]);
+		const reg = makeRegistry([makeModel("anthropic", "claude"), makeModel("openai", "claude")]);
 		const result = await resolveModelScope(["anthropic/*"], reg);
 		expect(result).toHaveLength(1);
 		expect(result[0].model.provider).toBe("anthropic");
@@ -393,11 +390,16 @@ describe("resolveCliModel", () => {
 });
 
 describe("findInitialModel", () => {
-	function makeRegistry(models: Model<Api>[], extras: Partial<{ find: (p: string, id: string) => Model<Api> | undefined }> = {}) {
+	function makeRegistry(
+		models: Model<Api>[],
+		extras: Partial<{ find: (p: string, id: string) => Model<Api> | undefined }> = {},
+	) {
 		const reg = {
 			getAll: () => models,
 			getAvailable: async () => models,
-			find: extras.find ?? ((provider: string, id: string) => models.find((m) => m.provider === provider && m.id === id)),
+			find:
+				extras.find ??
+				((provider: string, id: string) => models.find((m) => m.provider === provider && m.id === id)),
 			hasConfiguredAuth: () => true,
 		} as unknown as ModelRegistry;
 		return reg;
@@ -507,11 +509,7 @@ describe("findInitialModel", () => {
 });
 
 describe("restoreModelFromSession", () => {
-	function makeRegistry(opts: {
-		findResult?: Model<Api>;
-		hasAuth?: boolean;
-		available?: Model<Api>[];
-	}) {
+	function makeRegistry(opts: { findResult?: Model<Api>; hasAuth?: boolean; available?: Model<Api>[] }) {
 		const available = opts.available ?? [];
 		return {
 			find: () => opts.findResult,

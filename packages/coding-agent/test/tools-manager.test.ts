@@ -86,4 +86,3 @@ describe("isOfflineModeEnabled equivalent (via ensureTool semantics)", () => {
 		expect(result === undefined || typeof result === "string").toBe(true);
 	});
 });
-

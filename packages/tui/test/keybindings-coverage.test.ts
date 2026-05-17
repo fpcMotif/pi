@@ -1,11 +1,7 @@
 // Additional branch coverage for KeybindingsManager: undefined defaultKeys,
 // user bindings referencing unknown actions, and conflict detection.
 import { describe, expect, it } from "vitest";
-import {
-	type KeybindingDefinitions,
-	KeybindingsManager,
-	TUI_KEYBINDINGS,
-} from "../src/keybindings.js";
+import { type KeybindingDefinitions, KeybindingsManager, TUI_KEYBINDINGS } from "../src/keybindings.js";
 
 describe("KeybindingsManager — defensive branches", () => {
 	it("treats a definition with undefined defaultKeys as having no keys", () => {

@@ -28,7 +28,11 @@ describe("fs-watch", () => {
 	it("closeWatcher closes a real watcher", () => {
 		const file = join(tempDir, "file");
 		writeFileSync(file, "content");
-		const watcher = watchWithErrorHandler(file, () => {}, () => {});
+		const watcher = watchWithErrorHandler(
+			file,
+			() => {},
+			() => {},
+		);
 		expect(watcher).not.toBeNull();
 		closeWatcher(watcher);
 	});

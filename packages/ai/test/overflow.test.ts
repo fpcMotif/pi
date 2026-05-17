@@ -82,9 +82,7 @@ describe("isContextOverflow", () => {
 	});
 
 	it("returns false for error messages that match no overflow pattern", () => {
-		expect(
-			isContextOverflow(message({ stopReason: "error", errorMessage: "Internal server error" })),
-		).toBe(false);
+		expect(isContextOverflow(message({ stopReason: "error", errorMessage: "Internal server error" }))).toBe(false);
 	});
 
 	it("returns false for error stopReason without an error message", () => {
@@ -122,27 +120,21 @@ describe("isContextOverflow", () => {
 
 	it("does not flag a length stop that still produced output", () => {
 		expect(
-			isContextOverflow(
-				message({ stopReason: "length", usage: usage({ input: 199_000, output: 10 }) }),
-				200_000,
-			),
+			isContextOverflow(message({ stopReason: "length", usage: usage({ input: 199_000, output: 10 }) }), 200_000),
 		).toBe(false);
 	});
 
 	it("does not flag a length stop with zero output but input well below the window", () => {
 		expect(
-			isContextOverflow(
-				message({ stopReason: "length", usage: usage({ input: 50_000, output: 0 }) }),
-				200_000,
-			),
+			isContextOverflow(message({ stopReason: "length", usage: usage({ input: 50_000, output: 0 }) }), 200_000),
 		).toBe(false);
 	});
 
 	it("does not apply silent/length detection when contextWindow is omitted", () => {
 		expect(isContextOverflow(message({ stopReason: "stop", usage: usage({ input: 9_999_999 }) }))).toBe(false);
-		expect(
-			isContextOverflow(message({ stopReason: "length", usage: usage({ input: 9_999_999, output: 0 }) })),
-		).toBe(false);
+		expect(isContextOverflow(message({ stopReason: "length", usage: usage({ input: 9_999_999, output: 0 }) }))).toBe(
+			false,
+		);
 	});
 });
 

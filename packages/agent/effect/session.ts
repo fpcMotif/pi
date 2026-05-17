@@ -215,14 +215,15 @@ type ToolkitServices<ToolkitValue> = ToolkitValue extends undefined
 
 export interface Session {
 	readonly state: SubscriptionRef.SubscriptionRef<SessionState>;
-	readonly send: <
-		Tools extends Record<string, Tool.Any> = {},
-		ToolkitValue extends LanguageModel.ToolkitInput<Tools> | undefined = undefined,
-	>(
+	readonly send: <Tools extends Record<string, Tool.Any> = {}>(
 		input: string | Input,
-		toolkit?: ToolkitValue,
+		toolkit?: LanguageModel.ToolkitInput<Tools>,
 		concurrency?: Types.Concurrency,
-	) => Stream.Stream<AgentEvent, AgentError, LanguageModel.LanguageModel | ToolkitServices<ToolkitValue>>;
+	) => Stream.Stream<
+		AgentEvent,
+		AgentError,
+		LanguageModel.LanguageModel | ToolkitServices<LanguageModel.ToolkitInput<Tools>>
+	>;
 }
 
 interface MakeOptions {
@@ -483,10 +484,11 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 		const state = yield* SubscriptionRef.make(options.initialState);
 		return {
 			state,
-			send<
-				Tools extends Record<string, Tool.Any> = {},
-				ToolkitValue extends LanguageModel.ToolkitInput<Tools> | undefined = undefined,
-			>(input: string | Input, toolkit?: ToolkitValue, concurrency?: Types.Concurrency) {
+			send<OwnTools extends Record<string, Tool.Any> = {}>(
+				input: string | Input,
+				toolkit?: LanguageModel.ToolkitInput<OwnTools>,
+				concurrency?: Types.Concurrency,
+			) {
 				// ADR-0009: tool execution defaults to sequential. The effect framework
 				// defaults `concurrency` to `"unbounded"` when omitted, so resolve an
 				// explicit `1` here unless the caller opted into parallelism.
@@ -529,7 +531,10 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 									case "NewPrompt":
 										return Prompt.concat(s.history, normalized.prompt);
 									case "AcceptedPromptEnvelope": {
-										const withEnvelope = Prompt.concat(s.history, acceptedEnvelopePrompt);
+										const withEnvelope = Prompt.concat(
+											s.history,
+											acceptedEnvelopePrompt ?? Prompt.empty,
+										);
 										return normalized.systemPromptOverride === undefined
 											? withEnvelope
 											: Prompt.setSystem(withEnvelope, normalized.systemPromptOverride);

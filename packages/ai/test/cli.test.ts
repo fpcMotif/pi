@@ -107,10 +107,7 @@ async function runCli(options: CliRunOptions): Promise<CliRunResult> {
 		// Wait for either:
 		//  - a process.exit() call (resolveExit), or
 		//  - the main()/main().catch() chain to settle (a couple of ticks).
-		await Promise.race([
-			exitPromise,
-			new Promise<void>((resolve) => setTimeout(resolve, 100)),
-		]);
+		await Promise.race([exitPromise, new Promise<void>((resolve) => setTimeout(resolve, 100))]);
 		// Drain any pending microtasks from main().catch handlers
 		await new Promise<void>((resolve) => setTimeout(resolve, 20));
 	} catch (err) {

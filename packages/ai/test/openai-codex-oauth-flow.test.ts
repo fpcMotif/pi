@@ -1,5 +1,4 @@
 import http from "node:http";
-import { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	loginOpenAICodex,
@@ -27,15 +26,16 @@ describe("refreshOpenAICodexToken", () => {
 		const access = makeJwt("acc_42");
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () =>
-				new Response(
-					JSON.stringify({
-						access_token: access,
-						refresh_token: "new-refresh",
-						expires_in: 3600,
-					}),
-					{ status: 200, headers: { "Content-Type": "application/json" } },
-				),
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							access_token: access,
+							refresh_token: "new-refresh",
+							expires_in: 3600,
+						}),
+						{ status: 200, headers: { "Content-Type": "application/json" } },
+					),
 			),
 		);
 
@@ -51,15 +51,16 @@ describe("refreshOpenAICodexToken", () => {
 		const accessNoAccountId = makeJwt(undefined);
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () =>
-				new Response(
-					JSON.stringify({
-						access_token: accessNoAccountId,
-						refresh_token: "new-refresh",
-						expires_in: 3600,
-					}),
-					{ status: 200 },
-				),
+			vi.fn(
+				async () =>
+					new Response(
+						JSON.stringify({
+							access_token: accessNoAccountId,
+							refresh_token: "new-refresh",
+							expires_in: 3600,
+						}),
+						{ status: 200 },
+					),
 			),
 		);
 		await expect(refreshOpenAICodexToken("old-refresh-token")).rejects.toThrow(
@@ -70,9 +71,7 @@ describe("refreshOpenAICodexToken", () => {
 	it("throws when the response is missing required fields", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () =>
-				new Response(JSON.stringify({ access_token: "abc" }), { status: 200 }),
-			),
+			vi.fn(async () => new Response(JSON.stringify({ access_token: "abc" }), { status: 200 })),
 		);
 		await expect(refreshOpenAICodexToken("old")).rejects.toThrow(/missing fields/);
 	});
@@ -80,9 +79,7 @@ describe("refreshOpenAICodexToken", () => {
 	it("includes the response body in the failure message on non-2xx responses", async () => {
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () =>
-				new Response("server detail", { status: 500, statusText: "Server Error" }),
-			),
+			vi.fn(async () => new Response("server detail", { status: 500, statusText: "Server Error" })),
 		);
 		await expect(refreshOpenAICodexToken("token")).rejects.toThrow(/500.*server detail/);
 	});
@@ -136,11 +133,11 @@ describe("openaiCodexOAuthProvider integration", () => {
 		const access = makeJwt("acc_provider");
 		vi.stubGlobal(
 			"fetch",
-			vi.fn(async () =>
-				new Response(
-					JSON.stringify({ access_token: access, refresh_token: "rrr", expires_in: 60 }),
-					{ status: 200 },
-				),
+			vi.fn(
+				async () =>
+					new Response(JSON.stringify({ access_token: access, refresh_token: "rrr", expires_in: 60 }), {
+						status: 200,
+					}),
 			),
 		);
 		const refreshed = await openaiCodexOAuthProvider.refreshToken({
@@ -175,10 +172,10 @@ describe("loginOpenAICodex", () => {
 				if (opts.ok === false) {
 					return new Response("denied", { status: 400 });
 				}
-				return new Response(
-					JSON.stringify({ access_token: access, refresh_token: "RR", expires_in: 60 }),
-					{ status: 200, headers: { "Content-Type": "application/json" } },
-				);
+				return new Response(JSON.stringify({ access_token: access, refresh_token: "RR", expires_in: 60 }), {
+					status: 200,
+					headers: { "Content-Type": "application/json" },
+				});
 			}
 			// Pass-through to the real fetch for any other URL (e.g. callback server).
 			return realFetch(input, init);
@@ -455,15 +452,11 @@ describe("loginOpenAICodex", () => {
 
 		// Now send a valid callback so the flow finishes cleanly.
 		const params = new URL(observedAuthUrl).searchParams;
-		const r3 = await fetch(
-			`http://127.0.0.1:1455/auth/callback?state=${params.get("state")}`,
-		);
+		const r3 = await fetch(`http://127.0.0.1:1455/auth/callback?state=${params.get("state")}`);
 		expect(r3.status).toBe(400);
 		expect(await r3.text()).toContain("Missing authorization code");
 
-		const r4 = await fetch(
-			`http://127.0.0.1:1455/auth/callback?code=final-code&state=${params.get("state")}`,
-		);
+		const r4 = await fetch(`http://127.0.0.1:1455/auth/callback?code=final-code&state=${params.get("state")}`);
 		expect(r4.ok).toBe(true);
 		const result = await flow;
 		expect(result.access).toBe(access);

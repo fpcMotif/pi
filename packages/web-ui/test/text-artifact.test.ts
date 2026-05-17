@@ -122,7 +122,7 @@ describe("TextArtifact", () => {
 		expect(el.querySelector("pre")).not.toBeNull();
 	});
 
-	it("filename ending in a dot yields an empty extension (covers the `|| \"\"` fallback in isCode/getMimeType/render)", async () => {
+	it('filename ending in a dot yields an empty extension (covers the `|| ""` fallback in isCode/getMimeType/render)', async () => {
 		// "a.".split(".") === ["a", ""], so pop() === "" — a falsy left operand
 		// of `|| ""` in isCode(), getMimeType(), and render().
 		const el = (await make("trailingdot.", "body")) as HTMLElement & { getHeaderButtons: () => unknown };

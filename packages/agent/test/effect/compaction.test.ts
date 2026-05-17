@@ -14,7 +14,8 @@ import { estimateTokens, shouldCompact, splitHistory } from "../../effect/compac
 
 const prompt = (...messages: ReadonlyArray<Prompt.Message>): Prompt.Prompt => Prompt.fromMessages(messages);
 const systemMessage = (content: string): Prompt.SystemMessage => Prompt.makeMessage("system", { content });
-const userMessage = (content: string): Prompt.UserMessage => Prompt.makeMessage("user", { content });
+const userMessage = (content: string): Prompt.UserMessage =>
+	Prompt.makeMessage("user", { content: [Prompt.makePart("text", { text: content })] });
 const assistantMessage = (content: ReadonlyArray<Prompt.AssistantMessagePart>): Prompt.AssistantMessage =>
 	Prompt.makeMessage("assistant", { content });
 const toolMessage = (content: ReadonlyArray<Prompt.ToolMessagePart>): Prompt.ToolMessage =>
@@ -40,7 +41,12 @@ describe("estimateTokens", () => {
 		const withTool = prompt(
 			assistantMessage([
 				textPart("x".repeat(40)),
-				Prompt.makePart("tool-call", { id: "c1", name: "GetWeather", params: { city: "Paris" } }),
+				Prompt.makePart("tool-call", {
+					id: "c1",
+					name: "GetWeather",
+					params: { city: "Paris" },
+					providerExecuted: false,
+				}),
 			]),
 			toolMessage([
 				Prompt.makePart("tool-result", {
@@ -57,7 +63,14 @@ describe("estimateTokens", () => {
 
 	it("treats non-serializable tool payloads and omitted approval reasons as zero chars", () => {
 		const history = prompt(
-			assistantMessage([Prompt.makePart("tool-call", { id: "c1", name: "Noop", params: undefined })]),
+			assistantMessage([
+				Prompt.makePart("tool-call", {
+					id: "c1",
+					name: "Noop",
+					params: undefined,
+					providerExecuted: false,
+				}),
+			]),
 			toolMessage([
 				Prompt.makePart("tool-result", {
 					id: "c1",
@@ -150,7 +163,12 @@ describe("splitHistory", () => {
 			userMessage("a".repeat(400)),
 			assistantMessage([
 				textPart("b".repeat(400)),
-				Prompt.makePart("tool-call", { id: "c1", name: "Read", params: { path: "/x" } }),
+				Prompt.makePart("tool-call", {
+					id: "c1",
+					name: "Read",
+					params: { path: "/x" },
+					providerExecuted: false,
+				}),
 			]),
 			toolMessage([
 				Prompt.makePart("tool-result", { id: "c1", name: "Read", isFailure: false, result: "z".repeat(400) }),
