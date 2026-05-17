@@ -16,8 +16,7 @@ const modules = [
 ];
 
 // A tiny 1x1 transparent PNG, base64-encoded.
-const PNG_1x1 =
-	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+const PNG_1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
 
 afterEach(() => {
 	resetCapabilitiesCache();

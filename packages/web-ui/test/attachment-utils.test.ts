@@ -291,7 +291,10 @@ describe("loadAttachment — DOCX processing", () => {
 							],
 						},
 						// container element with children → recursive branch
-						{ type: "SomeContainer", children: [{ type: "Paragraph", children: [{ type: "Text", text: "nested" }] }] },
+						{
+							type: "SomeContainer",
+							children: [{ type: "Paragraph", children: [{ type: "Text", text: "nested" }] }],
+						},
 					],
 				},
 			},
@@ -324,7 +327,7 @@ describe("loadAttachment — DOCX processing", () => {
 
 describe("loadAttachment — PPTX processing", () => {
 	it("extracts slide text and notes, sorting slides numerically", async () => {
-		const slide1 = '<a:t>Slide One Title</a:t><a:t>  </a:t>';
+		const slide1 = "<a:t>Slide One Title</a:t><a:t>  </a:t>";
 		const slide2 = "<a:t>Slide Two</a:t>";
 		const note1 = "<a:t>Note for slide one</a:t>";
 		jszipState.loadAsync = async () => ({

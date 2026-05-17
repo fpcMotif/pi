@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	streamOpenAICompletions,
-	streamSimpleOpenAICompletions,
-} from "../src/providers/openai-completions.js";
+import { streamOpenAICompletions, streamSimpleOpenAICompletions } from "../src/providers/openai-completions.js";
 import type { AssistantMessage, Context, Model, Tool } from "../src/types.js";
 
 // =============================================================================
@@ -291,9 +288,7 @@ describe("openai-completions streaming", () => {
 		fakeState.chunks = [
 			{
 				id: "x",
-				choices: [
-					{ index: 0, delta: { content: "abc" }, finish_reason: null },
-				],
+				choices: [{ index: 0, delta: { content: "abc" }, finish_reason: null }],
 			},
 		];
 		// Pre-abort: the stream will iterate, then the final check throws.
@@ -362,9 +357,7 @@ describe("openai-completions streaming", () => {
 									function: { name: "noop", arguments: "{}" },
 								},
 							],
-							reasoning_details: [
-								{ type: "reasoning.encrypted", id: "tcZ", data: "cipher" },
-							],
+							reasoning_details: [{ type: "reasoning.encrypted", id: "tcZ", data: "cipher" }],
 						},
 					},
 				],
@@ -475,13 +468,18 @@ describe("openai-completions buildParams", () => {
 					{ role: "user", content: "hi", timestamp: Date.now() },
 					{
 						role: "assistant",
-						content: [
-							{ type: "toolCall", id: "tc1", name: "doit", arguments: {} },
-						],
+						content: [{ type: "toolCall", id: "tc1", name: "doit", arguments: {} }],
 						api: "openai-completions",
 						provider: "openai",
 						model: "gpt-4o-mini",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -490,6 +488,7 @@ describe("openai-completions buildParams", () => {
 						toolCallId: "tc1",
 						toolName: "doit",
 						content: [{ type: "text", text: "ok" }],
+						isError: false,
 						timestamp: Date.now(),
 					},
 				],
@@ -687,7 +686,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openai",
 						model: "gpt-4o-mini",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -699,6 +705,7 @@ describe("openai-completions convertMessages", () => {
 							{ type: "text", text: "got it" },
 							{ type: "image", mimeType: "image/png", data: "XX==" },
 						],
+						isError: false,
 						timestamp: Date.now(),
 					},
 				],
@@ -708,7 +715,8 @@ describe("openai-completions convertMessages", () => {
 		const toolMsg = params.messages.find((m: any) => m.role === "tool");
 		expect(toolMsg.content).toBe("got it");
 		const userImageMsg = params.messages.find(
-			(m: any) => m.role === "user" && Array.isArray(m.content) && m.content.some((c: any) => c.type === "image_url"),
+			(m: any) =>
+				m.role === "user" && Array.isArray(m.content) && m.content.some((c: any) => c.type === "image_url"),
 		);
 		expect(userImageMsg).toBeDefined();
 	});
@@ -722,12 +730,24 @@ describe("openai-completions convertMessages", () => {
 						role: "assistant",
 						// Use a foreign assistant message (provider differs) so pipe id is normalized.
 						content: [
-							{ type: "toolCall", id: "callXYZ|fooooo+/=verylong-call-id_with_chars", name: "doit", arguments: {} },
+							{
+								type: "toolCall",
+								id: "callXYZ|fooooo+/=verylong-call-id_with_chars",
+								name: "doit",
+								arguments: {},
+							},
 						],
 						api: "openai-completions",
 						provider: "openrouter",
 						model: "anthropic/claude-3-5-sonnet",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -736,6 +756,7 @@ describe("openai-completions convertMessages", () => {
 						toolCallId: "callXYZ|fooooo+/=verylong-call-id_with_chars",
 						toolName: "doit",
 						content: [{ type: "text", text: "ok" }],
+						isError: false,
 						timestamp: Date.now(),
 					},
 				],
@@ -763,7 +784,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openrouter",
 						model: "anthropic/claude-3-5-sonnet",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -772,6 +800,7 @@ describe("openai-completions convertMessages", () => {
 						toolCallId: longId,
 						toolName: "doit",
 						content: [{ type: "text", text: "ok" }],
+						isError: false,
 						timestamp: Date.now(),
 					},
 				],
@@ -803,7 +832,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openrouter",
 						model: "matched-model",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "stop",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -833,7 +869,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "deepseek",
 						model: "deepseek-r1",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "stop",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -861,7 +904,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openai",
 						model: "gpt-4o-mini",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -870,6 +920,7 @@ describe("openai-completions convertMessages", () => {
 						toolCallId: "tc1",
 						toolName: "ping",
 						content: [{ type: "text", text: "ok" }],
+						isError: false,
 						timestamp: Date.now(),
 					},
 				],
@@ -898,7 +949,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openai",
 						model: "gpt-4o-mini",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -907,6 +965,7 @@ describe("openai-completions convertMessages", () => {
 						toolCallId: "tc1",
 						toolName: "ping",
 						content: [{ type: "text", text: "ok" }],
+						isError: false,
 						timestamp: Date.now(),
 					},
 					{ role: "user", content: "what now?", timestamp: Date.now() },
@@ -935,7 +994,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openai",
 						model: "gpt-4o-mini",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "stop",
 						timestamp: Date.now(),
 					} as AssistantMessage,

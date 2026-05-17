@@ -1,6 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { oauthErrorHtml, oauthSuccessHtml } from "../src/utils/oauth/oauth-page.js";
-import { generatePKCE } from "../src/utils/oauth/pkce.js";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	getOAuthApiKey,
 	getOAuthProvider,
@@ -12,6 +10,8 @@ import {
 	resetOAuthProviders,
 	unregisterOAuthProvider,
 } from "../src/utils/oauth/index.js";
+import { oauthErrorHtml, oauthSuccessHtml } from "../src/utils/oauth/oauth-page.js";
+import { generatePKCE } from "../src/utils/oauth/pkce.js";
 import type { OAuthCredentials, OAuthProviderInterface } from "../src/utils/oauth/types.js";
 
 afterEach(() => {
@@ -33,7 +33,7 @@ describe("oauth-page", () => {
 	});
 
 	it("oauthErrorHtml escapes special HTML characters in the message", () => {
-		const html = oauthErrorHtml('Bad <script>"&\'</script>');
+		const html = oauthErrorHtml("Bad <script>\"&'</script>");
 		expect(html).toContain("Authentication failed");
 		expect(html).toContain("Bad &lt;script&gt;&quot;&amp;&#39;&lt;/script&gt;");
 		// Raw script tag content must not appear in output

@@ -172,7 +172,7 @@ describe("AssistantMessageEventStream", () => {
 			// after monkeypatching is not allowed, so assert the documented behavior.
 			const probe = new AssistantMessageEventStream();
 			// @ts-expect-error -- reach into the closure for coverage of the guard.
-			const extract = probe["extractResult"];
+			const extract = probe.extractResult;
 			extract({ type: "start", partial: makeMessage() });
 		}).toThrow("Unexpected event type for final result");
 		void stream;

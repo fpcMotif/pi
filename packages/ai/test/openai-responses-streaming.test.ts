@@ -1,9 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	streamOpenAIResponses,
-	streamSimpleOpenAIResponses,
-} from "../src/providers/openai-responses.js";
-import type { AssistantMessage, Context, Model, Tool } from "../src/types.js";
+import { streamOpenAIResponses, streamSimpleOpenAIResponses } from "../src/providers/openai-responses.js";
+import type { Context, Model, Tool } from "../src/types.js";
 
 interface FakeOpenAIState {
 	events: unknown[];
@@ -239,9 +236,7 @@ describe("streamOpenAIResponses", () => {
 	});
 
 	it("throws via stream on 'error' events", async () => {
-		const result = await streamResult([
-			{ type: "error", code: "rate_limit", message: "too many" },
-		]);
+		const result = await streamResult([{ type: "error", code: "rate_limit", message: "too many" }]);
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toContain("rate_limit");
 		expect(result.errorMessage).toContain("too many");
@@ -272,9 +267,7 @@ describe("streamOpenAIResponses", () => {
 	});
 
 	it("throws via stream on 'response.failed' events with neither error nor incomplete_details", async () => {
-		const result = await streamResult([
-			{ type: "response.failed", response: {} },
-		]);
+		const result = await streamResult([{ type: "response.failed", response: {} }]);
 		expect(result.errorMessage).toContain("Unknown error");
 	});
 
@@ -292,39 +285,28 @@ describe("streamOpenAIResponses", () => {
 	});
 
 	it("response.completed maps unhandled statuses through default branches", async () => {
-		const result = await streamResult([
-			{ type: "response.completed", response: { status: "queued" } },
-		]);
+		const result = await streamResult([{ type: "response.completed", response: { status: "queued" } }]);
 		expect(result.stopReason).toBe("stop");
 	});
 
 	it("forwards in_progress status as stop", async () => {
-		const result = await streamResult([
-			{ type: "response.completed", response: { status: "in_progress" } },
-		]);
+		const result = await streamResult([{ type: "response.completed", response: { status: "in_progress" } }]);
 		expect(result.stopReason).toBe("stop");
 	});
 
 	it("invokes onResponse with status and headers", async () => {
-		fakeState.events = [
-			{ type: "response.completed", response: { status: "completed" } },
-		];
+		fakeState.events = [{ type: "response.completed", response: { status: "completed" } }];
 		const onResponse = vi.fn();
 		await streamOpenAIResponses(
 			baseModel(),
 			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
 			{ apiKey: "k", onResponse },
 		).result();
-		expect(onResponse).toHaveBeenCalledWith(
-			expect.objectContaining({ status: 200 }),
-			expect.any(Object),
-		);
+		expect(onResponse).toHaveBeenCalledWith(expect.objectContaining({ status: 200 }), expect.any(Object));
 	});
 
 	it("calls onPayload and uses the returned value", async () => {
-		fakeState.events = [
-			{ type: "response.completed", response: { status: "completed" } },
-		];
+		fakeState.events = [{ type: "response.completed", response: { status: "completed" } }];
 		const onPayload = vi.fn(async (params: any) => ({ ...params, mutated: true }));
 		await streamOpenAIResponses(
 			baseModel(),
@@ -347,9 +329,7 @@ describe("streamOpenAIResponses", () => {
 	});
 
 	it("emits error stop reason when the stream returns error stop reason mid-stream", async () => {
-		const result = await streamResult([
-			{ type: "response.completed", response: { status: "failed" } },
-		]);
+		const result = await streamResult([{ type: "response.completed", response: { status: "failed" } }]);
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toContain("unknown error");
 	});
@@ -377,9 +357,7 @@ describe("streamOpenAIResponses", () => {
 
 describe("openai-responses buildParams", () => {
 	async function captureParams(model: Model<"openai-responses">, context: Context, options?: any) {
-		fakeState.events = [
-			{ type: "response.completed", response: { status: "completed" } },
-		];
+		fakeState.events = [{ type: "response.completed", response: { status: "completed" } }];
 		await streamOpenAIResponses(model, context, options).result();
 		return fakeState.lastParams as any;
 	}
@@ -447,7 +425,9 @@ describe("openai-responses buildParams", () => {
 
 	it("skips off-reasoning when thinkingLevelMap.off is null", async () => {
 		const params = await captureParams(
-			baseModel({ thinkingLevelMap: { off: null, low: "low", medium: "medium", high: "high", xhigh: "high" } as any }),
+			baseModel({
+				thinkingLevelMap: { off: null, low: "low", medium: "medium", high: "high", xhigh: "high" } as any,
+			}),
 			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
 			{ apiKey: "k" },
 		);
@@ -577,9 +557,7 @@ describe("openai-responses buildParams", () => {
 		const prev = process.env.OPENAI_API_KEY;
 		process.env.OPENAI_API_KEY = "env-key";
 		try {
-			fakeState.events = [
-				{ type: "response.completed", response: { status: "completed" } },
-			];
+			fakeState.events = [{ type: "response.completed", response: { status: "completed" } }];
 			await streamOpenAIResponses(
 				baseModel({ provider: "no-such-provider" }),
 				{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
@@ -624,8 +602,8 @@ describe("openai-responses buildParams", () => {
 			{ apiKey: "k", serviceTier: "priority" },
 		).result();
 		// gpt-5.5 priority multiplier is 2.5
-		expect(result.usage.cost.input).toBe(1 * 100 * 2.5 / 1e6);
-		expect(result.usage.cost.output).toBe(2 * 100 * 2.5 / 1e6);
+		expect(result.usage.cost.input).toBe((1 * 100 * 2.5) / 1e6);
+		expect(result.usage.cost.output).toBe((2 * 100 * 2.5) / 1e6);
 	});
 
 	it("applies flex tier 0.5x discount", async () => {
@@ -649,7 +627,7 @@ describe("openai-responses buildParams", () => {
 			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
 			{ apiKey: "k", serviceTier: "flex" },
 		).result();
-		expect(result.usage.cost.input).toBeCloseTo(1 * 100 * 0.5 / 1e6, 10);
+		expect(result.usage.cost.input).toBeCloseTo((1 * 100 * 0.5) / 1e6, 10);
 	});
 
 	it("non-gpt-5.5 priority tier uses 2x multiplier", async () => {
@@ -673,7 +651,7 @@ describe("openai-responses buildParams", () => {
 			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
 			{ apiKey: "k", serviceTier: "priority" },
 		).result();
-		expect(result.usage.cost.input).toBeCloseTo(1 * 100 * 2 / 1e6, 10);
+		expect(result.usage.cost.input).toBeCloseTo((1 * 100 * 2) / 1e6, 10);
 	});
 });
 
@@ -699,9 +677,7 @@ describe("streamSimpleOpenAIResponses", () => {
 	});
 
 	it("delegates to streamOpenAIResponses with mapped reasoning effort", async () => {
-		fakeState.events = [
-			{ type: "response.completed", response: { status: "completed" } },
-		];
+		fakeState.events = [{ type: "response.completed", response: { status: "completed" } }];
 		const result = await streamSimpleOpenAIResponses(
 			baseModel(),
 			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
@@ -711,9 +687,7 @@ describe("streamSimpleOpenAIResponses", () => {
 	});
 
 	it("treats reasoning='off' as no effort", async () => {
-		fakeState.events = [
-			{ type: "response.completed", response: { status: "completed" } },
-		];
+		fakeState.events = [{ type: "response.completed", response: { status: "completed" } }];
 		const result = await streamSimpleOpenAIResponses(
 			baseModel(),
 			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },

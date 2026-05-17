@@ -1,7 +1,6 @@
 // Coverage fills for remaining gaps across the tui package.
 // Each test asserts real behavior; nothing here is a coverage rubber-stamp.
 
-import assert from "node:assert";
 import { Chalk } from "chalk";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
@@ -9,7 +8,6 @@ import { Image } from "../src/components/image.js";
 import { Input } from "../src/components/input.js";
 import { Markdown } from "../src/components/markdown.js";
 import { SelectList } from "../src/components/select-list.js";
-import { Text } from "../src/components/text.js";
 import { fuzzyFilter, fuzzyMatch } from "../src/fuzzy.js";
 import {
 	decodeKittyPrintable,
@@ -23,14 +21,7 @@ import {
 } from "../src/keys.js";
 import { StdinBuffer } from "../src/stdin-buffer.js";
 import { resetCapabilitiesCache, setCapabilities, setCellDimensions } from "../src/terminal-image.js";
-import {
-	collectKittyImageIds,
-	deleteChangedKittyImages,
-	deleteKittyImages,
-	expandLastChangedForKittyImages,
-	extractCursorPosition,
-	extractKittyImageIds,
-} from "../src/tui-render-helpers.js";
+import { type Component, CURSOR_MARKER, TUI } from "../src/tui.js";
 import {
 	compositeLineAt,
 	compositeOverlays,
@@ -39,7 +30,14 @@ import {
 	isOverlayVisible,
 	resolveOverlayLayout,
 } from "../src/tui-overlay.js";
-import { type Component, CURSOR_MARKER, TUI } from "../src/tui.js";
+import {
+	collectKittyImageIds,
+	deleteChangedKittyImages,
+	deleteKittyImages,
+	expandLastChangedForKittyImages,
+	extractCursorPosition,
+	extractKittyImageIds,
+} from "../src/tui-render-helpers.js";
 import {
 	applyBackgroundToLine,
 	extractAnsiCode,
@@ -1086,13 +1084,19 @@ describe("Markdown — coverage fills", () => {
 
 	it("renders headings with the # prefix for level 3+", () => {
 		const md = new Markdown("### Heading 3", 0, 0, defaultMarkdownTheme);
-		const out = md.render(40).join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+		const out = md
+			.render(40)
+			.join("\n")
+			.replace(/\x1b\[[0-9;]*m/g, "");
 		expect(out).toContain("### Heading 3");
 	});
 
 	it("renders level-1 heading without # prefix but with content", () => {
 		const md = new Markdown("# Hello", 0, 0, defaultMarkdownTheme);
-		const out = md.render(40).join("\n").replace(/\x1b\[[0-9;]*m/g, "");
+		const out = md
+			.render(40)
+			.join("\n")
+			.replace(/\x1b\[[0-9;]*m/g, "");
 		expect(out).toContain("Hello");
 	});
 
@@ -1183,12 +1187,7 @@ describe("Markdown — coverage fills", () => {
 	});
 
 	it("renders inline bold, italic, codespan, strikethrough, and underline (br)", () => {
-		const md = new Markdown(
-			"**bold** *italic* `code` ~~strike~~  \nnext line",
-			0,
-			0,
-			defaultMarkdownTheme,
-		);
+		const md = new Markdown("**bold** *italic* `code` ~~strike~~  \nnext line", 0, 0, defaultMarkdownTheme);
 		const text = md.render(80).join("\n");
 		expect(text.replace(/\x1b\[[0-9;]*m/g, "")).toContain("bold");
 		expect(text.replace(/\x1b\[[0-9;]*m/g, "")).toContain("italic");
@@ -1468,23 +1467,15 @@ describe("utils.ts — coverage fills", () => {
 // ============================================================================
 describe("autocomplete.ts — branch coverage", () => {
 	it("getSuggestions returns null when no @ prefix, no slash command, no path-like text", () => {
-		const provider = new CombinedAutocompleteProvider(
-			[{ name: "test", description: "d" }],
-			"/tmp",
-		);
+		const provider = new CombinedAutocompleteProvider([{ name: "test", description: "d" }], "/tmp");
 		const ac = new AbortController();
-		return provider
-			.getSuggestions(["plain text"], 0, 10, { signal: ac.signal })
-			.then((result) => {
-				expect(result).toBeNull();
-			});
+		return provider.getSuggestions(["plain text"], 0, 10, { signal: ac.signal }).then((result) => {
+			expect(result).toBeNull();
+		});
 	});
 
 	it("getSuggestions returns null for slash command argument when command has no completions", async () => {
-		const provider = new CombinedAutocompleteProvider(
-			[{ name: "noargs", description: "d" }],
-			"/tmp",
-		);
+		const provider = new CombinedAutocompleteProvider([{ name: "noargs", description: "d" }], "/tmp");
 		const ac = new AbortController();
 		const result = await provider.getSuggestions(["/noargs hello"], 0, 13, { signal: ac.signal });
 		expect(result).toBeNull();
@@ -1555,10 +1546,7 @@ describe("autocomplete.ts — branch coverage", () => {
 	});
 
 	it("getSuggestions returns null for slash command with no matches", async () => {
-		const provider = new CombinedAutocompleteProvider(
-			[{ name: "alpha", description: "first" }],
-			"/tmp",
-		);
+		const provider = new CombinedAutocompleteProvider([{ name: "alpha", description: "first" }], "/tmp");
 		const ac = new AbortController();
 		const result = await provider.getSuggestions(["/xyz"], 0, 4, { signal: ac.signal });
 		expect(result).toBeNull();
@@ -1574,39 +1562,21 @@ describe("autocomplete.ts — branch coverage", () => {
 	it("applyCompletion for @ prefix without trailing space for directories", () => {
 		const provider = new CombinedAutocompleteProvider([], "/tmp");
 		const lines = ["@dir"];
-		const applied = provider.applyCompletion(
-			lines,
-			0,
-			4,
-			{ value: "@dirname/", label: "dirname/" },
-			"@dir",
-		);
+		const applied = provider.applyCompletion(lines, 0, 4, { value: "@dirname/", label: "dirname/" }, "@dir");
 		expect(applied.lines[0]).toBe("@dirname/");
 	});
 
 	it("applyCompletion for @ file completion adds trailing space", () => {
 		const provider = new CombinedAutocompleteProvider([], "/tmp");
 		const lines = ["@fi"];
-		const applied = provider.applyCompletion(
-			lines,
-			0,
-			3,
-			{ value: "@file.txt", label: "file.txt" },
-			"@fi",
-		);
+		const applied = provider.applyCompletion(lines, 0, 3, { value: "@file.txt", label: "file.txt" }, "@fi");
 		expect(applied.lines[0]).toBe("@file.txt ");
 	});
 
 	it("applyCompletion for command argument path - directory keeps no trailing space", () => {
 		const provider = new CombinedAutocompleteProvider([], "/tmp");
 		const lines = ["/cmd /dir"];
-		const applied = provider.applyCompletion(
-			lines,
-			0,
-			9,
-			{ value: "/dirname/", label: "dirname/" },
-			"/dir",
-		);
+		const applied = provider.applyCompletion(lines, 0, 9, { value: "/dirname/", label: "dirname/" }, "/dir");
 		expect(applied.lines[0]).toBe("/cmd /dirname/");
 	});
 

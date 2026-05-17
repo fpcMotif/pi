@@ -41,7 +41,7 @@ const { settingsState } = vi.hoisted(() => ({
 vi.mock("../src/storage/app-storage.js", () => ({
 	getAppStorage: () => ({
 		settings: {
-			get: async <T,>(key: string): Promise<T | null> => {
+			get: async <T>(key: string): Promise<T | null> => {
 				if (settingsState.getShouldThrow) throw new Error("load fail");
 				return (settingsState.store.get(key) as T | undefined) ?? null;
 			},
@@ -52,7 +52,7 @@ vi.mock("../src/storage/app-storage.js", () => ({
 	}),
 }));
 
-import { ApiKeysTab, ProxyTab, SettingsDialog, SettingsTab } from "../src/dialogs/SettingsDialog.js";
+import { ApiKeysTab, ProxyTab, SettingsDialog, type SettingsTab } from "../src/dialogs/SettingsDialog.js";
 
 beforeEach(() => {
 	settingsState.store.clear();
@@ -240,14 +240,18 @@ describe("SettingsDialog", () => {
 		const tab = new ApiKeysTab();
 		// Active state
 		(dialog as unknown as { activeTabIndex: number }).activeTabIndex = 0;
-		const activeT = (dialog as unknown as {
-			renderSidebarItem: (t: SettingsTab, i: number) => unknown;
-		}).renderSidebarItem(tab, 0);
+		const activeT = (
+			dialog as unknown as {
+				renderSidebarItem: (t: SettingsTab, i: number) => unknown;
+			}
+		).renderSidebarItem(tab, 0);
 		expect(activeT).toBeDefined();
 		// Inactive state
-		const inactiveT = (dialog as unknown as {
-			renderSidebarItem: (t: SettingsTab, i: number) => unknown;
-		}).renderSidebarItem(tab, 1);
+		const inactiveT = (
+			dialog as unknown as {
+				renderSidebarItem: (t: SettingsTab, i: number) => unknown;
+			}
+		).renderSidebarItem(tab, 1);
 		expect(inactiveT).toBeDefined();
 	});
 
@@ -255,13 +259,17 @@ describe("SettingsDialog", () => {
 		const dialog = new SettingsDialog();
 		const tab = new ApiKeysTab();
 		(dialog as unknown as { activeTabIndex: number }).activeTabIndex = 0;
-		const activeT = (dialog as unknown as {
-			renderMobileTab: (t: SettingsTab, i: number) => unknown;
-		}).renderMobileTab(tab, 0);
+		const activeT = (
+			dialog as unknown as {
+				renderMobileTab: (t: SettingsTab, i: number) => unknown;
+			}
+		).renderMobileTab(tab, 0);
 		expect(activeT).toBeDefined();
-		const inactiveT = (dialog as unknown as {
-			renderMobileTab: (t: SettingsTab, i: number) => unknown;
-		}).renderMobileTab(tab, 1);
+		const inactiveT = (
+			dialog as unknown as {
+				renderMobileTab: (t: SettingsTab, i: number) => unknown;
+			}
+		).renderMobileTab(tab, 1);
 		expect(inactiveT).toBeDefined();
 	});
 

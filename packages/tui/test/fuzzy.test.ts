@@ -105,6 +105,9 @@ describe("fuzzyFilter", () => {
 
 	it("returns the original list unchanged when the query has no non-whitespace tokens", () => {
 		const items = [{ name: "alpha" }, { name: "beta" }];
-		assert.strictEqual(fuzzyFilter(items, "   ", (item) => item.name), items);
+		assert.strictEqual(
+			fuzzyFilter(items, "   ", (item) => item.name),
+			items,
+		);
 	});
 });

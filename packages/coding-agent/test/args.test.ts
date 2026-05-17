@@ -490,4 +490,3 @@ describe("parseArgs - more edge cases", () => {
 		expect(result.mode).toBeUndefined();
 	});
 });
-

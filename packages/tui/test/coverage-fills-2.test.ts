@@ -1,6 +1,5 @@
 // Round 2 of coverage fills, focused on the remaining big-gap files.
 
-import assert from "node:assert";
 import { Chalk } from "chalk";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
@@ -832,7 +831,12 @@ describe("Markdown — round 2 (token-specific)", () => {
 
 	it("renderTable with raw token containing the markdown source for the fallback path", () => {
 		// Very narrow width forces fall-back to raw markdown rendering.
-		const md = new Markdown("| a | b | c | d | e |\n|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 |", 0, 0, defaultMarkdownTheme);
+		const md = new Markdown(
+			"| a | b | c | d | e |\n|---|---|---|---|---|\n| 1 | 2 | 3 | 4 | 5 |",
+			0,
+			0,
+			defaultMarkdownTheme,
+		);
 		const out = md.render(5).join("\n"); // 5 - 16 borderOverhead < 0
 		expect(out.length).toBeGreaterThan(0);
 	});
@@ -1101,20 +1105,14 @@ describe("Autocomplete — round 2", () => {
 	});
 
 	it("getSuggestions: slash command with argumentHint and no description", async () => {
-		const provider = new CombinedAutocompleteProvider(
-			[{ name: "find", argumentHint: "<pat>" }],
-			"/tmp",
-		);
+		const provider = new CombinedAutocompleteProvider([{ name: "find", argumentHint: "<pat>" }], "/tmp");
 		const ac = new AbortController();
 		const result = await provider.getSuggestions(["/fi"], 0, 3, { signal: ac.signal });
 		expect(result!.items[0]?.description).toBe("<pat>");
 	});
 
 	it("getSuggestions: command without description or argumentHint returns no description", async () => {
-		const provider = new CombinedAutocompleteProvider(
-			[{ name: "plain" }],
-			"/tmp",
-		);
+		const provider = new CombinedAutocompleteProvider([{ name: "plain" }], "/tmp");
 		const ac = new AbortController();
 		const result = await provider.getSuggestions(["/pl"], 0, 3, { signal: ac.signal });
 		expect(result!.items[0]?.description).toBeUndefined();
@@ -1123,13 +1121,7 @@ describe("Autocomplete — round 2", () => {
 	it("applyCompletion - prefix with @ but value contains trailing quote and directory", () => {
 		const provider = new CombinedAutocompleteProvider([], "/tmp");
 		const lines = [`@"`];
-		const applied = provider.applyCompletion(
-			lines,
-			0,
-			2,
-			{ value: '@"my folder/"', label: "my folder/" },
-			'@"',
-		);
+		const applied = provider.applyCompletion(lines, 0, 2, { value: '@"my folder/"', label: "my folder/" }, '@"');
 		// For directory with trailing quote, cursor goes one before the quote.
 		expect(applied.cursorCol).toBe('@"my folder/'.length);
 	});
@@ -1138,13 +1130,7 @@ describe("Autocomplete — round 2", () => {
 		const provider = new CombinedAutocompleteProvider([], "/tmp");
 		const lines = ['"my"'];
 		const cursorCol = 3;
-		const applied = provider.applyCompletion(
-			lines,
-			0,
-			cursorCol,
-			{ value: '"myfile"', label: "myfile" },
-			'"my',
-		);
+		const applied = provider.applyCompletion(lines, 0, cursorCol, { value: '"myfile"', label: "myfile" }, '"my');
 		expect(applied.lines[0]).toBe('"myfile"');
 	});
 
@@ -1166,12 +1152,10 @@ describe("Autocomplete file paths", () => {
 		const provider = new CombinedAutocompleteProvider([], "/tmp");
 		const ac = new AbortController();
 		// /this-doesnt-exist/sub doesn't exist
-		const result = await provider.getSuggestions(
-			["/this-definitely-does-not-exist-aaaaaaaaaaaaa/x"],
-			0,
-			47,
-			{ signal: ac.signal, force: true },
-		);
+		const result = await provider.getSuggestions(["/this-definitely-does-not-exist-aaaaaaaaaaaaa/x"], 0, 47, {
+			signal: ac.signal,
+			force: true,
+		});
 		expect(result).toBeNull();
 	});
 });

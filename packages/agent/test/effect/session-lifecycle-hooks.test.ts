@@ -20,15 +20,14 @@
  */
 import { it } from "@effect/vitest";
 import { Cause, Effect, Stream } from "effect";
+import { AiError } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
-
 import { NewPrompt } from "../../effect/agent-input.js";
 import { Hooks } from "../../effect/hooks.js";
 import { Session } from "../../effect/session.js";
 import { recordingHooks } from "../../test-support/recording-hooks.js";
 import { stubLanguageModelStream } from "../../test-support/stub-language-model-stream.js";
 import { stubLanguageModelStreamScripted } from "../../test-support/stub-language-model-stream-scripted.js";
-import { AiError } from "effect/unstable/ai";
 
 const parts = [
 	{ type: "text-start", id: "t1" },

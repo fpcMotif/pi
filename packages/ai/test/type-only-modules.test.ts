@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as oauthBarrel from "../src/oauth.js";
-import * as oauthTypes from "../src/utils/oauth/types.js";
 import * as providerTypes from "../src/types.js";
+import * as oauthTypes from "../src/utils/oauth/types.js";
 
 // src/types.ts is the package's public type surface: interfaces and type
 // aliases only. It must compile away at runtime apart from the value re-exports

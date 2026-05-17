@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Api, Model, SimpleStreamOptions } from "../src/types.js";
 import { adjustMaxTokensForThinking, buildBaseOptions, clampReasoning } from "../src/providers/simple-options.js";
+import type { Api, Model, SimpleStreamOptions } from "../src/types.js";
 
 function model(overrides: Partial<Model<Api>> = {}): Model<Api> {
 	return {

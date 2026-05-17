@@ -29,7 +29,7 @@ import { it } from "@effect/vitest";
 import { Cause, Effect } from "effect";
 import { describe, expect } from "vitest";
 
-import { type BashExecRequest, BashError, bashHandler } from "../../../effect/tools/bash.js";
+import { BashError, type BashExecRequest, bashHandler } from "../../../effect/tools/bash.js";
 import { stubBashOperations } from "../../../test-support/stub-bash-operations.js";
 
 const CWD = nodePath.resolve("/test-fs/work");
@@ -106,7 +106,15 @@ describe("Bash -- Effect-shaped tool", () => {
 		Effect.gen(function* () {
 			let seen: BashExecRequest | undefined;
 			const result = yield* bashHandler(CWD, { commandPrefix: "set -e" })({ command: "npm test" }).pipe(
-				Effect.provide(stubBashOperations({ output: "", exitCode: 0, capture: (r) => (seen = r) })),
+				Effect.provide(
+					stubBashOperations({
+						output: "",
+						exitCode: 0,
+						capture: (r) => {
+							seen = r;
+						},
+					}),
+				),
 			);
 
 			expect(seen?.command).toBe("set -e\nnpm test");
