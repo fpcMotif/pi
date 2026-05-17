@@ -1,5 +1,9 @@
-import { Effect, Layer, Stream } from "effect";
+import { Layer, Stream } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
+
+import { notImplemented } from "./_not-implemented.js";
+
+const OWNER = "recordingLanguageModelStream";
 
 export interface RecordingLanguageModelStream {
 	/** Layer providing the recording `LanguageModel`. */
@@ -22,8 +26,8 @@ export const recordingLanguageModelStream = (parts: ReadonlyArray<unknown>): Rec
 	const layer = Layer.succeed(
 		LanguageModel.LanguageModel,
 		LanguageModel.LanguageModel.of({
-			generateText: (() => Effect.die("recordingLanguageModelStream: generateText not implemented")) as never,
-			generateObject: (() => Effect.die("recordingLanguageModelStream: generateObject not implemented")) as never,
+			generateText: (() => notImplemented(OWNER, "generateText")) as never,
+			generateObject: (() => notImplemented(OWNER, "generateObject")) as never,
 			streamText: ((options: Record<string, unknown>) => {
 				calls.push(options);
 				return Stream.fromIterable(parts);
