@@ -104,14 +104,14 @@
  *   creation + upstream open + accumulator pipeline; runs in an inner
  *   `Stream.unwrap` so each retry sees fresh Refs).
  * - The inner stream is wrapped with `Stream.retry(makeRetrySchedule(maxLlmRetries))`,
- *   where `maxLlmRetries = options.maxLlmRetries ?? MAX_LLM_RETRIES` -- a
- *   per-session override that defaults to `MAX_LLM_RETRIES` and where `0`
+ *   where `maxLlmRetries = options.maxLlmRetries ?? DEFAULT_MAX_LLM_RETRIES` -- a
+ *   per-session override that defaults to `DEFAULT_MAX_LLM_RETRIES` and where `0`
  *   disables retries entirely. The factory builds
  *   `Schedule.recurs(maxLlmRetries).pipe(Schedule.while(({ input }) => input.aiError.isRetryable))`.
  * - Net effect: on a retryable failure (`RateLimitError`, `OverloadedError`,
  *   `TransportError`, …) the inner stream re-opens with fresh accRef/usageRef
  *   and a fresh upstream; up to `maxLlmRetries` re-attempts (default
- *   `MAX_LLM_RETRIES`, `0` disables). On a non-retryable failure
+ *   `DEFAULT_MAX_LLM_RETRIES`, `0` disables). On a non-retryable failure
  *   (`AuthenticationError`, `ContentPolicyError`, `InvalidRequestError`, …)
  *   the predicate is false → schedule halts → error propagates after the
  *   first attempt. After the retry cap is exhausted, the last error
@@ -147,13 +147,13 @@
  * - Backoff on retry (currently no delay between attempts; production wants
  *   exponential / `retryAfter`-respecting backoff).
  * - Configurable retry policy on `Session.empty` (currently hardcoded to
- *   `MAX_LLM_RETRIES = 3` and `while-isRetryable`).
+ *   `DEFAULT_MAX_LLM_RETRIES = 3` and `while-isRetryable`).
  *
  * (Skill-block parsing is NOT a loop concern — it is a host (`pi-coding-agent`)
  * responsibility; the loop consumes already-expanded prompts. See the ADR-0009
  * amendment, 2026-05-14.)
  */
-import { Effect, Option, Ref, Schedule, Stream, SubscriptionRef, type Types } from "effect";
+import { Effect, Option, Ref, Stream, SubscriptionRef, type Types } from "effect";
 import { LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
 
 import { type AgentError, CompactionError, LlmError } from "./agent-error.js";
@@ -168,6 +168,7 @@ import { COMPACTION_THRESHOLD, estimateTokens, KEEP_RECENT_TOKENS, splitHistory 
 import { accumulatePart, type AssistantContentAcc, finalize, initialAcc } from "./history-accumulator.js";
 import { Hooks } from "./hooks.js";
 import { liftPart } from "./lift-part.js";
+import { DEFAULT_MAX_LLM_RETRIES, makeRetrySchedule } from "./retry.js";
 import { SessionState } from "./session-state.js";
 import { SessionStore } from "./stores/session-store.js";
 import { type CapturedUsage, captureUsage } from "./token-capture.js";
@@ -219,31 +220,8 @@ interface MakeOptions {
 }
 
 /**
- * Default transient-error retry cap when `SessionConfig.maxLlmRetries` is
- * omitted. With the default, a persistently-retryable failure gets 4 total
- * tries (initial + 3 retries) before the last error propagates. Slice 35
- * makes this per-session configurable via `SessionConfig.maxLlmRetries`.
- */
-const MAX_LLM_RETRIES = 3;
-
-/**
- * Build the retry schedule for the per-attempt inner stream. Recurs up to
- * `maxRetries` times, AND halts early if the failing error is non-retryable
- * (per `AiError.reason.isRetryable`).
- *
- * The schedule's `input` is the stream's error type — here that's `LlmError`
- * (we map `AiError → LlmError` before the retry boundary so the schedule sees
- * pi's error shape). `maxRetries: 0` produces a schedule that never recurs,
- * so the single attempt's failure propagates immediately.
- */
-const makeRetrySchedule = (maxRetries: number) =>
-	Schedule.recurs(maxRetries).pipe(
-		Schedule.while(({ input }) => ((input as LlmError).aiError as { readonly isRetryable: boolean }).isRetryable),
-	);
-
-/**
  * Per-session configuration. Omitted fields fall back to the module defaults
- * (`COMPACTION_THRESHOLD` / `KEEP_RECENT_TOKENS` / `MAX_LLM_RETRIES`).
+ * (`COMPACTION_THRESHOLD` / `KEEP_RECENT_TOKENS` / `DEFAULT_MAX_LLM_RETRIES`).
  */
 export interface SessionConfig {
 	/** Token estimate above which `Session.send` compacts history before the turn. */
@@ -252,7 +230,7 @@ export interface SessionConfig {
 	readonly keepRecentTokens?: number;
 	/**
 	 * Transient-error retry cap for the per-attempt LLM stream. Defaults to
-	 * `MAX_LLM_RETRIES` (3); `0` disables retries entirely. Slice 35.
+	 * `DEFAULT_MAX_LLM_RETRIES` (3); `0` disables retries entirely. Slice 35.
 	 */
 	readonly maxLlmRetries?: number;
 }
@@ -271,7 +249,7 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 	Effect.gen(function* () {
 		const compactionThreshold = options.compactionThreshold ?? COMPACTION_THRESHOLD;
 		const keepRecentTokens = options.keepRecentTokens ?? KEEP_RECENT_TOKENS;
-		const maxLlmRetries = options.maxLlmRetries ?? MAX_LLM_RETRIES;
+		const maxLlmRetries = options.maxLlmRetries ?? DEFAULT_MAX_LLM_RETRIES;
 		const state = yield* SubscriptionRef.make(options.initialState);
 		return {
 			state,
@@ -500,7 +478,7 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						// 3. Wrap the per-attempt stream with a retry schedule + an outer
 						//    telemetry span. Bounded recurs + while-isRetryable predicate stops
 						//    early on AuthenticationError / InvalidRequestError / etc., and caps
-						//    the loop at `maxLlmRetries` (default `MAX_LLM_RETRIES`, configurable
+						//    the loop at `maxLlmRetries` (default `DEFAULT_MAX_LLM_RETRIES`, configurable
 						//    via `SessionConfig.maxLlmRetries`). The outer span wraps the whole
 						//    send (including all retries) so consumers see a parent span with N
 						//    attempt-span children.
