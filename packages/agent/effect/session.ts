@@ -157,7 +157,7 @@ import { Effect, Option, Ref, Stream, SubscriptionRef, type Types } from "effect
 import { LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
 
 import { type AgentError, CompactionError, LlmError } from "./agent-error.js";
-import { type AgentEvent, CompactionApplied, Finish, LlmPart } from "./agent-event.js";
+import { type AgentEvent, CompactionApplied } from "./agent-event.js";
 import {
 	type Input,
 	normalize as normalizeInput,
@@ -165,13 +165,11 @@ import {
 	rollbackToLastUserMessage,
 } from "./agent-input.js";
 import { COMPACTION_THRESHOLD, estimateTokens, KEEP_RECENT_TOKENS, splitHistory } from "./compaction.js";
-import { accumulatePart, type AssistantContentAcc, finalize, initialAcc } from "./history-accumulator.js";
+import { makeAttemptStream } from "./attempt-stream.js";
 import { Hooks } from "./hooks.js";
-import { liftPart } from "./lift-part.js";
 import { DEFAULT_MAX_LLM_RETRIES, makeRetrySchedule } from "./retry.js";
 import { SessionState } from "./session-state.js";
 import { SessionStore } from "./stores/session-store.js";
-import { type CapturedUsage, captureUsage } from "./token-capture.js";
 
 /**
  * Instruction appended after the to-summarise history slice when compaction
@@ -370,110 +368,16 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						const attemptCounter = yield* Ref.make(0);
 
 						// 2. PER-ATTEMPT FACTORY — fresh Refs + fresh upstream open per try. The
-						//    Stream.retry below re-runs this Effect.gen on each retryable failure,
-						//    giving each attempt a clean accumulator (no leakage from partial
-						//    events of a failed attempt).
-						const attemptStream = Stream.unwrap(
-							Effect.gen(function* () {
-								// Bump the attempt counter and capture the value for this attempt's span.
-								const attemptNumber = yield* Ref.updateAndGet(attemptCounter, (n) => n + 1);
-
-								// Accumulator for the assistant's response — text deltas, tool calls,
-								// and tool results in arrival order. Streaming-only artifacts skipped.
-								const accRef = yield* Ref.make<AssistantContentAcc>(initialAcc);
-
-								// Per-attempt usage capture. Stays null until a `finish` part lands;
-								// if the attempt ends without one (errored / interrupted upstream),
-								// the trailing `Finish` event omits token fields and state totals
-								// don't bump.
-								const usageRef = yield* Ref.make<CapturedUsage | null>(null);
-
-								// Open the upstream stream with the FULL history (incl. just-appended user msg).
-								// `concurrency` controls tool-call resolution parallelism (sequential
-								// by default per ADR-0009; see `resolvedConcurrency` above).
-								// `as never` bypasses the streamText overload-picker, which can't see through
-								// the conditional spread at the type level. Runtime path is identical.
-								const upstream =
-									toolkit === undefined
-										? LanguageModel.streamText({
-												prompt: snapshot.history,
-												concurrency: resolvedConcurrency,
-											})
-										: (LanguageModel.streamText({
-												prompt: snapshot.history,
-												toolkit,
-												concurrency: resolvedConcurrency,
-											} as never) as Stream.Stream<unknown, unknown, LanguageModel.LanguageModel>);
-
-								return upstream.pipe(
-									Stream.flatMap((part) => Stream.fromIterable(liftPart(part))),
-									// Absorb each LlmPart into the assistant-content accumulator. Skips
-									// streaming-only artifacts; coalesces text deltas; captures tool turns.
-									// Also peels usage totals off the upstream `finish` part into usageRef.
-									Stream.tap((event) =>
-										event._tag === "LlmPart"
-											? Effect.gen(function* () {
-													yield* Ref.update(accRef, (acc) => accumulatePart(acc, event.part));
-													const captured = captureUsage(event.part);
-													if (captured !== null) {
-														yield* Ref.set(usageRef, captured);
-													}
-												})
-											: Effect.void,
-									),
-									// Map BEFORE the retry boundary so the schedule's predicate sees `LlmError`.
-									Stream.mapError((aiError): LlmError => new LlmError({ aiError })),
-									// After the upstream completes, append the assistant message (with
-									// text + tool-call + tool-result content in order), bump cumulative
-									// token totals on state, and emit Finish carrying this send's tokens.
-									// On a failed attempt this concat never runs (Stream.concat skips
-									// when the left side errors), so partial accumulator state never
-									// leaks into `state.history`.
-									Stream.concat(
-										Stream.unwrap(
-											Effect.gen(function* () {
-												const acc = yield* Ref.get(accRef);
-												const content = finalize(acc);
-												const usage = yield* Ref.get(usageRef);
-												if (content.length > 0 || usage !== null) {
-													yield* SubscriptionRef.update(state, (s) => {
-														const nextHistory =
-															content.length > 0
-																? Prompt.concat(
-																		s.history,
-																		Prompt.make([{ role: "assistant", content }] as never),
-																	)
-																: s.history;
-														return SessionState.with(s, {
-															history: nextHistory,
-															inputTokens: s.inputTokens + (usage?.inputTokens ?? 0),
-															outputTokens: s.outputTokens + (usage?.outputTokens ?? 0),
-														});
-													});
-												}
-												return Stream.succeed<AgentEvent>(
-													usage === null
-														? new Finish({})
-														: new Finish({
-																inputTokens: usage.inputTokens,
-																outputTokens: usage.outputTokens,
-															}),
-												);
-											}),
-										),
-									),
-									// Per-attempt telemetry span. Wraps the entire attempt pipeline:
-									// flatMap + tap + mapError + concat. The span ends when the attempt
-									// completes (success / any failure / interruption). On retry, a new
-									// attemptStream open re-enters this Effect.gen, bumps the counter,
-									// and emits a fresh sibling span under the outer `pi.Session.send`
-									// span — so consumers see one attempt span per try.
-									Stream.withSpan("pi.Session.send.attempt", {
-										attributes: { "pi.attempt.number": attemptNumber },
-									}),
-								);
-							}),
-						);
+						//    Stream.retry below re-runs this attempt stream on each retryable
+						//    failure, giving each attempt a clean accumulator (no leakage from
+						//    partial events of a failed attempt). See `attempt-stream.ts`.
+						const attemptStream = makeAttemptStream({
+							state,
+							snapshot,
+							attemptCounter,
+							toolkit,
+							concurrency: resolvedConcurrency,
+						});
 
 						// 3. Wrap the per-attempt stream with a retry schedule + an outer
 						//    telemetry span. Bounded recurs + while-isRetryable predicate stops
