@@ -7,7 +7,8 @@
  * const events = yield* Stream.runCollect(session.send("hello"))
  * ```
  *
- * `send(input, toolkit?)` returns a `Stream<AgentEvent, AgentError, LanguageModel.LanguageModel>`:
+ * `send(input, toolkit?)` returns a stream that needs the configured `LanguageModel`
+ * plus any service requirements implied by the supplied toolkit:
  *
  * - Each provider `Response.AnyPart` becomes one `LlmPart` event (raw view).
  * - When a `tool-call` part appears, an additional `ToolDispatched` event is
@@ -44,8 +45,8 @@
  * provider dispatches `function_call` events; the resulting `tool-call` /
  * `tool-result` parts surface via the `liftPart` flatMap as `ToolDispatched` /
  * `ToolCompleted` events. Handler resolution services come from the runtime
- * context (via `toolkit.toLayer({ ToolName: handler })`), NOT from this
- * signature's R-type.
+ * context via `toolkit.toLayer({ ToolName: handler })` and are reflected in
+ * the stream's R-type when a typed toolkit is passed.
  *
  * **Tool turns are persisted in history too** (slice 12h):
  *
@@ -175,17 +176,25 @@ import { SessionStore } from "./stores/session-store.js";
  * message and returns a structured context checkpoint another assistant can
  * load to continue the work. The instruction asks for explicit markdown
  * sections so the summary stays parseable and the next turn can rely on a
- * predictable shape (slice 38 — structured-checkpoint summary prompt). Empty
- * sections are omitted by the model rather than padded.
+ * predictable shape (slice 38 — structured-checkpoint summary prompt). The
+ * preamble asks the model to preserve exact file paths, function names,
+ * error messages, and constraints verbatim — the conversation prefix being
+ * summarised is DISCARDED after compaction, so anything not captured here is
+ * lost from the long-term session state. Empty sections are omitted rather
+ * than padded. See ADR-0019 for the design evolution (initial four-section
+ * simplification was corrected to five sections + preservation preamble
+ * after codex adversarial review surfaced the load-bearing-facts regression).
  */
 const SUMMARIZATION_INSTRUCTION =
-	"Summarize the conversation above into a structured context checkpoint that another assistant can load to continue the work. Use the following markdown sections, omitting any that would be empty:\n\n" +
+	"Summarize the conversation above into a structured context checkpoint that another assistant can load to continue the work. Preserve exact file paths, function names, error messages, and any constraints or blockers verbatim — the conversation prefix being summarised will be DISCARDED, so anything not captured here is lost. Use the following markdown sections, omitting any that would be empty:\n\n" +
 	"## Goals\n" +
 	"- The user-facing goals of this session, prioritised.\n\n" +
 	"## Decisions\n" +
 	"- Material decisions made and their rationale.\n\n" +
 	"## Files Touched\n" +
 	"- Exact file paths read, written, edited, or referenced.\n\n" +
+	"## Critical Context\n" +
+	"- Constraints, preferences, blockers, exact function names, error messages, or any other detail the next assistant must NOT forget.\n\n" +
 	"## Next Steps\n" +
 	"- Concrete actions the next assistant should take.";
 
@@ -197,17 +206,23 @@ const SUMMARIZATION_INSTRUCTION =
  * because Record's index signature requires every key to exist).
  *
  * Handler resolution services land in the call's runtime context (via the
- * `WeatherHandlers` Layer at the use site), NOT in this signature's R-type —
- * keeping the public surface stable regardless of which toolkit shape is
- * passed.
+ * `WeatherHandlers` Layer at the use site) and are carried by the returned
+ * stream's R-type.
  */
+type ToolkitServices<ToolkitValue> = ToolkitValue extends undefined
+	? never
+	: LanguageModel.ExtractServices<{ readonly toolkit: ToolkitValue }>;
+
 export interface Session {
 	readonly state: SubscriptionRef.SubscriptionRef<SessionState>;
-	readonly send: <Tools extends Record<string, Tool.Any> = {}>(
+	readonly send: <
+		Tools extends Record<string, Tool.Any> = {},
+		ToolkitValue extends LanguageModel.ToolkitInput<Tools> | undefined = undefined,
+	>(
 		input: string | Input,
-		toolkit?: LanguageModel.ToolkitInput<Tools>,
+		toolkit?: ToolkitValue,
 		concurrency?: Types.Concurrency,
-	) => Stream.Stream<AgentEvent, AgentError, LanguageModel.LanguageModel>;
+	) => Stream.Stream<AgentEvent, AgentError, LanguageModel.LanguageModel | ToolkitServices<ToolkitValue>>;
 }
 
 interface MakeOptions {
@@ -271,7 +286,7 @@ const liftPart = (part: unknown): ReadonlyArray<AgentEvent> => {
 interface AssistantContentAcc {
 	readonly pendingText: string;
 	readonly pendingReasoning: string;
-	readonly parts: ReadonlyArray<Record<string, unknown>>;
+	readonly parts: ReadonlyArray<Prompt.AssistantMessagePart>;
 }
 
 const initialAcc: AssistantContentAcc = { pendingText: "", pendingReasoning: "", parts: [] };
@@ -279,12 +294,16 @@ const initialAcc: AssistantContentAcc = { pendingText: "", pendingReasoning: "",
 const flushText = (acc: AssistantContentAcc): AssistantContentAcc =>
 	acc.pendingText.length === 0
 		? acc
-		: { ...acc, pendingText: "", parts: [...acc.parts, { type: "text", text: acc.pendingText }] };
+		: { ...acc, pendingText: "", parts: [...acc.parts, Prompt.makePart("text", { text: acc.pendingText })] };
 
 const flushReasoning = (acc: AssistantContentAcc): AssistantContentAcc =>
 	acc.pendingReasoning.length === 0
 		? acc
-		: { ...acc, pendingReasoning: "", parts: [...acc.parts, { type: "reasoning", text: acc.pendingReasoning }] };
+		: {
+				...acc,
+				pendingReasoning: "",
+				parts: [...acc.parts, Prompt.makePart("reasoning", { text: acc.pendingReasoning })],
+			};
 
 /**
  * Flush BOTH pending accumulators. Used at any boundary part (text-start/-end,
@@ -298,34 +317,34 @@ const flushAll = (acc: AssistantContentAcc): AssistantContentAcc => flushReasoni
 
 const absorbPart = (acc: AssistantContentAcc, part: unknown): AssistantContentAcc => {
 	if (!isRecord(part)) return acc;
-	const p = part as { readonly type?: unknown; readonly delta?: unknown };
+	const tag = part.type;
 
 	// Text boundaries flush BOTH accumulators (defensive — closes any prior
 	// text or reasoning block before the new text block begins).
-	if (p.type === "text-start" || p.type === "text-end") {
+	if (tag === "text-start" || tag === "text-end") {
 		return flushAll(acc);
 	}
 
 	// Text-delta: flush any pending reasoning FIRST (preserves the
 	// reasoning→text arrival order if no explicit boundary fired between
 	// them), then append to pending text.
-	if (p.type === "text-delta" && typeof p.delta === "string") {
+	if (tag === "text-delta" && typeof part.delta === "string") {
 		const flushed = flushReasoning(acc);
-		return { ...flushed, pendingText: flushed.pendingText + p.delta };
+		return { ...flushed, pendingText: flushed.pendingText + part.delta };
 	}
 
 	// Reasoning boundaries flush BOTH accumulators (mirror of text-start/-end).
-	if (p.type === "reasoning-start" || p.type === "reasoning-end") {
+	if (tag === "reasoning-start" || tag === "reasoning-end") {
 		return flushAll(acc);
 	}
 
 	// Reasoning-delta: cross-flush text first, then append to pending reasoning.
-	if (p.type === "reasoning-delta" && typeof p.delta === "string") {
+	if (tag === "reasoning-delta" && typeof part.delta === "string") {
 		const flushed = flushText(acc);
-		return { ...flushed, pendingReasoning: flushed.pendingReasoning + p.delta };
+		return { ...flushed, pendingReasoning: flushed.pendingReasoning + part.delta };
 	}
 
-	if (p.type === "tool-call") {
+	if (tag === "tool-call") {
 		// Mirror liftPart's defensive guard: a malformed tool-call (missing
 		// string id/name) is skipped rather than written to history as a
 		// part `Prompt.make` would reject at the post-stream append.
@@ -338,12 +357,17 @@ const absorbPart = (acc: AssistantContentAcc, part: unknown): AssistantContentAc
 			pendingReasoning: "",
 			parts: [
 				...flushed.parts,
-				{ type: "tool-call", id: part.id, name: part.name, params: part.params, providerExecuted: false },
+				Prompt.makePart("tool-call", {
+					id: part.id,
+					name: part.name,
+					params: part.params,
+					providerExecuted: false,
+				}),
 			],
 		};
 	}
 
-	if (p.type === "tool-result") {
+	if (tag === "tool-result") {
 		// Mirror liftPart's defensive guard: a malformed tool-result is
 		// skipped rather than written to history as a part `Prompt.make`
 		// would reject at the post-stream append.
@@ -356,7 +380,12 @@ const absorbPart = (acc: AssistantContentAcc, part: unknown): AssistantContentAc
 			pendingReasoning: "",
 			parts: [
 				...flushed.parts,
-				{ type: "tool-result", id: part.id, name: part.name, isFailure: part.isFailure, result: part.result },
+				Prompt.makePart("tool-result", {
+					id: part.id,
+					name: part.name,
+					isFailure: part.isFailure,
+					result: part.result,
+				}),
 			],
 		};
 	}
@@ -366,7 +395,7 @@ const absorbPart = (acc: AssistantContentAcc, part: unknown): AssistantContentAc
 	return acc;
 };
 
-const finalize = (acc: AssistantContentAcc): ReadonlyArray<Record<string, unknown>> => flushAll(acc).parts;
+const finalize = (acc: AssistantContentAcc): ReadonlyArray<Prompt.AssistantMessagePart> => flushAll(acc).parts;
 
 /**
  * Captured per-send token totals. `null` means we never saw a `finish` part
@@ -384,17 +413,11 @@ interface CapturedUsage {
  * Returns `null` for any non-`finish` part so the `Stream.tap` can no-op.
  */
 const captureUsage = (part: unknown): CapturedUsage | null => {
-	if (typeof part !== "object" || part === null) return null;
-	const p = part as { readonly type?: unknown; readonly usage?: unknown };
-	if (p.type !== "finish") return null;
-	const usage = p.usage as
-		| {
-				readonly inputTokens?: { readonly total?: number | undefined };
-				readonly outputTokens?: { readonly total?: number | undefined };
-		  }
-		| undefined;
-	const inputTokens = usage?.inputTokens?.total ?? 0;
-	const outputTokens = usage?.outputTokens?.total ?? 0;
+	if (!isRecord(part)) return null;
+	if (part.type !== "finish") return null;
+	const usage = isRecord(part.usage) ? part.usage : undefined;
+	const inputTokens = readTokenTotal(usage?.inputTokens);
+	const outputTokens = readTokenTotal(usage?.outputTokens);
 	return { inputTokens, outputTokens };
 };
 
@@ -405,6 +428,11 @@ const captureUsage = (part: unknown): CapturedUsage | null => {
  * makes this per-session configurable via `SessionConfig.maxLlmRetries`.
  */
 const MAX_LLM_RETRIES = 3;
+
+const readTokenTotal = (value: unknown): number =>
+	isRecord(value) && typeof value.total === "number" ? value.total : 0;
+
+const isRetryableLlmError = (error: LlmError): boolean => isRecord(error.aiError) && error.aiError.isRetryable === true;
 
 /**
  * Build the retry schedule for the per-attempt inner stream. Recurs up to
@@ -418,7 +446,7 @@ const MAX_LLM_RETRIES = 3;
  */
 const makeRetrySchedule = (maxRetries: number) =>
 	Schedule.recurs(maxRetries).pipe(
-		Schedule.while(({ input }) => ((input as LlmError).aiError as { readonly isRetryable: boolean }).isRetryable),
+		Schedule.while(({ input }: { readonly input: LlmError }) => isRetryableLlmError(input)),
 	);
 
 /**
@@ -455,11 +483,10 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 		const state = yield* SubscriptionRef.make(options.initialState);
 		return {
 			state,
-			send<Tools extends Record<string, Tool.Any> = {}>(
-				input: string | Input,
-				toolkit?: LanguageModel.ToolkitInput<Tools>,
-				concurrency?: Types.Concurrency,
-			) {
+			send<
+				Tools extends Record<string, Tool.Any> = {},
+				ToolkitValue extends LanguageModel.ToolkitInput<Tools> | undefined = undefined,
+			>(input: string | Input, toolkit?: ToolkitValue, concurrency?: Types.Concurrency) {
 				// ADR-0009: tool execution defaults to sequential. The effect framework
 				// defaults `concurrency` to `"unbounded"` when omitted, so resolve an
 				// explicit `1` here unless the caller opted into parallelism.
@@ -491,13 +518,18 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						//    - Continue:  leave history as-is; the existing conversation IS the prompt.
 						//    - Retry:     roll history back to the last `user` message (dropping the
 						//                 trailing assistant turn), then proceed like Continue.
+						const acceptedEnvelopePrompt =
+							normalized._tag === "AcceptedPromptEnvelope"
+								? yield* promptFromAcceptedEnvelope(normalized)
+								: undefined;
+
 						yield* SubscriptionRef.update(state, (s) => {
 							const nextHistory = ((): Prompt.Prompt => {
 								switch (normalized._tag) {
 									case "NewPrompt":
 										return Prompt.concat(s.history, normalized.prompt);
 									case "AcceptedPromptEnvelope": {
-										const withEnvelope = Prompt.concat(s.history, promptFromAcceptedEnvelope(normalized));
+										const withEnvelope = Prompt.concat(s.history, acceptedEnvelopePrompt);
 										return normalized.systemPromptOverride === undefined
 											? withEnvelope
 											: Prompt.setSystem(withEnvelope, normalized.systemPromptOverride);
@@ -593,19 +625,17 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 								// Open the upstream stream with the FULL history (incl. just-appended user msg).
 								// `concurrency` controls tool-call resolution parallelism (sequential
 								// by default per ADR-0009; see `resolvedConcurrency` above).
-								// `as never` bypasses the streamText overload-picker, which can't see through
-								// the conditional spread at the type level. Runtime path is identical.
 								const upstream =
 									toolkit === undefined
 										? LanguageModel.streamText({
 												prompt: snapshot.history,
 												concurrency: resolvedConcurrency,
 											})
-										: (LanguageModel.streamText({
+										: LanguageModel.streamText({
 												prompt: snapshot.history,
 												toolkit,
 												concurrency: resolvedConcurrency,
-											} as never) as Stream.Stream<unknown, unknown, LanguageModel.LanguageModel>);
+											});
 
 								return upstream.pipe(
 									Stream.flatMap((part) => Stream.fromIterable(liftPart(part))),
@@ -643,7 +673,9 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 															content.length > 0
 																? Prompt.concat(
 																		s.history,
-																		Prompt.make([{ role: "assistant", content }] as never),
+																		Prompt.fromMessages([
+																			Prompt.makeMessage("assistant", { content }),
+																		]),
 																	)
 																: s.history;
 														return SessionState.with(s, {

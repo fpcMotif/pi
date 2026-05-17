@@ -243,9 +243,17 @@ describe("Session.send compaction triggers", () => {
 			expect(instructionText).toContain("## Goals");
 			expect(instructionText).toContain("## Decisions");
 			expect(instructionText).toContain("## Files Touched");
+			expect(instructionText).toContain("## Critical Context");
 			expect(instructionText).toContain("## Next Steps");
 			// And the slice-28 "context checkpoint" framing language survives.
 			expect(instructionText).toContain("context checkpoint");
+			// ADR-0019 preservation preamble: the compacted-away history is
+			// discarded after summarisation, so the instruction must ask the model
+			// to preserve exact paths / function names / error messages verbatim.
+			// Without this, codex adversarial review caught a permanent loss of
+			// load-bearing handoff facts.
+			expect(instructionText).toContain("Preserve exact file paths");
+			expect(instructionText).toContain("DISCARDED");
 		}),
 	);
 });
