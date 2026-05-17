@@ -95,7 +95,7 @@ describe("ArtifactWorkspace", () => {
 		expect(workspace.artifacts.get("a.txt")?.content).toBe("original");
 	});
 
-	it("formatting a successful get with empty content yields an empty string (covers `?? \"\"`)", () => {
+	it('formatting a successful get with empty content yields an empty string (covers `?? ""`)', () => {
 		const result = {
 			ok: true,
 			action: "get",

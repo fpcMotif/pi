@@ -171,7 +171,7 @@ describe("AssistantMessageEventStream", () => {
 			// We can reach it by invoking the closure indirectly: push a done event
 			// after monkeypatching is not allowed, so assert the documented behavior.
 			const probe = new AssistantMessageEventStream();
-			// @ts-expect-error -- reach into the closure for coverage of the guard.
+			// biome-ignore lint/complexity/useLiteralKeys: private guard coverage requires bracket access.
 			const extract = probe["extractResult"];
 			extract({ type: "start", partial: makeMessage() });
 		}).toThrow("Unexpected event type for final result");

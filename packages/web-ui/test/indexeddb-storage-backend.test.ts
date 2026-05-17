@@ -30,7 +30,7 @@ class FakeRequest<T> {
 
 class FakeCursor {
 	constructor(
-		private rows: Rec[],
+		_rows: Rec[],
 		private index: number,
 		private request: FakeOpenCursorRequest,
 		public value: Rec,

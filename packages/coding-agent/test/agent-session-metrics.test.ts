@@ -1,13 +1,13 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { Message } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { getAgentSessionContextUsage } from "../src/core/agent-session-metrics.js";
 import { SessionManager } from "../src/core/session-manager.js";
 
-function userMsg(text: string, ts = 1): AgentMessage {
+function userMsg(text: string, ts = 1): Message {
 	return { role: "user", content: text, timestamp: ts };
 }
 
-function assistantMsg(text: string, opts?: { stopReason?: string; tokens?: number; ts?: number }): AgentMessage {
+function assistantMsg(text: string, opts?: { stopReason?: "stop"; tokens?: number; ts?: number }): Message {
 	return {
 		role: "assistant",
 		content: [{ type: "text", text }],
@@ -22,7 +22,7 @@ function assistantMsg(text: string, opts?: { stopReason?: string; tokens?: numbe
 			totalTokens: (opts?.tokens ?? 1) * 4,
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		},
-		stopReason: (opts?.stopReason as "stop") ?? "stop",
+		stopReason: opts?.stopReason ?? "stop",
 		timestamp: opts?.ts ?? 2,
 	};
 }

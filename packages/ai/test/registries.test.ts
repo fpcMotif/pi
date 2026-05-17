@@ -119,9 +119,9 @@ describe("api-registry", () => {
 
 		const provider = getApiProvider(api)!;
 		const wrongModel = fakeModel("some-other-api");
-		expect(() => provider.stream(wrongModel, context)).toThrow("Mismatched api: some-other-api expected " + api);
+		expect(() => provider.stream(wrongModel, context)).toThrow(`Mismatched api: some-other-api expected ${api}`);
 		expect(() => provider.streamSimple(wrongModel, context)).toThrow(
-			"Mismatched api: some-other-api expected " + api,
+			`Mismatched api: some-other-api expected ${api}`,
 		);
 
 		unregisterApiProviders("registries-mismatch-source");
@@ -172,7 +172,7 @@ describe("images-api-registry", () => {
 
 		const wrongModel = { ...model, api: "wrong-images-api" };
 		expect(() => provider!.generateImages(wrongModel, imagesContext)).toThrow(
-			"Mismatched api: wrong-images-api expected " + api,
+			`Mismatched api: wrong-images-api expected ${api}`,
 		);
 	});
 

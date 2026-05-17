@@ -40,10 +40,7 @@ describe("migrations", () => {
 		it("does nothing when auth.json already exists", () => {
 			const dir = makeTemp();
 			fs.writeFileSync(path.join(dir, "auth.json"), JSON.stringify({ existing: { type: "api_key", key: "k" } }));
-			fs.writeFileSync(
-				path.join(dir, "oauth.json"),
-				JSON.stringify({ openrouter: { accessToken: "t" } }),
-			);
+			fs.writeFileSync(path.join(dir, "oauth.json"), JSON.stringify({ openrouter: { accessToken: "t" } }));
 			const providers = migrateAuthToAuthJson();
 			expect(providers).toEqual([]);
 		});
@@ -91,10 +88,7 @@ describe("migrations", () => {
 		it("prefers oauth over apiKey if both exist for a provider", () => {
 			const dir = makeTemp();
 			fs.writeFileSync(path.join(dir, "oauth.json"), JSON.stringify({ openai: { accessToken: "oauth-token" } }));
-			fs.writeFileSync(
-				path.join(dir, "settings.json"),
-				JSON.stringify({ apiKeys: { openai: "sk-key" } }),
-			);
+			fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ apiKeys: { openai: "sk-key" } }));
 			migrateAuthToAuthJson();
 			const auth = JSON.parse(fs.readFileSync(path.join(dir, "auth.json"), "utf-8"));
 			expect(auth.openai.type).toBe("oauth");
@@ -114,10 +108,7 @@ describe("migrations", () => {
 
 		it("ignores non-string apiKey values", () => {
 			const dir = makeTemp();
-			fs.writeFileSync(
-				path.join(dir, "settings.json"),
-				JSON.stringify({ apiKeys: { broken: 42 } }),
-			);
+			fs.writeFileSync(path.join(dir, "settings.json"), JSON.stringify({ apiKeys: { broken: 42 } }));
 			migrateAuthToAuthJson();
 			expect(fs.existsSync(path.join(dir, "auth.json"))).toBe(false);
 		});

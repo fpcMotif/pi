@@ -85,7 +85,10 @@ afterEach(() => {
 describe("SessionListDialog", () => {
 	it("open() shows the dialog, loads sessions and renders titles", async () => {
 		sessionsState.all = [makeSession({ id: "a", title: "Alpha" }), makeSession({ id: "b", title: "Beta" })];
-		await SessionListDialog.open(() => {}, () => {});
+		await SessionListDialog.open(
+			() => {},
+			() => {},
+		);
 		const dialog = document.body.querySelector("session-list-dialog") as SessionListDialog | null;
 		expect(dialog).not.toBeNull();
 		await (dialog as unknown as { updateComplete: Promise<unknown> }).updateComplete;
@@ -126,9 +129,11 @@ describe("SessionListDialog", () => {
 		const onDelete = vi.fn();
 		await SessionListDialog.open(() => {}, onDelete);
 		const dialog = document.body.querySelector("session-list-dialog") as SessionListDialog | null;
-		await (dialog as unknown as {
-			handleDelete: (id: string, e: Event) => Promise<void>;
-		}).handleDelete("doomed", new Event("click"));
+		await (
+			dialog as unknown as {
+				handleDelete: (id: string, e: Event) => Promise<void>;
+			}
+		).handleDelete("doomed", new Event("click"));
 		expect(deleteSpy).toHaveBeenCalledWith("doomed");
 		// Close to flush the onDelete callbacks.
 		dialog!.close();
@@ -142,9 +147,11 @@ describe("SessionListDialog", () => {
 		vi.spyOn(globalThis, "confirm" as never).mockReturnValue(false as never);
 		await SessionListDialog.open(() => {});
 		const dialog = document.body.querySelector("session-list-dialog") as SessionListDialog | null;
-		await (dialog as unknown as {
-			handleDelete: (id: string, e: Event) => Promise<void>;
-		}).handleDelete("doomed", new Event("click"));
+		await (
+			dialog as unknown as {
+				handleDelete: (id: string, e: Event) => Promise<void>;
+			}
+		).handleDelete("doomed", new Event("click"));
 		expect(deleteSpy).not.toHaveBeenCalled();
 	});
 
@@ -156,9 +163,11 @@ describe("SessionListDialog", () => {
 		vi.spyOn(globalThis, "confirm" as never).mockReturnValue(true as never);
 		await SessionListDialog.open(() => {});
 		const dialog = document.body.querySelector("session-list-dialog") as SessionListDialog | null;
-		await (dialog as unknown as {
-			handleDelete: (id: string, e: Event) => Promise<void>;
-		}).handleDelete("x", new Event("click"));
+		await (
+			dialog as unknown as {
+				handleDelete: (id: string, e: Event) => Promise<void>;
+			}
+		).handleDelete("x", new Event("click"));
 		expect(console.error).toHaveBeenCalled();
 	});
 
@@ -168,12 +177,16 @@ describe("SessionListDialog", () => {
 		const onDelete = vi.fn();
 		await SessionListDialog.open(() => {}, onDelete);
 		const dialog = document.body.querySelector("session-list-dialog") as SessionListDialog | null;
-		await (dialog as unknown as {
-			handleDelete: (id: string, e: Event) => Promise<void>;
-		}).handleDelete("a", new Event("click"));
-		await (dialog as unknown as {
-			handleDelete: (id: string, e: Event) => Promise<void>;
-		}).handleDelete("b", new Event("click"));
+		await (
+			dialog as unknown as {
+				handleDelete: (id: string, e: Event) => Promise<void>;
+			}
+		).handleDelete("a", new Event("click"));
+		await (
+			dialog as unknown as {
+				handleDelete: (id: string, e: Event) => Promise<void>;
+			}
+		).handleDelete("b", new Event("click"));
 		dialog!.close();
 		expect(onDelete).toHaveBeenCalledWith("a");
 		expect(onDelete).toHaveBeenCalledWith("b");
@@ -185,9 +198,11 @@ describe("SessionListDialog", () => {
 		const onDelete = vi.fn();
 		await SessionListDialog.open(() => {}, onDelete);
 		const dialog = document.body.querySelector("session-list-dialog") as SessionListDialog | null;
-		await (dialog as unknown as {
-			handleDelete: (id: string, e: Event) => Promise<void>;
-		}).handleDelete("a", new Event("click"));
+		await (
+			dialog as unknown as {
+				handleDelete: (id: string, e: Event) => Promise<void>;
+			}
+		).handleDelete("a", new Event("click"));
 		// Now select something — closedViaSelection becomes true and close() fires.
 		(dialog as unknown as { handleSelect: (id: string) => void }).handleSelect("a");
 		expect(onDelete).not.toHaveBeenCalled();
@@ -233,9 +248,11 @@ describe("SessionListDialog", () => {
 		await SessionListDialog.open(() => {});
 		const dialog = document.body.querySelector("session-list-dialog") as SessionListDialog | null;
 		// We have a sessions storage, so delete proceeds normally.
-		await (dialog as unknown as {
-			handleDelete: (id: string, e: Event) => Promise<void>;
-		}).handleDelete("x", new Event("click"));
+		await (
+			dialog as unknown as {
+				handleDelete: (id: string, e: Event) => Promise<void>;
+			}
+		).handleDelete("x", new Event("click"));
 		// Just make sure it didn't blow up.
 		expect(dialog).not.toBeNull();
 	});
@@ -245,15 +262,16 @@ describe("SessionListDialog", () => {
 		// `storage.sessions === undefined` and hits the early-return.
 		const mod = await import("../src/storage/app-storage.js");
 		const origGet = mod.getAppStorage;
-		(mod as unknown as { getAppStorage: () => unknown }).getAppStorage = () =>
-			({}) as ReturnType<typeof origGet>;
+		(mod as unknown as { getAppStorage: () => unknown }).getAppStorage = () => ({}) as ReturnType<typeof origGet>;
 		try {
 			vi.spyOn(globalThis, "confirm" as never).mockReturnValue(true as never);
 			const dialog = new SessionListDialog();
 			document.body.appendChild(dialog);
-			await (dialog as unknown as {
-				handleDelete: (id: string, e: Event) => Promise<void>;
-			}).handleDelete("x", new Event("click"));
+			await (
+				dialog as unknown as {
+					handleDelete: (id: string, e: Event) => Promise<void>;
+				}
+			).handleDelete("x", new Event("click"));
 			// No exception thrown means the !storage.sessions branch was hit.
 			expect(dialog).not.toBeNull();
 		} finally {

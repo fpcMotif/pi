@@ -1,8 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import {
-	streamOpenAICompletions,
-	streamSimpleOpenAICompletions,
-} from "../src/providers/openai-completions.js";
+import { streamOpenAICompletions, streamSimpleOpenAICompletions } from "../src/providers/openai-completions.js";
 import type { AssistantMessage, Context, Model, Tool } from "../src/types.js";
 
 // =============================================================================
@@ -172,7 +169,11 @@ describe("openai-completions streaming", () => {
 		const tool: Tool = {
 			name: "say_hello",
 			description: "Say hello",
-			parameters: { type: "object", properties: { name: { type: "string" } }, required: ["name"] } as any,
+			parameters: {
+				type: "object",
+				properties: { name: { type: "string" } },
+				required: ["name"],
+			} as any,
 		};
 
 		const result = await drainToMessage(
@@ -200,7 +201,11 @@ describe("openai-completions streaming", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: { content: "abc" }, finish_reason: "length" }],
-				usage: { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		const result = await drainToMessage(
@@ -216,7 +221,11 @@ describe("openai-completions streaming", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: { content: "no" }, finish_reason: "content_filter" }],
-				usage: { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		const result = await drainToMessage(
@@ -233,7 +242,11 @@ describe("openai-completions streaming", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: {}, finish_reason: "weird_state" }],
-				usage: { prompt_tokens: 1, completion_tokens: 0, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 0,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		const result = await drainToMessage(
@@ -250,7 +263,11 @@ describe("openai-completions streaming", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: {}, finish_reason: "function_call" }],
-				usage: { prompt_tokens: 1, completion_tokens: 0, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 0,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		const result = await drainToMessage(
@@ -291,9 +308,7 @@ describe("openai-completions streaming", () => {
 		fakeState.chunks = [
 			{
 				id: "x",
-				choices: [
-					{ index: 0, delta: { content: "abc" }, finish_reason: null },
-				],
+				choices: [{ index: 0, delta: { content: "abc" }, finish_reason: null }],
 			},
 		];
 		// Pre-abort: the stream will iterate, then the final check throws.
@@ -311,7 +326,11 @@ describe("openai-completions streaming", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: {}, finish_reason: "network_error" }],
-				usage: { prompt_tokens: 1, completion_tokens: 0, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 0,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		const result = await drainToMessage(
@@ -332,7 +351,11 @@ describe("openai-completions streaming", () => {
 						index: 0,
 						delta: { content: "z" },
 						finish_reason: "stop",
-						usage: { prompt_tokens: 4, completion_tokens: 2, prompt_tokens_details: { cached_tokens: 1 } },
+						usage: {
+							prompt_tokens: 4,
+							completion_tokens: 2,
+							prompt_tokens_details: { cached_tokens: 1 },
+						},
 					},
 				],
 			},
@@ -362,9 +385,7 @@ describe("openai-completions streaming", () => {
 									function: { name: "noop", arguments: "{}" },
 								},
 							],
-							reasoning_details: [
-								{ type: "reasoning.encrypted", id: "tcZ", data: "cipher" },
-							],
+							reasoning_details: [{ type: "reasoning.encrypted", id: "tcZ", data: "cipher" }],
 						},
 					},
 				],
@@ -372,7 +393,11 @@ describe("openai-completions streaming", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
-				usage: { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		const result = await drainToMessage(
@@ -398,7 +423,11 @@ describe("openai-completions buildParams", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-				usage: { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		await streamOpenAICompletions(model, context, options).result();
@@ -475,13 +504,18 @@ describe("openai-completions buildParams", () => {
 					{ role: "user", content: "hi", timestamp: Date.now() },
 					{
 						role: "assistant",
-						content: [
-							{ type: "toolCall", id: "tc1", name: "doit", arguments: {} },
-						],
+						content: [{ type: "toolCall", id: "tc1", name: "doit", arguments: {} }],
 						api: "openai-completions",
 						provider: "openai",
 						model: "gpt-4o-mini",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -490,6 +524,7 @@ describe("openai-completions buildParams", () => {
 						toolCallId: "tc1",
 						toolName: "doit",
 						content: [{ type: "text", text: "ok" }],
+						isError: false,
 						timestamp: Date.now(),
 					},
 				],
@@ -520,7 +555,9 @@ describe("openai-completions buildParams", () => {
 		const lastConv = params.messages[params.messages.length - 1];
 		expect(lastConv.content?.[0]?.cache_control).toMatchObject({ type: "ephemeral" });
 		// last tool got cache_control
-		expect(params.tools?.[params.tools.length - 1].cache_control).toMatchObject({ type: "ephemeral" });
+		expect(params.tools?.[params.tools.length - 1].cache_control).toMatchObject({
+			type: "ephemeral",
+		});
 	});
 
 	it("emits provider routing config for openrouter when supplied via model.compat", async () => {
@@ -572,7 +609,13 @@ describe("openai-completions buildParams", () => {
 				provider: "deepseek",
 				baseUrl: "https://api.deepseek.com/v1",
 				reasoning: true,
-				thinkingLevelMap: { off: "none", low: "low", medium: "medium", high: "high", xhigh: "high" } as any,
+				thinkingLevelMap: {
+					off: "none",
+					low: "low",
+					medium: "medium",
+					high: "high",
+					xhigh: "high",
+				} as any,
 			}),
 			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
 			{ apiKey: "k", reasoningEffort: "medium" },
@@ -587,7 +630,13 @@ describe("openai-completions buildParams", () => {
 				provider: "openrouter",
 				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
-				thinkingLevelMap: { off: null, low: "low", medium: "medium", high: "high", xhigh: "high" } as any,
+				thinkingLevelMap: {
+					off: null,
+					low: "low",
+					medium: "medium",
+					high: "high",
+					xhigh: "high",
+				} as any,
 			}),
 			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
 			{ apiKey: "k", reasoningEffort: "high" },
@@ -601,7 +650,13 @@ describe("openai-completions buildParams", () => {
 				provider: "openrouter",
 				baseUrl: "https://openrouter.ai/api/v1",
 				reasoning: true,
-				thinkingLevelMap: { off: "none", low: "low", medium: "medium", high: "high", xhigh: "high" } as any,
+				thinkingLevelMap: {
+					off: "none",
+					low: "low",
+					medium: "medium",
+					high: "high",
+					xhigh: "high",
+				} as any,
 			}),
 			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
 			{ apiKey: "k" },
@@ -628,7 +683,13 @@ describe("openai-completions buildParams", () => {
 		const params = await captureParams(
 			baseModel({
 				reasoning: true,
-				thinkingLevelMap: { off: "minimal", low: "low", medium: "medium", high: "high", xhigh: "high" } as any,
+				thinkingLevelMap: {
+					off: "minimal",
+					low: "low",
+					medium: "medium",
+					high: "high",
+					xhigh: "high",
+				} as any,
 			}),
 			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
 			{ apiKey: "k" },
@@ -647,7 +708,11 @@ describe("openai-completions convertMessages", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-				usage: { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		await streamOpenAICompletions(model, context, options).result();
@@ -687,7 +752,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openai",
 						model: "gpt-4o-mini",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -699,6 +771,7 @@ describe("openai-completions convertMessages", () => {
 							{ type: "text", text: "got it" },
 							{ type: "image", mimeType: "image/png", data: "XX==" },
 						],
+						isError: false,
 						timestamp: Date.now(),
 					},
 				],
@@ -708,7 +781,8 @@ describe("openai-completions convertMessages", () => {
 		const toolMsg = params.messages.find((m: any) => m.role === "tool");
 		expect(toolMsg.content).toBe("got it");
 		const userImageMsg = params.messages.find(
-			(m: any) => m.role === "user" && Array.isArray(m.content) && m.content.some((c: any) => c.type === "image_url"),
+			(m: any) =>
+				m.role === "user" && Array.isArray(m.content) && m.content.some((c: any) => c.type === "image_url"),
 		);
 		expect(userImageMsg).toBeDefined();
 	});
@@ -722,12 +796,24 @@ describe("openai-completions convertMessages", () => {
 						role: "assistant",
 						// Use a foreign assistant message (provider differs) so pipe id is normalized.
 						content: [
-							{ type: "toolCall", id: "callXYZ|fooooo+/=verylong-call-id_with_chars", name: "doit", arguments: {} },
+							{
+								type: "toolCall",
+								id: "callXYZ|fooooo+/=verylong-call-id_with_chars",
+								name: "doit",
+								arguments: {},
+							},
 						],
 						api: "openai-completions",
 						provider: "openrouter",
 						model: "anthropic/claude-3-5-sonnet",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -736,6 +822,7 @@ describe("openai-completions convertMessages", () => {
 						toolCallId: "callXYZ|fooooo+/=verylong-call-id_with_chars",
 						toolName: "doit",
 						content: [{ type: "text", text: "ok" }],
+						isError: false,
 						timestamp: Date.now(),
 					},
 				],
@@ -763,7 +850,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openrouter",
 						model: "anthropic/claude-3-5-sonnet",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -772,6 +866,7 @@ describe("openai-completions convertMessages", () => {
 						toolCallId: longId,
 						toolName: "doit",
 						content: [{ type: "text", text: "ok" }],
+						isError: false,
 						timestamp: Date.now(),
 					},
 				],
@@ -803,7 +898,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openrouter",
 						model: "matched-model",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "stop",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -833,7 +935,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "deepseek",
 						model: "deepseek-r1",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "stop",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -861,7 +970,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openai",
 						model: "gpt-4o-mini",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -870,6 +986,7 @@ describe("openai-completions convertMessages", () => {
 						toolCallId: "tc1",
 						toolName: "ping",
 						content: [{ type: "text", text: "ok" }],
+						isError: false,
 						timestamp: Date.now(),
 					},
 				],
@@ -898,7 +1015,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openai",
 						model: "gpt-4o-mini",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "toolUse",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -907,6 +1031,7 @@ describe("openai-completions convertMessages", () => {
 						toolCallId: "tc1",
 						toolName: "ping",
 						content: [{ type: "text", text: "ok" }],
+						isError: false,
 						timestamp: Date.now(),
 					},
 					{ role: "user", content: "what now?", timestamp: Date.now() },
@@ -935,7 +1060,14 @@ describe("openai-completions convertMessages", () => {
 						api: "openai-completions",
 						provider: "openai",
 						model: "gpt-4o-mini",
-						usage: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
 						stopReason: "stop",
 						timestamp: Date.now(),
 					} as AssistantMessage,
@@ -969,7 +1101,11 @@ describe("streamSimpleOpenAICompletions", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: { content: "ok" }, finish_reason: "stop" }],
-				usage: { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		const result = await streamSimpleOpenAICompletions(
@@ -985,7 +1121,11 @@ describe("streamSimpleOpenAICompletions", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: { content: "ok" }, finish_reason: "stop" }],
-				usage: { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		const prev = process.env.OPENAI_API_KEY;
@@ -1015,7 +1155,11 @@ describe("openai-completions hooks", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: { content: "ok" }, finish_reason: "stop" }],
-				usage: { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		const onPayload = vi.fn(async (params: any) => {
@@ -1035,7 +1179,11 @@ describe("openai-completions hooks", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-				usage: { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		const onResponse = vi.fn();
@@ -1045,7 +1193,10 @@ describe("openai-completions hooks", () => {
 			{ apiKey: "k", onResponse },
 		).result();
 		expect(onResponse).toHaveBeenCalledWith(
-			expect.objectContaining({ status: 200, headers: expect.objectContaining({ "x-trace": "abc" }) }),
+			expect.objectContaining({
+				status: 200,
+				headers: expect.objectContaining({ "x-trace": "abc" }),
+			}),
 			expect.any(Object),
 		);
 	});
@@ -1055,7 +1206,11 @@ describe("openai-completions hooks", () => {
 			{
 				id: "x",
 				choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
-				usage: { prompt_tokens: 1, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 0 } },
+				usage: {
+					prompt_tokens: 1,
+					completion_tokens: 1,
+					prompt_tokens_details: { cached_tokens: 0 },
+				},
 			},
 		];
 		await streamOpenAICompletions(

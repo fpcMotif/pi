@@ -7,7 +7,11 @@ import {
 	extractDiagnosticError,
 	formatThrownValue,
 } from "../src/utils/diagnostics.js";
-import { AssistantMessageEventStream, createAssistantMessageEventStream, EventStream } from "../src/utils/event-stream.js";
+import {
+	AssistantMessageEventStream,
+	createAssistantMessageEventStream,
+	EventStream,
+} from "../src/utils/event-stream.js";
 import { parseJsonWithRepair, parseStreamingJson, repairJson } from "../src/utils/json-parse.js";
 import { getOverflowPatterns, isContextOverflow } from "../src/utils/overflow.js";
 import { StringEnum } from "../src/utils/typebox-helpers.js";

@@ -3,7 +3,7 @@
 // iTerm2 encoding, calculateImageRows, allocateImageId, getCellDimensions, the
 // alacritty capability branch, and imageFallback.
 import assert from "node:assert";
-import { afterEach, beforeEach, describe, it } from "vitest";
+import { afterEach, describe, it } from "vitest";
 import {
 	allocateImageId,
 	calculateImageRows,
@@ -75,11 +75,30 @@ describe("getPngDimensions", () => {
 	it("parses width and height from a valid PNG header", () => {
 		// PNG signature (8 bytes) + IHDR chunk: length(4) + "IHDR"(4) + width(4) + height(4)
 		const bytes = [
-			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, // signature
-			0x00, 0x00, 0x00, 0x0d, // IHDR length
-			0x49, 0x48, 0x44, 0x52, // "IHDR"
-			0x00, 0x00, 0x01, 0x90, // width = 400
-			0x00, 0x00, 0x00, 0xc8, // height = 200
+			0x89,
+			0x50,
+			0x4e,
+			0x47,
+			0x0d,
+			0x0a,
+			0x1a,
+			0x0a, // signature
+			0x00,
+			0x00,
+			0x00,
+			0x0d, // IHDR length
+			0x49,
+			0x48,
+			0x44,
+			0x52, // "IHDR"
+			0x00,
+			0x00,
+			0x01,
+			0x90, // width = 400
+			0x00,
+			0x00,
+			0x00,
+			0xc8, // height = 200
 		];
 		assert.deepStrictEqual(getPngDimensions(b64(bytes)), { widthPx: 400, heightPx: 200 });
 	});
@@ -98,13 +117,27 @@ describe("getJpegDimensions", () => {
 	it("parses dimensions from a SOF0 marker", () => {
 		// SOI, then a SOF0 (0xFFC0) segment: marker + length(4..) precision + height + width
 		const bytes = [
-			0xff, 0xd8, // SOI
-			0xff, 0xc0, // SOF0 marker
-			0x00, 0x11, // segment length
+			0xff,
+			0xd8, // SOI
+			0xff,
+			0xc0, // SOF0 marker
+			0x00,
+			0x11, // segment length
 			0x08, // precision
-			0x00, 0xf0, // height = 240
-			0x01, 0x40, // width = 320
-			0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+			0x00,
+			0xf0, // height = 240
+			0x01,
+			0x40, // width = 320
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
 		];
 		assert.deepStrictEqual(getJpegDimensions(b64(bytes)), { widthPx: 320, heightPx: 240 });
 	});
@@ -112,16 +145,29 @@ describe("getJpegDimensions", () => {
 	it("skips non-SOF markers before reaching the SOF segment", () => {
 		// SOI, an APP0 segment (0xFFE0) we must skip, then SOF0
 		const bytes = [
-			0xff, 0xd8, // SOI
-			0xff, 0xe0, // APP0 marker
-			0x00, 0x04, // length 4 -> skip 4 bytes total (2 length + 2 payload)
-			0x00, 0x00, // payload
-			0xff, 0xc1, // SOF1 marker (in 0xC0..0xC2 range)
-			0x00, 0x11,
+			0xff,
+			0xd8, // SOI
+			0xff,
+			0xe0, // APP0 marker
+			0x00,
+			0x04, // length 4 -> skip 4 bytes total (2 length + 2 payload)
+			0x00,
+			0x00, // payload
+			0xff,
+			0xc1, // SOF1 marker (in 0xC0..0xC2 range)
+			0x00,
+			0x11,
 			0x08,
-			0x00, 0x64, // height = 100
-			0x00, 0xc8, // width = 200
-			0, 0, 0, 0, 0, 0,
+			0x00,
+			0x64, // height = 100
+			0x00,
+			0xc8, // width = 200
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
 		];
 		assert.deepStrictEqual(getJpegDimensions(b64(bytes)), { widthPx: 200, heightPx: 100 });
 	});
@@ -130,14 +176,24 @@ describe("getJpegDimensions", () => {
 		// SOI, then a stray non-0xff byte (exercises `if (buffer[offset] !== 0xff) offset++`),
 		// then a SOF marker carrying width=32 height=16.
 		const bytes = [
-			0xff, 0xd8,
+			0xff,
+			0xd8,
 			0x00, // stray byte — parser advances past it
-			0xff, 0xc0,
-			0x00, 0x11,
+			0xff,
+			0xc0,
+			0x00,
+			0x11,
 			0x08,
-			0x00, 0x10, // height = 16
-			0x00, 0x20, // width  = 32
-			0, 0, 0, 0, 0, 0,
+			0x00,
+			0x10, // height = 16
+			0x00,
+			0x20, // width  = 32
+			0,
+			0,
+			0,
+			0,
+			0,
+			0,
 		];
 		assert.deepStrictEqual(getJpegDimensions(b64(bytes)), { widthPx: 32, heightPx: 16 });
 	});
@@ -152,22 +208,22 @@ describe("getJpegDimensions", () => {
 
 	it("returns null when a segment length is invalid (< 2)", () => {
 		const bytes = [
-			0xff, 0xd8,
-			0xff, 0xe0, // non-SOF marker
-			0x00, 0x01, // length 1 -> invalid
-			0, 0, 0, 0,
+			0xff,
+			0xd8,
+			0xff,
+			0xe0, // non-SOF marker
+			0x00,
+			0x01, // length 1 -> invalid
+			0,
+			0,
+			0,
+			0,
 		];
 		assert.strictEqual(getJpegDimensions(b64(bytes)), null);
 	});
 
 	it("returns null when no SOF marker is found before the buffer ends", () => {
-		const bytes = [
-			0xff, 0xd8,
-			0xff, 0xe0,
-			0x00, 0x04,
-			0x00, 0x00,
-			0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		];
+		const bytes = [0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00];
 		assert.strictEqual(getJpegDimensions(b64(bytes)), null);
 	});
 
@@ -175,8 +231,10 @@ describe("getJpegDimensions", () => {
 		// SOI + non-SOF marker whose declared length points past the buffer end,
 		// so `offset + 3 >= buffer.length` triggers the early null return.
 		const bytes = [
-			0xff, 0xd8,
-			0xff, 0xe1, // APP1 marker
+			0xff,
+			0xd8,
+			0xff,
+			0xe1, // APP1 marker
 			0xff, // single trailing byte: offset+3 >= length
 		];
 		assert.strictEqual(getJpegDimensions(b64(bytes)), null);
@@ -207,9 +265,18 @@ describe("getGifDimensions", () => {
 describe("getWebpDimensions", () => {
 	const riffWebpHeader = (chunk: string, payload: number[]): number[] => {
 		const bytes = [
-			0x52, 0x49, 0x46, 0x46, // "RIFF"
-			0, 0, 0, 0, // file size (ignored)
-			0x57, 0x45, 0x42, 0x50, // "WEBP"
+			0x52,
+			0x49,
+			0x46,
+			0x46, // "RIFF"
+			0,
+			0,
+			0,
+			0, // file size (ignored)
+			0x57,
+			0x45,
+			0x42,
+			0x50, // "WEBP"
 			...[...chunk].map((c) => c.charCodeAt(0)), // chunk fourcc
 			...payload,
 		];
@@ -280,9 +347,8 @@ describe("getWebpDimensions", () => {
 describe("getImageDimensions", () => {
 	it("dispatches to the PNG parser for image/png", () => {
 		const bytes = [
-			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-			0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
-			0x00, 0x00, 0x00, 0x05, 0x00, 0x00, 0x00, 0x06,
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52, 0x00, 0x00,
+			0x00, 0x05, 0x00, 0x00, 0x00, 0x06,
 		];
 		assert.deepStrictEqual(getImageDimensions(b64(bytes), "image/png"), { widthPx: 5, heightPx: 6 });
 	});
@@ -302,10 +368,7 @@ describe("getImageDimensions", () => {
 		const payload = new Array(14).fill(0);
 		payload[10] = 0x09; // byte 26 -> width 9
 		payload[12] = 0x0b; // byte 28 -> height 11
-		const bytes = [
-			0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20,
-			...payload,
-		];
+		const bytes = [0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50, 0x56, 0x50, 0x38, 0x20, ...payload];
 		assert.deepStrictEqual(getImageDimensions(b64(bytes), "image/webp"), { widthPx: 9, heightPx: 11 });
 	});
 
