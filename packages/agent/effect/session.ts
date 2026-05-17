@@ -21,10 +21,9 @@ import {
 	applyLlmPartToAttemptState,
 	type AssistantContentAcc,
 	type CapturedUsage,
-	finalizeAssistantContent,
+	commitAssistantTurn,
 	initialAssistantContentAcc,
 	liftPart,
-	makeFinishEvent,
 } from "./session-parts.js";
 import { MAX_LLM_RETRIES, makeRetrySchedule } from "./session-retry.js";
 import { SessionState } from "./session-state.js";
@@ -223,9 +222,7 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 									// Also peels usage totals off the upstream `finish` part into usageRef.
 									Stream.tap((event) =>
 										event._tag === "LlmPart"
-											? Effect.gen(function* () {
-													yield* applyLlmPartToAttemptState(accRef, usageRef, event.part);
-												})
+											? applyLlmPartToAttemptState(accRef, usageRef, event.part)
 											: Effect.void,
 									),
 									// Map BEFORE the retry boundary so the schedule's predicate sees `LlmError`.
@@ -236,34 +233,7 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 									// On a failed attempt this concat never runs (Stream.concat skips
 									// when the left side errors), so partial accumulator state never
 									// leaks into `state.history`.
-									Stream.concat(
-										Stream.unwrap(
-											Effect.gen(function* () {
-												const acc = yield* Ref.get(accRef);
-												const content = finalizeAssistantContent(acc);
-												const usage = yield* Ref.get(usageRef);
-												if (content.length > 0 || usage !== null) {
-													yield* SubscriptionRef.update(state, (s) => {
-														const nextHistory =
-															content.length > 0
-																? Prompt.concat(
-																		s.history,
-																		Prompt.fromMessages([
-																			Prompt.makeMessage("assistant", { content }),
-																		]),
-																	)
-																: s.history;
-														return SessionState.with(s, {
-															history: nextHistory,
-															inputTokens: s.inputTokens + (usage?.inputTokens ?? 0),
-															outputTokens: s.outputTokens + (usage?.outputTokens ?? 0),
-														});
-													});
-												}
-												return Stream.succeed<AgentEvent>(makeFinishEvent(usage));
-											}),
-										),
-									),
+									Stream.concat(Stream.fromEffect(commitAssistantTurn(state, accRef, usageRef))),
 									// Per-attempt telemetry span. Wraps the entire attempt pipeline:
 									// flatMap + tap + mapError + concat. The span ends when the attempt
 									// completes (success / any failure / interruption). On retry, a new

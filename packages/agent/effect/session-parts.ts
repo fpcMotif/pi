@@ -1,7 +1,8 @@
-import { Effect, Ref } from "effect";
+import { Effect, Ref, SubscriptionRef } from "effect";
 import { Prompt } from "effect/unstable/ai";
 
 import { type AgentEvent, Finish, LlmPart, ToolCompleted, ToolDispatched } from "./agent-event.js";
+import { SessionState } from "./session-state.js";
 
 const isRecord = (value: unknown): value is Record<PropertyKey, unknown> => typeof value === "object" && value !== null;
 
@@ -160,4 +161,42 @@ export const applyLlmPartToAttemptState = (
 		if (captured !== null) {
 			yield* Ref.set(usageRef, captured);
 		}
+	});
+
+/**
+ * Close out a `Session.send` attempt: drain the assistant-content accumulator
+ * into a single history-bound `assistant` message, fold the captured usage
+ * totals into `SessionState`, and produce the trailing {@link Finish} event.
+ *
+ * Skips the history update when the attempt produced neither content nor a
+ * `finish` part (errored / interrupted upstream) — `state.history` only gains
+ * an assistant message when there is something to record. The returned
+ * `Finish` carries this attempt's tokens (omitted when no usage was captured).
+ */
+export const commitAssistantTurn = (
+	state: SubscriptionRef.SubscriptionRef<SessionState>,
+	accRef: Ref.Ref<AssistantContentAcc>,
+	usageRef: Ref.Ref<CapturedUsage | null>,
+): Effect.Effect<AgentEvent> =>
+	Effect.gen(function* () {
+		const acc = yield* Ref.get(accRef);
+		const content = finalizeAssistantContent(acc);
+		const usage = yield* Ref.get(usageRef);
+		if (content.length > 0 || usage !== null) {
+			yield* SubscriptionRef.update(state, (sessionState) => {
+				const nextHistory =
+					content.length > 0
+						? Prompt.concat(
+								sessionState.history,
+								Prompt.fromMessages([Prompt.makeMessage("assistant", { content })]),
+							)
+						: sessionState.history;
+				return SessionState.with(sessionState, {
+					history: nextHistory,
+					inputTokens: sessionState.inputTokens + (usage?.inputTokens ?? 0),
+					outputTokens: sessionState.outputTokens + (usage?.outputTokens ?? 0),
+				});
+			});
+		}
+		return makeFinishEvent(usage);
 	});
