@@ -1,6 +1,8 @@
-import { Effect, Layer, Ref, Stream } from "effect";
+import { Effect, Layer, Stream } from "effect";
 import type { AiError } from "effect/unstable/ai";
 import { LanguageModel } from "effect/unstable/ai";
+
+import { makeScriptedCursor } from "./scripted-cursor.js";
 
 /**
  * One step in a scripted streaming session. A `parts` step has the stream emit
@@ -31,7 +33,7 @@ export type StubStreamStep =
 export const stubLanguageModelStreamScripted = (script: ReadonlyArray<StubStreamStep>) =>
 	Layer.effect(LanguageModel.LanguageModel)(
 		Effect.gen(function* () {
-			const callIndex = yield* Ref.make(0);
+			const cursor = yield* makeScriptedCursor;
 			return LanguageModel.LanguageModel.of({
 				generateText: (() => Effect.die("stubLanguageModelStreamScripted: generateText not implemented")) as never,
 				generateObject: (() =>
@@ -42,7 +44,7 @@ export const stubLanguageModelStreamScripted = (script: ReadonlyArray<StubStream
 					// itself is pure; the Ref read is what advances the script.
 					return Stream.unwrap(
 						Effect.gen(function* () {
-							const i = yield* Ref.getAndUpdate(callIndex, (n) => n + 1);
+							const i = yield* cursor.next;
 							const step = script[i];
 							if (!step) {
 								return Stream.die(
