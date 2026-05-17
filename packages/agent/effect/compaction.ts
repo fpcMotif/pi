@@ -13,6 +13,14 @@ import { Prompt } from "effect/unstable/ai";
  * is applied by the callers (`estimateTokens`, `splitHistory`) so rounding
  * happens once per aggregate rather than per message.
  */
+const jsonChars = (value: unknown): number => JSON.stringify(value)?.length ?? 0;
+
+const fileDataChars = (data: string | Uint8Array | URL): number => {
+	if (typeof data === "string") return data.length;
+	if (data instanceof Uint8Array) return data.byteLength;
+	return data.toString().length;
+};
+
 const messageChars = (message: Prompt.Message): number => {
 	if (typeof message.content === "string") {
 		return message.content.length;
@@ -20,12 +28,26 @@ const messageChars = (message: Prompt.Message): number => {
 
 	let chars = 0;
 	for (const part of message.content) {
-		if (part.type === "text") {
-			chars += part.text.length;
-		} else if (part.type === "tool-call") {
-			chars += part.name.length + JSON.stringify(part.params).length;
-		} else if (part.type === "tool-result") {
-			chars += JSON.stringify(part.result).length;
+		switch (part.type) {
+			case "text":
+			case "reasoning":
+				chars += part.text.length;
+				break;
+			case "file":
+				chars += part.mediaType.length + (part.fileName?.length ?? 0) + fileDataChars(part.data);
+				break;
+			case "tool-call":
+				chars += part.id.length + part.name.length + jsonChars(part.params);
+				break;
+			case "tool-result":
+				chars += part.id.length + part.name.length + jsonChars(part.result);
+				break;
+			case "tool-approval-request":
+				chars += part.approvalId.length + part.toolCallId.length;
+				break;
+			case "tool-approval-response":
+				chars += part.approvalId.length + String(part.approved).length + (part.reason?.length ?? 0);
+				break;
 		}
 	}
 	return chars;
