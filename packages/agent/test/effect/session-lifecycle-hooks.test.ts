@@ -19,16 +19,15 @@
  * deferred follow-on.
  */
 import { it } from "@effect/vitest";
-import { Cause, Effect, Stream } from "effect";
+import { Cause, Effect, Stream, SubscriptionRef } from "effect";
+import { AiError } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
-
 import { NewPrompt } from "../../effect/agent-input.js";
-import { Hooks } from "../../effect/hooks.js";
+import { Hooks, type Hooks as HooksValue } from "../../effect/hooks.js";
 import { Session } from "../../effect/session.js";
 import { recordingHooks } from "../../test-support/recording-hooks.js";
 import { stubLanguageModelStream } from "../../test-support/stub-language-model-stream.js";
 import { stubLanguageModelStreamScripted } from "../../test-support/stub-language-model-stream-scripted.js";
-import { AiError } from "effect/unstable/ai";
 
 const parts = [
 	{ type: "text-start", id: "t1" },
@@ -112,6 +111,45 @@ describe("Session.send lifecycle hooks", () => {
 			// default fills both `onStart` and `onShutdown` without forcing the
 			// consumer to provide a `Hooks` value.
 			yield* Stream.runDrain(session.send("hello"));
+		}).pipe(Effect.provide(stubLanguageModelStream(parts))),
+	);
+
+	it.effect("raw hook defects are isolated at the Session.send boundary", () =>
+		Effect.gen(function* () {
+			const session = yield* Session.empty;
+			const rawHooks: HooksValue = {
+				onStart: () => Effect.die("start exploded"),
+				onAgentEvent: () => Effect.die("event exploded"),
+				onShutdown: () => Effect.die("shutdown exploded"),
+			};
+
+			yield* Stream.runDrain(session.send("hello")).pipe(Effect.provideService(Hooks, rawHooks));
+
+			const snapshot = yield* SubscriptionRef.get(session.state);
+			expect(snapshot.turnCount).toBe(1);
+			expect(snapshot.history.content.some((message) => message.role === "assistant")).toBe(true);
+		}).pipe(Effect.provide(stubLanguageModelStream(parts))),
+	);
+
+	it.effect("synchronously throwing raw hooks are isolated at the Session.send boundary", () =>
+		Effect.gen(function* () {
+			const session = yield* Session.empty;
+			const rawHooks: HooksValue = {
+				onStart: () => {
+					throw new Error("sync start");
+				},
+				onAgentEvent: () => {
+					throw new Error("sync event");
+				},
+				onShutdown: () => {
+					throw new Error("sync shutdown");
+				},
+			};
+
+			yield* Stream.runDrain(session.send("hello")).pipe(Effect.provideService(Hooks, rawHooks));
+
+			const snapshot = yield* SubscriptionRef.get(session.state);
+			expect(snapshot.turnCount).toBe(1);
 		}).pipe(Effect.provide(stubLanguageModelStream(parts))),
 	);
 });

@@ -166,7 +166,7 @@ import {
 	rollbackToLastUserMessage,
 } from "./agent-input.js";
 import { COMPACTION_THRESHOLD, estimateTokens, KEEP_RECENT_TOKENS, splitHistory } from "./compaction.js";
-import { Hooks } from "./hooks.js";
+import { composeHooks, Hooks } from "./hooks.js";
 import { SessionState } from "./session-state.js";
 import { SessionStore } from "./stores/session-store.js";
 
@@ -497,7 +497,7 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 
 						// Observer hooks — read once per send. `Hooks` is a `Context.Reference`
 						// with a no-op default, so this never adds to `send`'s `R` channel.
-						const hooks = yield* Hooks;
+						const hooks = composeHooks(yield* Hooks);
 
 						// Lifecycle hook: fired at stream open with the normalised input.
 						// Observer-only — host code records turn metadata or pre-flight side
@@ -543,6 +543,11 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 							return SessionState.advance(s, nextHistory);
 						});
 						const postInput = yield* SubscriptionRef.get(state);
+
+						// Persist the turn bump before compaction opens its summary call.
+						// If summary generation fails, durable sessions still reload the
+						// accepted user turn instead of losing the partial turn entirely.
+						yield* options.persist(postInput);
 
 						// 1. COMPACTION CHECK — runs AFTER the input-variant update on the
 						//    post-input history. When that history has grown past
@@ -591,12 +596,13 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 
 						const snapshot = yield* SubscriptionRef.get(state);
 
-						// 1a. Persist the post-bump snapshot so `Session.durable` reloads
-						//     the latest turnCount + history. Runs once per send, before
-						//     the upstream opens — a failed send still persists the
-						//     turnCount bump. For `Session.empty` / `Session.make` this is
-						//     a no-op (`persist: () => Effect.void`).
-						yield* options.persist(snapshot);
+						// 1a. Persist the post-compaction snapshot only when compaction
+						//     succeeded and changed state. The pre-compaction post-input
+						//     snapshot was already persisted above so compaction failures
+						//     preserve durable partial-turn state.
+						if (compactionEvent !== undefined) {
+							yield* options.persist(snapshot);
+						}
 
 						// 1b. Per-send attempt counter. Lives in the outer Effect.gen so the
 						//     Stream.retry re-runs of the inner Effect.gen below all share it —
