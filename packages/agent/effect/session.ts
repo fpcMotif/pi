@@ -168,6 +168,7 @@ import { COMPACTION_THRESHOLD, estimateTokens, KEEP_RECENT_TOKENS, splitHistory 
 import { Hooks } from "./hooks.js";
 import { SessionState } from "./session-state.js";
 import { SessionStore } from "./stores/session-store.js";
+import { hasStringProperty, isRecord } from "./type-guards.js";
 
 /**
  * Instruction appended after the to-summarise history slice when compaction
@@ -214,13 +215,6 @@ interface MakeOptions {
 	readonly initialState: SessionState;
 	readonly persist: (state: SessionState) => Effect.Effect<void, AgentError>;
 }
-
-const isRecord = (value: unknown): value is Record<PropertyKey, unknown> => typeof value === "object" && value !== null;
-
-const hasStringProperty = <Key extends PropertyKey>(
-	value: Record<PropertyKey, unknown>,
-	key: Key,
-): value is Record<Key, string> & Record<PropertyKey, unknown> => typeof value[key] === "string";
 
 /**
  * Lift one upstream `Response.AnyPart` into the pi `AgentEvent` view. Every
