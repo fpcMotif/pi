@@ -20,7 +20,6 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import nodePath from "node:path";
 
 import {
 	applyEditsToNormalizedContent,
@@ -31,6 +30,7 @@ import {
 	restoreLineEndings,
 	stripBom,
 } from "./edit-diff.js";
+import { resolvePath } from "./path-resolution.js";
 
 /**
  * Service for the IO operations `edit` needs. Default `Live` implementation
@@ -128,9 +128,6 @@ export const Edit = Tool.make("Edit", {
 });
 
 export const EditToolkit = Toolkit.make(Edit);
-
-const resolvePath = (cwd: string, input: string): string =>
-	nodePath.isAbsolute(input) ? input : nodePath.resolve(cwd, input);
 
 /**
  * Build the `Edit` handler bound to a specific `cwd`. The handler reads and

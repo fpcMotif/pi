@@ -29,6 +29,7 @@ import { existsSync } from "node:fs";
 import nodePath from "node:path";
 import { createInterface } from "node:readline";
 
+import { resolvePath } from "./path-resolution.js";
 import { DEFAULT_MAX_BYTES, formatSize, truncateHead } from "./truncate.js";
 
 const DEFAULT_LIMIT = 1000;
@@ -188,9 +189,6 @@ export const Find = Tool.make("Find", {
 });
 
 export const FindToolkit = Toolkit.make(Find);
-
-const resolvePath = (cwd: string, input: string | undefined): string =>
-	input === undefined || input === "" ? cwd : nodePath.isAbsolute(input) ? input : nodePath.resolve(cwd, input);
 
 const toPosixPath = (value: string): string => value.split(nodePath.sep).join("/");
 

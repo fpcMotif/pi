@@ -16,7 +16,8 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { existsSync, readdirSync, statSync } from "node:fs";
-import nodePath from "node:path";
+
+import { resolvePath } from "./path-resolution.js";
 
 const DEFAULT_LIMIT = 500;
 
@@ -90,13 +91,6 @@ export const Ls = Tool.make("Ls", {
  * Use this as `Effect.provide(LsToolkitLayer)` when wiring a Session.
  */
 export const LsToolkit = Toolkit.make(Ls);
-
-/**
- * Resolve a user-provided (possibly relative) `path` argument against the
- * working directory. `undefined` defaults to cwd.
- */
-const resolvePath = (cwd: string, input: string | undefined): string =>
-	input === undefined || input === "" ? cwd : nodePath.isAbsolute(input) ? input : nodePath.resolve(cwd, input);
 
 /**
  * Build the `Ls` handler bound to a specific `cwd`. The handler reads via

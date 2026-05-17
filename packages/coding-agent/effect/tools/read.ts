@@ -14,7 +14,8 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import nodePath from "node:path";
+
+import { resolvePath } from "./path-resolution.js";
 
 /**
  * Service for the IO operations `read` needs. Default `Live` implementation
@@ -93,9 +94,6 @@ export const Read = Tool.make("Read", {
 });
 
 export const ReadToolkit = Toolkit.make(Read);
-
-const resolvePath = (cwd: string, input: string): string =>
-	nodePath.isAbsolute(input) ? input : nodePath.resolve(cwd, input);
 
 const sliceLines = (
 	content: string,

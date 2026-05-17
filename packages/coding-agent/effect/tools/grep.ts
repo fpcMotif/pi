@@ -24,8 +24,10 @@ import { readFileSync, statSync } from "node:fs";
 import nodePath from "node:path";
 import { createInterface } from "node:readline";
 
-import { DEFAULT_MAX_BYTES, formatSize, GREP_MAX_LINE_LENGTH, truncateHead, truncateLine } from "./truncate.js";
 import { Tool, Toolkit } from "effect/unstable/ai";
+
+import { resolvePath } from "./path-resolution.js";
+import { DEFAULT_MAX_BYTES, formatSize, GREP_MAX_LINE_LENGTH, truncateHead, truncateLine } from "./truncate.js";
 
 const DEFAULT_LIMIT = 100;
 
@@ -217,9 +219,6 @@ export const Grep = Tool.make("Grep", {
 });
 
 export const GrepToolkit = Toolkit.make(Grep);
-
-const resolvePath = (cwd: string, input: string | undefined): string =>
-	input === undefined || input === "" ? cwd : nodePath.isAbsolute(input) ? input : nodePath.resolve(cwd, input);
 
 /** Relativise a hit's path against the search root (dir search) or fall back to its basename (file search). */
 const formatPath = (isDirectory: boolean, searchPath: string, filePath: string): string => {
