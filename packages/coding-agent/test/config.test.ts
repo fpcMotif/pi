@@ -368,13 +368,16 @@ describe("detectInstallMethod", () => {
 		});
 	});
 
-	test.skipIf(process.platform === "win32")("does not self-update when npm install path is not writable", () => {
-		const { packageDir } = createNpmPrefixInstall();
-		chmodSync(packageDir, 0o500);
+	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+		"does not self-update when npm install path is not writable",
+		() => {
+			const { packageDir } = createNpmPrefixInstall();
+			chmodSync(packageDir, 0o500);
 
-		expect(getSelfUpdateCommand("@earendil-works/pi-coding-agent")).toBeUndefined();
-		expect(getSelfUpdateUnavailableInstruction("@earendil-works/pi-coding-agent")).toContain(
-			"the install path is not writable",
-		);
-	});
+			expect(getSelfUpdateCommand("@earendil-works/pi-coding-agent")).toBeUndefined();
+			expect(getSelfUpdateUnavailableInstruction("@earendil-works/pi-coding-agent")).toContain(
+				"the install path is not writable",
+			);
+		},
+	);
 });
