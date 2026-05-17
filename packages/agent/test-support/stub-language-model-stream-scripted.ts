@@ -2,7 +2,10 @@ import { Effect, Layer, Stream } from "effect";
 import type { AiError } from "effect/unstable/ai";
 import { LanguageModel } from "effect/unstable/ai";
 
+import { notImplemented } from "./_not-implemented.js";
 import { makeScriptedCursor } from "./scripted-cursor.js";
+
+const OWNER = "stubLanguageModelStreamScripted";
 
 /**
  * One step in a scripted streaming session. A `parts` step has the stream emit
@@ -35,9 +38,8 @@ export const stubLanguageModelStreamScripted = (script: ReadonlyArray<StubStream
 		Effect.gen(function* () {
 			const cursor = yield* makeScriptedCursor;
 			return LanguageModel.LanguageModel.of({
-				generateText: (() => Effect.die("stubLanguageModelStreamScripted: generateText not implemented")) as never,
-				generateObject: (() =>
-					Effect.die("stubLanguageModelStreamScripted: generateObject not implemented")) as never,
+				generateText: (() => notImplemented(OWNER, "generateText")) as never,
+				generateObject: (() => notImplemented(OWNER, "generateObject")) as never,
 				streamText: ((..._args: ReadonlyArray<unknown>) => {
 					// Pull the call index synchronously off the Ref inside the stream so each
 					// invocation of `streamText` consumes exactly one step. The stream factory

@@ -1,5 +1,9 @@
-import { Effect, Layer, Stream } from "effect";
+import { Layer, Stream } from "effect";
 import { LanguageModel } from "effect/unstable/ai";
+
+import { notImplemented } from "./_not-implemented.js";
+
+const OWNER = "stubLanguageModelStream";
 
 /**
  * A Layer providing {@link LanguageModel.LanguageModel} with a `streamText`
@@ -18,8 +22,8 @@ export const stubLanguageModelStream = (parts: ReadonlyArray<unknown>) =>
 	Layer.succeed(
 		LanguageModel.LanguageModel,
 		LanguageModel.LanguageModel.of({
-			generateText: (() => Effect.die("stubLanguageModelStream: generateText not implemented")) as never,
-			generateObject: (() => Effect.die("stubLanguageModelStream: generateObject not implemented")) as never,
+			generateText: (() => notImplemented(OWNER, "generateText")) as never,
+			generateObject: (() => notImplemented(OWNER, "generateObject")) as never,
 			streamText: (() => Stream.fromIterable(parts)) as never,
 		}),
 	);

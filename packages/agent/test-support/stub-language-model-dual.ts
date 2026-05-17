@@ -1,6 +1,10 @@
 import { Effect, Layer, Stream } from "effect";
 import { AiError, LanguageModel, Response } from "effect/unstable/ai";
 
+import { notImplemented } from "./_not-implemented.js";
+
+const OWNER = "stubLanguageModelDual";
+
 export interface StubLanguageModelDualOptions {
 	/** Canned text returned by `generateText` (the compaction summary call). */
 	readonly summaryText?: string;
@@ -44,7 +48,7 @@ export const stubLanguageModelDual = (options: StubLanguageModelDualOptions) =>
 						Response.makePart("text", { text: options.summaryText ?? "" }),
 					]);
 				})) as never,
-			generateObject: (() => Effect.die("stubLanguageModelDual: generateObject not implemented")) as never,
+			generateObject: (() => notImplemented(OWNER, "generateObject")) as never,
 			streamText: (() => Stream.fromIterable(options.streamParts)) as never,
 		}),
 	);

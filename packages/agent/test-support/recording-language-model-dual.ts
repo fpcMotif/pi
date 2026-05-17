@@ -1,6 +1,10 @@
 import { Effect, Layer, Stream } from "effect";
 import { LanguageModel, Response } from "effect/unstable/ai";
 
+import { notImplemented } from "./_not-implemented.js";
+
+const OWNER = "recordingLanguageModelDual";
+
 export interface RecordingLanguageModelDual {
 	/** Layer providing the recording `LanguageModel`. */
 	readonly layer: Layer.Layer<LanguageModel.LanguageModel>;
@@ -41,7 +45,7 @@ export const recordingLanguageModelDual = (options: RecordingLanguageModelDualOp
 					new LanguageModel.GenerateTextResponse([Response.makePart("text", { text: options.summaryText ?? "" })]),
 				);
 			}) as never,
-			generateObject: (() => Effect.die("recordingLanguageModelDual: generateObject not implemented")) as never,
+			generateObject: (() => notImplemented(OWNER, "generateObject")) as never,
 			streamText: ((opts: Record<string, unknown>) => {
 				calls.push(opts);
 				return Stream.fromIterable(options.streamParts);

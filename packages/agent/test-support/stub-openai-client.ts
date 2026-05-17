@@ -5,6 +5,10 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import * as HttpClientRequest from "effect/unstable/http/HttpClientRequest";
 import * as HttpClientResponse from "effect/unstable/http/HttpClientResponse";
 
+import { notImplemented } from "./_not-implemented.js";
+
+const OWNER = "stub OpenAiClient";
+
 export type StubOutputItem =
 	| { readonly type: "text"; readonly text: string }
 	| {
@@ -37,18 +41,15 @@ const stubRequest = HttpClientRequest.post("https://stub.openai.invalid/v1/respo
 export const makeStubHttpResponse = (): HttpClientResponse.HttpClientResponse =>
 	HttpClientResponse.fromWeb(stubRequest, new globalThis.Response(null, { status: 200 }));
 
-export const stubHttpClient = HttpClient.make(() =>
-	Effect.die("stub OpenAiClient: raw HTTP client is not implemented"),
-);
+export const stubHttpClient = HttpClient.make(() => notImplemented(OWNER, "raw HTTP client"));
 
-export const notImplementedCreateResponse: OpenAiClient.Service["createResponse"] = () =>
-	Effect.die("stub OpenAiClient: createResponse is not implemented");
-
-export const notImplementedCreateResponseStream: OpenAiClient.Service["createResponseStream"] = () =>
-	Effect.die("stub OpenAiClient: createResponseStream is not implemented");
-
-export const notImplementedCreateEmbedding: OpenAiClient.Service["createEmbedding"] = () =>
-	Effect.die("stub OpenAiClient: createEmbedding is not implemented");
+// Single-method stubs that intentionally die on every other method. Kept
+// internal because every external caller goes through `makeStubOpenAiClient` —
+// new test slices that need a different method override pass it as an option.
+const dieCreateResponse: OpenAiClient.Service["createResponse"] = () => notImplemented(OWNER, "createResponse");
+const dieCreateResponseStream: OpenAiClient.Service["createResponseStream"] = () =>
+	notImplemented(OWNER, "createResponseStream");
+const dieCreateEmbedding: OpenAiClient.Service["createEmbedding"] = () => notImplemented(OWNER, "createEmbedding");
 
 export interface StubOpenAiClientOverrides {
 	readonly createResponse?: OpenAiClient.Service["createResponse"];
@@ -59,9 +60,9 @@ export interface StubOpenAiClientOverrides {
 export const makeStubOpenAiClient = (overrides: StubOpenAiClientOverrides = {}): OpenAiClient.Service =>
 	OpenAiClient.OpenAiClient.of({
 		client: stubHttpClient,
-		createResponse: overrides.createResponse ?? notImplementedCreateResponse,
-		createResponseStream: overrides.createResponseStream ?? notImplementedCreateResponseStream,
-		createEmbedding: overrides.createEmbedding ?? notImplementedCreateEmbedding,
+		createResponse: overrides.createResponse ?? dieCreateResponse,
+		createResponseStream: overrides.createResponseStream ?? dieCreateResponseStream,
+		createEmbedding: overrides.createEmbedding ?? dieCreateEmbedding,
 	});
 
 export const succeedOpenAiResponse = (
