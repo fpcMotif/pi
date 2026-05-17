@@ -1,5 +1,6 @@
 // NEVER convert to top-level imports - breaks browser/Vite builds (web-ui)
 let _existsSync: typeof import("node:fs").existsSync | null = null;
+let _readFileSync: typeof import("node:fs").readFileSync | null = null;
 let _homedir: typeof import("node:os").homedir | null = null;
 let _join: typeof import("node:path").join | null = null;
 
@@ -14,6 +15,7 @@ const NODE_PATH_SPECIFIER = "node:" + "path";
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 	dynamicImport(NODE_FS_SPECIFIER).then((m) => {
 		_existsSync = (m as typeof import("node:fs")).existsSync;
+		_readFileSync = (m as typeof import("node:fs")).readFileSync;
 	});
 	dynamicImport(NODE_OS_SPECIFIER).then((m) => {
 		_homedir = (m as typeof import("node:os")).homedir;
@@ -41,17 +43,22 @@ function getProcEnv(key: string): string | undefined {
 
 	if (_procEnvCache === null) {
 		_procEnvCache = new Map();
-		try {
-			const { readFileSync } = require("node:fs") as typeof import("node:fs");
-			const data = readFileSync("/proc/self/environ", "utf-8");
-			for (const entry of data.split("\0")) {
-				const idx = entry.indexOf("=");
-				if (idx > 0) {
-					_procEnvCache.set(entry.slice(0, idx), entry.slice(idx + 1));
+		// _readFileSync is populated by the same eager dynamicImport that
+		// loads _existsSync at module init; if it hasn't landed yet, fall
+		// through (the cache stays empty for this call and the next caller
+		// retries once the async import resolves).
+		if (_readFileSync) {
+			try {
+				const data = _readFileSync("/proc/self/environ", "utf-8") as string;
+				for (const entry of data.split("\0")) {
+					const idx = entry.indexOf("=");
+					if (idx > 0) {
+						_procEnvCache.set(entry.slice(0, idx), entry.slice(idx + 1));
+					}
 				}
+			} catch {
+				// /proc/self/environ may not be readable.
 			}
-		} catch {
-			// /proc/self/environ may not be readable.
 		}
 	}
 
