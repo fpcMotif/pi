@@ -1,5 +1,5 @@
 import { it } from "@effect/vitest";
-import { Effect, Layer, Option } from "effect";
+import { Deferred, Duration, Effect, Fiber, Layer, Option, Ref } from "effect";
 import { Prompt } from "effect/unstable/ai";
 import { KeyValueStore } from "effect/unstable/persistence";
 import { describe, expect } from "vitest";
@@ -43,6 +43,61 @@ const makeSharedKeyValueStoreLayer = (): Layer.Layer<KeyValueStore.KeyValueStore
 			Effect.sync(() => {
 				values.set(key, value);
 			}),
+		remove: (key) =>
+			Effect.sync(() => {
+				values.delete(key);
+			}),
+		clear: Effect.sync(() => {
+			values.clear();
+		}),
+		size: Effect.sync(() => values.size),
+	});
+
+	return Layer.succeed(KeyValueStore.KeyValueStore)(kv);
+};
+
+const makeIndexSetBlockingKeyValueStoreLayer = (
+	events: Ref.Ref<ReadonlyArray<string>>,
+	firstIndexSetStarted: Deferred.Deferred<void>,
+	releaseFirstIndexSet: Deferred.Deferred<void>,
+): Layer.Layer<KeyValueStore.KeyValueStore> => {
+	const values = new Map<string, string | Uint8Array>();
+	const encoder = new TextEncoder();
+	const decoder = new TextDecoder();
+	let blockedFirstIndexSet = false;
+
+	const kv = KeyValueStore.make({
+		get: (key) =>
+			Effect.sync(() => {
+				const value = values.get(key);
+				if (value === undefined) return undefined;
+				return typeof value === "string" ? value : decoder.decode(value);
+			}).pipe(
+				Effect.tap(() =>
+					key === "indexes/sessions" ? Ref.update(events, (current) => [...current, "index-get"]) : Effect.void,
+				),
+			),
+		getUint8Array: (key) =>
+			Effect.sync(() => {
+				const value = values.get(key);
+				if (value === undefined) return undefined;
+				return typeof value === "string" ? encoder.encode(value) : value;
+			}),
+		set: (key, value) =>
+			key === "indexes/sessions"
+				? Effect.gen(function* () {
+						yield* Ref.update(events, (current) => [...current, "index-set-start"]);
+						if (!blockedFirstIndexSet) {
+							blockedFirstIndexSet = true;
+							yield* Deferred.succeed(firstIndexSetStarted, undefined);
+							yield* Deferred.await(releaseFirstIndexSet);
+						}
+						values.set(key, value);
+						yield* Ref.update(events, (current) => [...current, "index-set-end"]);
+					})
+				: Effect.sync(() => {
+						values.set(key, value);
+					}),
 		remove: (key) =>
 			Effect.sync(() => {
 				values.delete(key);
@@ -132,6 +187,54 @@ describe("SessionStore (KV-backed layer with index)", () => {
 			}).pipe(Effect.provide(sessionLayer));
 
 			expect(turnCount).toBe(5);
+		}),
+	);
+
+	it.effect("concurrent saves cannot lose an id from the KV index", () =>
+		Effect.gen(function* () {
+			const events = yield* Ref.make<ReadonlyArray<string>>([]);
+			const firstIndexSetStarted = yield* Deferred.make<void>();
+			const releaseFirstIndexSet = yield* Deferred.make<void>();
+			const sessionLayer = layerKeyValueStore.pipe(
+				Layer.provide(makeIndexSetBlockingKeyValueStoreLayer(events, firstIndexSetStarted, releaseFirstIndexSet)),
+			);
+
+			const first = yield* Effect.forkChild(
+				Effect.gen(function* () {
+					const store = yield* SessionStore;
+					yield* store.save("s1", makeSessionState({ turnCount: 1 }));
+				}).pipe(Effect.provide(sessionLayer)),
+			);
+			yield* Deferred.await(firstIndexSetStarted);
+
+			const second = yield* Effect.forkChild(
+				Effect.gen(function* () {
+					const store = yield* SessionStore;
+					yield* store.save("s2", makeSessionState({ turnCount: 2 }));
+				}).pipe(Effect.provide(sessionLayer)),
+			);
+			yield* Effect.yieldNow;
+
+			expect(yield* Ref.get(events)).toEqual(["index-get", "index-set-start"]);
+
+			yield* Deferred.succeed(releaseFirstIndexSet, undefined);
+			yield* Effect.all([Fiber.join(first), Fiber.join(second)]).pipe(Effect.timeout(Duration.seconds(2)));
+
+			const ids = yield* Effect.gen(function* () {
+				const store = yield* SessionStore;
+				return yield* store.list;
+			}).pipe(Effect.provide(sessionLayer));
+
+			expect(new Set(ids)).toEqual(new Set(["s1", "s2"]));
+			expect(yield* Ref.get(events)).toEqual([
+				"index-get",
+				"index-set-start",
+				"index-set-end",
+				"index-get",
+				"index-set-start",
+				"index-set-end",
+				"index-get",
+			]);
 		}),
 	);
 });
