@@ -16,6 +16,8 @@ import { Tool, Toolkit } from "effect/unstable/ai";
 import { mkdirSync, writeFileSync } from "node:fs";
 import nodePath from "node:path";
 
+import { resolveToolPath } from "./path-utils.js";
+
 /**
  * Service for the IO operations `write` needs. Default `Live` writes to the
  * local Node filesystem; tests provide a stub `Layer` recording invocations.
@@ -80,9 +82,6 @@ export const Write = Tool.make("Write", {
 
 export const WriteToolkit = Toolkit.make(Write);
 
-const resolvePath = (cwd: string, input: string): string =>
-	nodePath.isAbsolute(input) ? input : nodePath.resolve(cwd, input);
-
 const utf8ByteLength = (s: string): number => Buffer.byteLength(s, "utf-8");
 
 /**
@@ -92,7 +91,7 @@ const utf8ByteLength = (s: string): number => Buffer.byteLength(s, "utf-8");
 export const writeHandler = (cwd: string) =>
 	Effect.fn("write")(function* (params: typeof WriteParameters.Type) {
 		const ops = yield* WriteOperations;
-		const target = resolvePath(cwd, params.path);
+		const target = resolveToolPath(cwd, params.path);
 		const parentDir = nodePath.dirname(target);
 
 		yield* ops.mkdirRecursive(parentDir).pipe(

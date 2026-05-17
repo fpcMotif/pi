@@ -14,7 +14,8 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import nodePath from "node:path";
+
+import { resolveToolPath } from "./path-utils.js";
 
 /**
  * Service for the IO operations `read` needs. Default `Live` implementation
@@ -94,9 +95,6 @@ export const Read = Tool.make("Read", {
 
 export const ReadToolkit = Toolkit.make(Read);
 
-const resolvePath = (cwd: string, input: string): string =>
-	nodePath.isAbsolute(input) ? input : nodePath.resolve(cwd, input);
-
 const sliceLines = (
 	content: string,
 	rawOffset: number | undefined,
@@ -120,7 +118,7 @@ const sliceLines = (
 export const readHandler = (cwd: string) =>
 	Effect.fn("read")(function* (params: typeof ReadParameters.Type) {
 		const ops = yield* ReadOperations;
-		const target = resolvePath(cwd, params.path);
+		const target = resolveToolPath(cwd, params.path);
 
 		const exists = yield* ops.exists(target);
 		if (!exists) {
