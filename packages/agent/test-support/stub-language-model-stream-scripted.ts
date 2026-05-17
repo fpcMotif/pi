@@ -2,6 +2,8 @@ import { Effect, Layer, Ref, Stream } from "effect";
 import type { AiError } from "effect/unstable/ai";
 import { LanguageModel } from "effect/unstable/ai";
 
+import { advanceScript } from "./script-runner.js";
+
 /**
  * One step in a scripted streaming session. A `parts` step has the stream emit
  * the canned `Response.StreamPart`-shaped sequence on that call; an `error`
@@ -42,13 +44,7 @@ export const stubLanguageModelStreamScripted = (script: ReadonlyArray<StubStream
 					// itself is pure; the Ref read is what advances the script.
 					return Stream.unwrap(
 						Effect.gen(function* () {
-							const i = yield* Ref.getAndUpdate(callIndex, (n) => n + 1);
-							const step = script[i];
-							if (!step) {
-								return Stream.die(
-									`stubLanguageModelStreamScripted: no scripted response for call ${i} (script length: ${script.length})`,
-								);
-							}
+							const { step } = yield* advanceScript(callIndex, script, "stubLanguageModelStreamScripted");
 							if (step.type === "error") {
 								return Stream.fail(step.error);
 							}

@@ -2,6 +2,7 @@ import { OpenAiClient } from "@effect/ai-openai";
 import { Effect, Layer, Ref } from "effect";
 import type { AiError } from "effect/unstable/ai";
 
+import { advanceScript } from "./script-runner.js";
 import {
 	buildOpenAiOutput,
 	notImplementedCreateEmbedding,
@@ -36,18 +37,12 @@ export const stubOpenAiClientScripted = (script: ReadonlyArray<StubScriptStep>) 
 				client: stubHttpClient,
 				createResponse: () =>
 					Effect.gen(function* () {
-						const i = yield* Ref.getAndUpdate(callIndex, (n) => n + 1);
-						const step = script[i];
-						if (!step) {
-							return yield* Effect.die(
-								`stubOpenAiClientScripted: no scripted response for call ${i} (script length: ${script.length})`,
-							);
-						}
+						const { step, index } = yield* advanceScript(callIndex, script, "stubOpenAiClientScripted");
 						if (step.type === "error") {
 							return yield* Effect.fail(step.error);
 						}
 						const cannedBody: StubOpenAiResponse = {
-							id: step.responseId ?? `resp_stub_${i}`,
+							id: step.responseId ?? `resp_stub_${index}`,
 							created_at: 0,
 							model: step.model ?? "stub-model",
 							output: step.outputs.map(buildOpenAiOutput),
