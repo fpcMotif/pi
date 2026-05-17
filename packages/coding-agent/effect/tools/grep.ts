@@ -25,6 +25,7 @@ import nodePath from "node:path";
 import { createInterface } from "node:readline";
 
 import { DEFAULT_MAX_BYTES, formatSize, GREP_MAX_LINE_LENGTH, truncateHead, truncateLine } from "./truncate.js";
+import { resolveOptionalToolPath } from "./path-utils.js";
 import { Tool, Toolkit } from "effect/unstable/ai";
 
 const DEFAULT_LIMIT = 100;
@@ -218,9 +219,6 @@ export const Grep = Tool.make("Grep", {
 
 export const GrepToolkit = Toolkit.make(Grep);
 
-const resolvePath = (cwd: string, input: string | undefined): string =>
-	input === undefined || input === "" ? cwd : nodePath.isAbsolute(input) ? input : nodePath.resolve(cwd, input);
-
 /** Relativise a hit's path against the search root (dir search) or fall back to its basename (file search). */
 const formatPath = (isDirectory: boolean, searchPath: string, filePath: string): string => {
 	if (isDirectory) {
@@ -243,7 +241,7 @@ const toLines = (content: string): ReadonlyArray<string> =>
  */
 export const grepHandler = (cwd: string) =>
 	Effect.fn("grep")(function* (params: typeof GrepParameters.Type) {
-		const searchPath = resolvePath(cwd, params.path);
+		const searchPath = resolveOptionalToolPath(cwd, params.path);
 		const ops = yield* GrepOperations;
 
 		const isDirectory = yield* ops

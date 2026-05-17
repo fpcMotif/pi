@@ -60,6 +60,10 @@ const FlakyTool = Tool.make("FlakyTool", {
 
 const FlakyToolkit = Toolkit.make(FlakyTool);
 
+const FlakyHandlers = FlakyToolkit.toLayer({
+	FlakyTool: () => Effect.succeed({ ok: true }),
+});
+
 describe("Session.send lifts tool-call / tool-result parts into ToolDispatched / ToolCompleted", () => {
 	it.effect(
 		"emits ToolDispatched after LlmPart for a tool-call part, and ToolCompleted after LlmPart for a tool-result part",
@@ -145,16 +149,19 @@ describe("Session.send lifts tool-call / tool-result parts into ToolDispatched /
 			expect(completed?.result).toEqual({ _tag: "ServiceDown", reason: "timeout" });
 		}).pipe(
 			Effect.provide(
-				stubLanguageModelStream([
-					{
-						type: "tool-result",
-						id: "call_x",
-						name: "FlakyTool",
-						isFailure: true,
-						result: { _tag: "ServiceDown", reason: "timeout" },
-						providerExecuted: false,
-					},
-				]),
+				Layer.mergeAll(
+					FlakyHandlers,
+					stubLanguageModelStream([
+						{
+							type: "tool-result",
+							id: "call_x",
+							name: "FlakyTool",
+							isFailure: true,
+							result: { _tag: "ServiceDown", reason: "timeout" },
+							providerExecuted: false,
+						},
+					]),
+				),
 			),
 		),
 	);

@@ -17,7 +17,7 @@
 		"test:coverage": "vitest --run --coverage --no-file-parallelism --maxWorkers=1 --minWorkers=1",
 		"test:coverage:100": "vitest --run --coverage --no-file-parallelism --maxWorkers=1 --minWorkers=1 --coverage.thresholds.lines=100 --coverage.thresholds.branches=100 --coverage.thresholds.functions=100 --coverage.thresholds.statements=100",
 		"test:effect": "vitest --run test/effect",
-		"test:coverage:effect": "vitest --run test/effect --coverage --no-file-parallelism --maxWorkers=1 --minWorkers=1",
+		"test:coverage:effect": "vitest --run test/effect --coverage --coverage.include='effect/**/*.ts' --no-file-parallelism --maxWorkers=1 --minWorkers=1",
 		"check:effect": "tsgo -p tsconfig.build.json --noEmit",
 		"lint:effect": "oxlint test-support test/effect",
 		"fmt:effect": "oxfmt test-support test/effect CONTEXT.md",

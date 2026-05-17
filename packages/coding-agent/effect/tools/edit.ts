@@ -20,7 +20,6 @@
 import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import nodePath from "node:path";
 
 import {
 	applyEditsToNormalizedContent,
@@ -31,6 +30,7 @@ import {
 	restoreLineEndings,
 	stripBom,
 } from "./edit-diff.js";
+import { resolveToolPath } from "./path-utils.js";
 
 /**
  * Service for the IO operations `edit` needs. Default `Live` implementation
@@ -129,9 +129,6 @@ export const Edit = Tool.make("Edit", {
 
 export const EditToolkit = Toolkit.make(Edit);
 
-const resolvePath = (cwd: string, input: string): string =>
-	nodePath.isAbsolute(input) ? input : nodePath.resolve(cwd, input);
-
 /**
  * Build the `Edit` handler bound to a specific `cwd`. The handler reads and
  * writes via `EditOperations` from context, so test Layers can stub the
@@ -139,7 +136,7 @@ const resolvePath = (cwd: string, input: string): string =>
  */
 export const editHandler = (cwd: string) =>
 	Effect.fn("edit")(function* (params: typeof EditParameters.Type) {
-		const target = resolvePath(cwd, params.path);
+		const target = resolveToolPath(cwd, params.path);
 
 		if (params.edits.length === 0) {
 			return yield* new EditError({

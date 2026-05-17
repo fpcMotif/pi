@@ -1,12 +1,11 @@
 import { OpenAiClient } from "@effect/ai-openai";
-import { Effect, Layer, Ref } from "effect";
+import { Effect, Layer } from "effect";
 import type { AiError } from "effect/unstable/ai";
 
+import { makeScriptedCursor } from "./scripted-cursor.js";
 import {
 	buildOpenAiOutput,
-	notImplementedCreateEmbedding,
-	notImplementedCreateResponseStream,
-	stubHttpClient,
+	makeStubOpenAiClient,
 	succeedOpenAiResponse,
 	type StubOpenAiResponse,
 	type StubOutputItem,
@@ -31,12 +30,11 @@ export const stubOpenAiClientScripted = (script: ReadonlyArray<StubScriptStep>) 
 	Layer.effect(
 		OpenAiClient.OpenAiClient,
 		Effect.gen(function* () {
-			const callIndex = yield* Ref.make(0);
-			return OpenAiClient.OpenAiClient.of({
-				client: stubHttpClient,
+			const cursor = yield* makeScriptedCursor;
+			return makeStubOpenAiClient({
 				createResponse: () =>
 					Effect.gen(function* () {
-						const i = yield* Ref.getAndUpdate(callIndex, (n) => n + 1);
+						const i = yield* cursor.next;
 						const step = script[i];
 						if (!step) {
 							return yield* Effect.die(
@@ -54,8 +52,6 @@ export const stubOpenAiClientScripted = (script: ReadonlyArray<StubScriptStep>) 
 						};
 						return yield* succeedOpenAiResponse(cannedBody);
 					}),
-				createResponseStream: notImplementedCreateResponseStream,
-				createEmbedding: notImplementedCreateEmbedding,
 			});
 		}),
 	);
