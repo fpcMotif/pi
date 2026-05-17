@@ -31,6 +31,12 @@ function initGitRepo(repoDir: string): void {
 	git(["init", "--initial-branch=main"], repoDir);
 	git(["config", "--local", "user.email", "test@test.com"], repoDir);
 	git(["config", "--local", "user.name", "Test"], repoDir);
+	// Disable commit signing / gpg / ssh program inheritance so tests work in
+	// environments that configure signing globally (the global config's
+	// `commit.gpgsign=true` would otherwise call into an unrelated signing
+	// service and fail).
+	git(["config", "--local", "commit.gpgsign", "false"], repoDir);
+	git(["config", "--local", "tag.gpgsign", "false"], repoDir);
 }
 
 // Helper to create a commit with a file
