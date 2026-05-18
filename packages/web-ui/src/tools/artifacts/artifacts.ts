@@ -247,6 +247,7 @@ export class ArtifactsPanel extends LitElement {
 		// Ensure the active element is in the DOM
 		requestAnimationFrame(() => {
 			this.artifactElements.forEach((element, name) => {
+				/* v8 ignore next 3 -- defensive: elements are appended in getOrCreateArtifactElement; this rAF branch re-attaches them only after a disconnect+reconnect cycle that's hard to time deterministically in jsdom. */
 				if (this.contentRef.value && !element.parentElement) {
 					this.contentRef.value.appendChild(element);
 				}
@@ -383,6 +384,7 @@ export class ArtifactsPanel extends LitElement {
 					finalArtifacts.delete(filename);
 					break;
 				}
+				/* v8 ignore next 4 -- defensive: get/logs entries are filtered out earlier by the `continue` at line 351 before they reach this switch. */
 				case "get":
 				case "logs":
 					// Ignored above, just for completeness
@@ -444,6 +446,7 @@ export class ArtifactsPanel extends LitElement {
 	// Wait for HTML artifact execution and get logs
 	private async waitForHtmlExecution(filename: string): Promise<string> {
 		const element = this.artifactElements.get(filename);
+		/* v8 ignore next 3 -- defensive: callers gate on getFileType === "html", so the registered element is always HtmlArtifact. */
 		if (!(element instanceof HtmlArtifact)) {
 			return "";
 		}
@@ -492,6 +495,7 @@ export class ArtifactsPanel extends LitElement {
 		if (!result.ok) return formatArtifactWorkspaceResult(result);
 
 		// Create or update element
+		/* v8 ignore next -- defensive: workspace.execute rejects create without content via the !result.ok early return above. */
 		this.getOrCreateArtifactElement(params.filename, params.content ?? "");
 		if (!options.silent) {
 			this.showArtifact(params.filename);
@@ -519,6 +523,7 @@ export class ArtifactsPanel extends LitElement {
 		if (!result.ok) return formatArtifactWorkspaceResult(result);
 
 		// Update element
+		/* v8 ignore next -- defensive: when result.ok is true, workspace guarantees artifact is defined with a string content. */
 		this.getOrCreateArtifactElement(params.filename, result.artifact?.content ?? "");
 		if (!options.silent) {
 			this.onArtifactsChange?.();
@@ -543,6 +548,7 @@ export class ArtifactsPanel extends LitElement {
 		if (!result.ok) return formatArtifactWorkspaceResult(result);
 
 		// Update element
+		/* v8 ignore next -- defensive: when result.ok is true, workspace guarantees artifact is defined with a string content. */
 		this.getOrCreateArtifactElement(params.filename, result.artifact?.content ?? "");
 		if (!options.silent) {
 			this.onArtifactsChange?.();
