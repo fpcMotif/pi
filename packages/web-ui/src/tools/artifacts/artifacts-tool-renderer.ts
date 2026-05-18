@@ -13,6 +13,7 @@ import type { ArtifactsPanel, ArtifactsParams } from "./artifacts.js";
 
 // Helper to extract text from content blocks
 function getTextOutput(result: ToolResultMessage<any> | undefined): string {
+	/* v8 ignore next -- defensive: callers only invoke this inside `result` truthy branches. */
 	if (!result) return "";
 	return (
 		result.content
@@ -106,6 +107,7 @@ export class ArtifactsToolRenderer implements ToolRenderer<ArtifactsParams, unde
 			// For create/update/rewrite errors, show code block + console/error
 			if (command === "create" || command === "update" || command === "rewrite") {
 				const content = params?.content || "";
+				/* v8 ignore next -- defensive: this branch is gated by `command` which derives from `params?.command`, so `params` is non-null here. */
 				const { old_str, new_str } = params || {};
 				const isDiff = command === "update";
 				const diffContent =
