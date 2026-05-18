@@ -9,7 +9,15 @@ vi.mock("highlight.js", () => ({
 	default: { highlight: (code: string) => ({ value: `<HL>${code}</HL>` }) },
 }));
 
-vi.mock("lucide", () => ({ RefreshCw: {} }));
+vi.mock("lucide", () => ({
+	RefreshCw: {},
+	ChevronDown: {},
+	ChevronRight: {},
+	ChevronsDown: {},
+	FileCode2: {},
+	Lock: {},
+	X: {},
+}));
 
 vi.mock("@mariozechner/mini-lit", () => ({
 	icon: () => document.createElement("svg"),

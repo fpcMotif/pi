@@ -1376,6 +1376,7 @@ export function decodeKittyPrintable(data: string): string | undefined {
 
 	try {
 		return String.fromCodePoint(effectiveCodepoint);
+		/* v8 ignore next 3 -- defensive: the guard above clamps the codepoint to [32, +∞), so String.fromCodePoint only throws for values past U+10FFFF which the upstream key decoder doesn't produce. */
 	} catch {
 		return undefined;
 	}
@@ -1390,6 +1391,7 @@ function decodeModifyOtherKeysPrintable(data: string): string | undefined {
 
 	try {
 		return String.fromCodePoint(parsed.codepoint);
+		/* v8 ignore next 3 -- defensive: parsed.codepoint comes from the modifyOtherKeys CSI parser which constrains the value to a printable code point. */
 	} catch {
 		return undefined;
 	}

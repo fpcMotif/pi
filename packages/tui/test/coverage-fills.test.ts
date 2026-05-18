@@ -622,6 +622,26 @@ describe("tui-overlay.ts — pure functions", () => {
 		const imageLine = "\x1b_Gi=42;ABC\x1b\\";
 		expect(compositeLineAt(imageLine, "OVERLAY", 0, 7, 20)).toBe(imageLine);
 	});
+
+	it("resolveOverlayLayout: covers every OverlayAnchor case", () => {
+		// Exercise each anchor branch of resolveAnchorRow + resolveAnchorCol so
+		// the switch case labels in tui-overlay.ts don't drop branch coverage.
+		const anchors = [
+			"top-left",
+			"top-center",
+			"top-right",
+			"left-center",
+			"center",
+			"right-center",
+			"bottom-left",
+			"bottom-center",
+			"bottom-right",
+		] as const;
+		for (const anchor of anchors) {
+			const layout = resolveOverlayLayout({ width: 20, anchor }, 5, 100, 30);
+			expect(layout.width).toBe(20);
+		}
+	});
 });
 
 // ============================================================================

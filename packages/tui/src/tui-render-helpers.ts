@@ -77,6 +77,7 @@ export function deleteChangedKittyImages(
 	const ids = new Set<number>();
 	const maxLine = Math.min(lastChanged, previousLines.length - 1);
 	for (let i = firstChanged; i <= maxLine; i++) {
+		/* v8 ignore next -- defensive: maxLine is clamped to previousLines.length - 1, so the `?? ""` fallback is unreachable. */
 		for (const id of extractKittyImageIds(previousLines[i] ?? "")) {
 			ids.add(id);
 		}
