@@ -30,9 +30,19 @@ import { minimatch } from "minimatch";
 import { CONFIG_DIR_NAME } from "../config.js";
 import { shouldUseWindowsShell } from "../utils/child-process.js";
 import { type GitSource, parseGitUrl } from "../utils/git.js";
-import { canonicalizePath, isLocalPath } from "../utils/paths.js";
+import { isLocalPath } from "../utils/paths.js";
 import { isStdoutTakenOver } from "./output-guard.js";
+import {
+	type PathMetadata,
+	RESOURCE_TYPES,
+	type ResolvedPaths,
+	ResourceCatalog,
+	type ResourceType,
+	type SourceScope,
+} from "./resource-catalog.js";
 import type { PackageSource, SettingsManager } from "./settings-manager.js";
+
+export type { PathMetadata, ResolvedPaths, ResolvedResource, SourceScope } from "./resource-catalog.js";
 
 const NETWORK_TIMEOUT_MS = 10000;
 const UPDATE_CHECK_CONCURRENCY = 4;
@@ -42,26 +52,6 @@ function isOfflineModeEnabled(): boolean {
 	const value = process.env.PI_OFFLINE;
 	if (!value) return false;
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
-}
-
-export interface PathMetadata {
-	source: string;
-	scope: SourceScope;
-	origin: "package" | "top-level";
-	baseDir?: string;
-}
-
-export interface ResolvedResource {
-	path: string;
-	enabled: boolean;
-	metadata: PathMetadata;
-}
-
-export interface ResolvedPaths {
-	extensions: ResolvedResource[];
-	skills: ResolvedResource[];
-	prompts: ResolvedResource[];
-	themes: ResolvedResource[];
 }
 
 export type MissingSourceAction = "install" | "skip" | "error";
@@ -113,8 +103,6 @@ interface PackageManagerOptions {
 	settingsManager: SettingsManager;
 }
 
-type SourceScope = "user" | "project" | "temporary";
-
 type NpmSource = {
 	type: "npm";
 	spec: string;
@@ -151,30 +139,7 @@ interface PiManifest {
 	themes?: string[];
 }
 
-interface ResourceAccumulator {
-	extensions: Map<string, { metadata: PathMetadata; enabled: boolean }>;
-	skills: Map<string, { metadata: PathMetadata; enabled: boolean }>;
-	prompts: Map<string, { metadata: PathMetadata; enabled: boolean }>;
-	themes: Map<string, { metadata: PathMetadata; enabled: boolean }>;
-}
-
-/**
- * Compute a numeric precedence rank for a resource based on its metadata.
- * Lower rank = higher precedence. Used to sort resolved resources so that
- * name-collision resolution ("first wins") produces the correct outcome.
- *
- * Precedence (highest to lowest):
- *   0  project + settings entry (source: "local", scope: "project")
- *   1  project + auto-discovered (source: "auto", scope: "project")
- *   2  user + settings entry (source: "local", scope: "user")
- *   3  user + auto-discovered (source: "auto", scope: "user")
- *   4  package resource (origin: "package")
- */
-function resourcePrecedenceRank(m: PathMetadata): number {
-	if (m.origin === "package") return 4;
-	const scopeBase = m.scope === "project" ? 0 : 2;
-	return scopeBase + (m.source === "local" ? 0 : 1);
-}
+type ResourceAccumulator = ResourceCatalog;
 
 interface PackageFilter {
 	extensions?: string[];
@@ -182,10 +147,6 @@ interface PackageFilter {
 	prompts?: string[];
 	themes?: string[];
 }
-
-type ResourceType = "extensions" | "skills" | "prompts" | "themes";
-
-const RESOURCE_TYPES: ResourceType[] = ["extensions", "skills", "prompts", "themes"];
 
 const FILE_PATTERNS: Record<ResourceType, RegExp> = {
 	extensions: /\.(ts|js)$/,
@@ -1264,14 +1225,14 @@ export class DefaultPackageManager implements PackageManager {
 			const stats = statSync(resolved);
 			if (stats.isFile()) {
 				metadata.baseDir = dirname(resolved);
-				this.addResource(accumulator.extensions, resolved, metadata, true);
+				accumulator.add("extensions", resolved, metadata, true);
 				return;
 			}
 			if (stats.isDirectory()) {
 				metadata.baseDir = resolved;
 				const resources = this.collectPackageResources(resolved, accumulator, filter, metadata);
 				if (!resources) {
-					this.addResource(accumulator.extensions, resolved, metadata, true);
+					accumulator.add("extensions", resolved, metadata, true);
 				}
 			}
 		} catch {
@@ -2298,22 +2259,8 @@ export class DefaultPackageManager implements PackageManager {
 		return files;
 	}
 
-	private getTargetMap(
-		accumulator: ResourceAccumulator,
-		resourceType: ResourceType,
-	): Map<string, { metadata: PathMetadata; enabled: boolean }> {
-		switch (resourceType) {
-			case "extensions":
-				return accumulator.extensions;
-			case "skills":
-				return accumulator.skills;
-			case "prompts":
-				return accumulator.prompts;
-			case "themes":
-				return accumulator.themes;
-			default:
-				throw new Error(`Unknown resource type: ${resourceType}`);
-		}
+	private getTargetMap(accumulator: ResourceAccumulator, resourceType: ResourceType) {
+		return accumulator.mapFor(resourceType);
 	}
 
 	private addResource(
@@ -2329,40 +2276,11 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private createAccumulator(): ResourceAccumulator {
-		return {
-			extensions: new Map(),
-			skills: new Map(),
-			prompts: new Map(),
-			themes: new Map(),
-		};
+		return new ResourceCatalog();
 	}
 
 	private toResolvedPaths(accumulator: ResourceAccumulator): ResolvedPaths {
-		const mapToResolved = (
-			entries: Map<string, { metadata: PathMetadata; enabled: boolean }>,
-		): ResolvedResource[] => {
-			const resolved = Array.from(entries.entries()).map(([path, { metadata, enabled }]) => ({
-				path,
-				enabled,
-				metadata,
-			}));
-			resolved.sort((a, b) => resourcePrecedenceRank(a.metadata) - resourcePrecedenceRank(b.metadata));
-
-			const seen = new Set<string>();
-			return resolved.filter((entry) => {
-				const canonicalPath = canonicalizePath(entry.path);
-				if (seen.has(canonicalPath)) return false;
-				seen.add(canonicalPath);
-				return true;
-			});
-		};
-
-		return {
-			extensions: mapToResolved(accumulator.extensions),
-			skills: mapToResolved(accumulator.skills),
-			prompts: mapToResolved(accumulator.prompts),
-			themes: mapToResolved(accumulator.themes),
-		};
+		return accumulator.toResolvedPaths();
 	}
 
 	private spawnCommand(command: string, args: string[], options?: { cwd?: string }): ChildProcess {

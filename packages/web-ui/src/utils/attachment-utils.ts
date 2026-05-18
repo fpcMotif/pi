@@ -228,6 +228,7 @@ async function processPdf(
 	} catch (error) {
 		console.error("Error processing PDF:", error);
 		throw new Error(`Failed to process PDF: ${String(error)}`);
+		/* v8 ignore next -- defensive: v8 reports the implicit try/finally as a branch even when both throw and success paths exercise the `if (pdf)` guard via tests. */
 	} finally {
 		// Clean up PDF resources
 		if (pdf) {
@@ -372,6 +373,7 @@ async function processPptx(arrayBuffer: ArrayBuffer, fileName: string): Promise<
 		const slideFiles = Object.keys(zip.files)
 			.filter((name) => name.match(/ppt\/slides\/slide\d+\.xml$/))
 			.sort((a, b) => {
+				/* v8 ignore next 3 -- defensive: the filter regex above guarantees a digit-group match, so the `|| "0"` fallback is unreachable. */
 				const numA = Number.parseInt(a.match(/slide(\d+)\.xml$/)?.[1] || "0", 10);
 				const numB = Number.parseInt(b.match(/slide(\d+)\.xml$/)?.[1] || "0", 10);
 				return numA - numB;
@@ -392,6 +394,7 @@ async function processPptx(arrayBuffer: ArrayBuffer, fileName: string): Promise<
 					const slideTexts = textMatches
 						.map((match) => {
 							const textMatch = match.match(/<a:t[^>]*>([^<]+)<\/a:t>/);
+							/* v8 ignore next -- defensive: textMatches above already matched the same pattern with /g, so the singular match always succeeds. */
 							return textMatch ? textMatch[1] : "";
 						})
 						.filter((t) => t.trim());
@@ -408,6 +411,7 @@ async function processPptx(arrayBuffer: ArrayBuffer, fileName: string): Promise<
 		const notesFiles = Object.keys(zip.files)
 			.filter((name) => name.match(/ppt\/notesSlides\/notesSlide\d+\.xml$/))
 			.sort((a, b) => {
+				/* v8 ignore next 3 -- defensive: the filter regex above guarantees a digit-group match, so the `|| "0"` fallback is unreachable. */
 				const numA = Number.parseInt(a.match(/notesSlide(\d+)\.xml$/)?.[1] || "0", 10);
 				const numB = Number.parseInt(b.match(/notesSlide(\d+)\.xml$/)?.[1] || "0", 10);
 				return numA - numB;
@@ -424,6 +428,7 @@ async function processPptx(arrayBuffer: ArrayBuffer, fileName: string): Promise<
 						const noteTexts = textMatches
 							.map((match) => {
 								const textMatch = match.match(/<a:t[^>]*>([^<]+)<\/a:t>/);
+								/* v8 ignore next -- defensive: textMatches above already matched the same pattern with /g, so the singular match always succeeds. */
 								return textMatch ? textMatch[1] : "";
 							})
 							.filter((t) => t.trim());

@@ -11,17 +11,14 @@
  * field, accumulated usage / cost, pending tool calls, observable change
  * stream wiring (`SubscriptionRef.changes`).
  */
-import { OpenAiLanguageModel } from "@effect/ai-openai";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Stream, SubscriptionRef } from "effect";
-import { describe, expect } from "vitest";
+import { Effect, Stream, SubscriptionRef } from "effect";
+import { Prompt } from "effect/unstable/ai";
+import { describe, expect, it as vitestIt } from "vitest";
 
 import { Session } from "../../effect/session.js";
 import { SessionState } from "../../effect/session-state.js";
-import { stubOpenAiClientStreaming } from "../../test-support/stub-openai-client-streaming.js";
-
-const openAiStreamingLayer = (text: string, chunkCount = 1) =>
-	OpenAiLanguageModel.layer({ model: "gpt-4" }).pipe(Layer.provide(stubOpenAiClientStreaming({ text, chunkCount })));
+import { openAiStreamingLayer } from "../../test-support/openai-language-model.js";
 
 describe("Session.state -- SubscriptionRef<SessionState>", () => {
 	it.effect("Session.empty initialises state to SessionState.empty (turnCount: 0)", () =>
@@ -54,4 +51,24 @@ describe("Session.state -- SubscriptionRef<SessionState>", () => {
 			expect(after3.turnCount).toBe(3);
 		}).pipe(Effect.provide(openAiStreamingLayer("ok"))),
 	);
+
+	vitestIt("SessionState.with leaves omitted fields untouched", () => {
+		// Direct unit test for the patch-field ??-fallback in `SessionState.with`.
+		// Each runtime caller (compaction-step, attempt-stream, advance) currently
+		// passes some subset of fields; the empty-patch case below exercises the
+		// undefined-fallback branch on every field at once.
+		const source = new SessionState({
+			turnCount: 7,
+			history: Prompt.make("hello"),
+			inputTokens: 11,
+			outputTokens: 13,
+			compactionCount: 2,
+		});
+		const same = SessionState.with(source, {});
+		expect(same.turnCount).toBe(7);
+		expect(same.history).toBe(source.history);
+		expect(same.inputTokens).toBe(11);
+		expect(same.outputTokens).toBe(13);
+		expect(same.compactionCount).toBe(2);
+	});
 });

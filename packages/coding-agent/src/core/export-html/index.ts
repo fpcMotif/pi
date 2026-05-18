@@ -1,4 +1,5 @@
 import type { AgentState } from "@earendil-works/pi-agent-core";
+import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import { existsSync, readFileSync, writeFileSync } from "fs";
 import { basename, join } from "path";
 import { APP_NAME, getExportTemplateDir } from "../../config.js";
@@ -18,7 +19,7 @@ export interface ToolHtmlRenderer {
 	renderResult(
 		toolCallId: string,
 		toolName: string,
-		result: Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
+		result: (TextContent | ImageContent)[],
 		details: unknown,
 		isError: boolean,
 	): { collapsed?: string; expanded?: string } | undefined;

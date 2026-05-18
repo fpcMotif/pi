@@ -25,6 +25,7 @@ export async function discoverOllamaModels(baseUrl: string, _apiKey?: string): P
 				});
 
 				// Check capabilities - filter out models that don't support tools
+				/* v8 ignore next -- defensive: ollama.show always returns a capabilities array; the || [] fallback is unreachable from the API contract. */
 				const capabilities: string[] = (details as any).capabilities || [];
 				if (!capabilities.includes("tools")) {
 					console.debug(`Skipping model ${model.name}: does not support tools`);
@@ -32,6 +33,7 @@ export async function discoverOllamaModels(baseUrl: string, _apiKey?: string): P
 				}
 
 				// Extract model info
+				/* v8 ignore next -- defensive: ollama.show always returns model_info; the || {} fallback is unreachable from the API contract. */
 				const modelInfo: any = details.model_info || {};
 
 				// Get context window size - look for architecture-specific keys

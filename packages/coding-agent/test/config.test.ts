@@ -54,6 +54,18 @@ function createNpmPrefixInstall(template = "pi-prefix-"): { prefix: string; pack
 	return { prefix, packageDir };
 }
 
+function createConfiguredNpmPrefixInstall(template = "pi-prefix-"): { prefix: string; packageDir: string } {
+	const prefix = mkdtempSync(join(tmpdir(), template));
+	const root = process.platform === "win32" ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules");
+	const scopeDir = join(root, "@earendil-works");
+	const packageDir = join(scopeDir, "pi-coding-agent");
+	mkdirSync(packageDir, { recursive: true });
+	tempDir = prefix;
+	process.env.PI_PACKAGE_DIR = packageDir;
+	setExecPath(join(packageDir, "dist", "cli.js"));
+	return { prefix, packageDir };
+}
+
 function createPnpmGlobalInstall(): { root: string; packageDir: string } {
 	const temp = mkdtempSync(join(tmpdir(), "pi-pnpm-"));
 	const binDir = join(temp, "bin");
@@ -108,6 +120,24 @@ function createBunGlobalInstall(): { packageDir: string } {
 	mkdirSync(bunBin, { recursive: true });
 	writeFileSync(join(bunBin, process.platform === "win32" ? "bun.cmd" : "bun"), createFakeBunScript(bunBin));
 	chmodSync(join(bunBin, process.platform === "win32" ? "bun.cmd" : "bun"), 0o755);
+	tempDir = temp;
+	process.env.PATH = `${bunBin}${delimiter}${originalPath ?? ""}`;
+	process.env.PI_PACKAGE_DIR = packageDir;
+	setExecPath(join(packageDir, "dist", "cli.js"));
+	return { packageDir };
+}
+
+function createBunWindowsHomeGlobalInstall(): { packageDir: string } {
+	const temp = mkdtempSync(join(tmpdir(), "pi-bun-home-"));
+	const prefix = join(temp, ".bun");
+	const bunBin = join(prefix, "bin");
+	const root = join(temp, "node_modules");
+	const scopeDir = join(root, "@earendil-works");
+	const packageDir = join(scopeDir, "pi-coding-agent");
+	mkdirSync(packageDir, { recursive: true });
+	mkdirSync(bunBin, { recursive: true });
+	writeFileSync(join(bunBin, "bun.cmd"), createFakeBunScript(bunBin));
+	chmodSync(join(bunBin, "bun.cmd"), 0o755);
 	tempDir = temp;
 	process.env.PATH = `${bunBin}${delimiter}${originalPath ?? ""}`;
 	process.env.PI_PACKAGE_DIR = packageDir;
@@ -199,7 +229,7 @@ describe("detectInstallMethod", () => {
 	});
 
 	test("self-update respects configured npmCommand", () => {
-		const { prefix } = createNpmPrefixInstall();
+		const { prefix } = createConfiguredNpmPrefixInstall();
 
 		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent", ["npm", "--prefix", prefix]);
 
@@ -239,6 +269,19 @@ describe("detectInstallMethod", () => {
 
 	test("self-updates bun global installs from bun pm bin", () => {
 		createBunGlobalInstall();
+
+		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
+
+		expect(detectInstallMethod()).toBe("bun");
+		expect(command).toEqual({
+			command: "bun",
+			args: ["install", "-g", "@earendil-works/pi-coding-agent"],
+			display: "bun install -g @earendil-works/pi-coding-agent",
+		});
+	});
+
+	test.skipIf(process.platform !== "win32")("self-updates bun Windows home node_modules installs", () => {
+		createBunWindowsHomeGlobalInstall();
 
 		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
 
@@ -325,13 +368,16 @@ describe("detectInstallMethod", () => {
 		});
 	});
 
-	test("does not self-update when npm install path is not writable", () => {
-		const { packageDir } = createNpmPrefixInstall();
-		chmodSync(packageDir, 0o500);
+	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+		"does not self-update when npm install path is not writable",
+		() => {
+			const { packageDir } = createNpmPrefixInstall();
+			chmodSync(packageDir, 0o500);
 
-		expect(getSelfUpdateCommand("@earendil-works/pi-coding-agent")).toBeUndefined();
-		expect(getSelfUpdateUnavailableInstruction("@earendil-works/pi-coding-agent")).toContain(
-			"the install path is not writable",
-		);
-	});
+			expect(getSelfUpdateCommand("@earendil-works/pi-coding-agent")).toBeUndefined();
+			expect(getSelfUpdateUnavailableInstruction("@earendil-works/pi-coding-agent")).toContain(
+				"the install path is not writable",
+			);
+		},
+	);
 });

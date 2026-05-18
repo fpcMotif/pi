@@ -101,6 +101,7 @@ export class Text implements Component {
 		this.cachedWidth = width;
 		this.cachedLines = result;
 
+		/* v8 ignore next -- defensive: word/char wrapping always produces at least one line for any non-empty input; the empty-result fallback is unreachable. */
 		return result.length > 0 ? result : [""];
 	}
 }

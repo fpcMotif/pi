@@ -131,6 +131,93 @@ describe("AgentHarness stream configuration", () => {
 		expect(capturedOptions?.metadata).toBeUndefined();
 	});
 
+	it("applies scalar provider request patches when the session id is missing", async () => {
+		let capturedOptions: StreamOptions | undefined;
+		const seenSessionIds: string[] = [];
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([
+			(_context, options) => {
+				capturedOptions = captureOptions(options);
+				return fauxAssistantMessage("ok");
+			},
+		]);
+
+		const harness = createHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session: new Session(
+				new InMemorySessionStorage({
+					metadata: { id: undefined as unknown as string, createdAt: "now" },
+				}),
+			),
+			model: registration.getModel(),
+		});
+
+		harness.on("before_provider_request", (event) => {
+			seenSessionIds.push(event.sessionId);
+			expect(event.streamOptions.headers).toBeUndefined();
+			expect(event.streamOptions.metadata).toBeUndefined();
+			return {
+				streamOptions: {
+					transport: "sse",
+					timeoutMs: 123,
+					maxRetries: 4,
+					maxRetryDelayMs: 5,
+					cacheRetention: "none",
+					headers: { patched: "1" },
+					metadata: { patched: true },
+				},
+			};
+		});
+
+		await harness.prompt("hello");
+
+		expect(seenSessionIds).toEqual([""]);
+		expect(capturedOptions).toMatchObject({
+			transport: "sse",
+			timeoutMs: 123,
+			maxRetries: 4,
+			maxRetryDelayMs: 5,
+			cacheRetention: "none",
+			headers: { patched: "1" },
+			metadata: { patched: true },
+		});
+	});
+
+	it("removes the final provider request header and metadata keys", async () => {
+		let capturedOptions: StreamOptions | undefined;
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([
+			(_context, options) => {
+				capturedOptions = captureOptions(options);
+				return fauxAssistantMessage("ok");
+			},
+		]);
+
+		const harness = createHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session: new Session(new InMemorySessionStorage()),
+			model: registration.getModel(),
+			streamOptions: {
+				headers: { remove: "1" },
+				metadata: { remove: "1" },
+			},
+		});
+
+		harness.on("before_provider_request", () => ({
+			streamOptions: {
+				headers: { remove: undefined },
+				metadata: { remove: undefined },
+			},
+		}));
+
+		await harness.prompt("hello");
+
+		expect(capturedOptions?.headers).toBeUndefined();
+		expect(capturedOptions?.metadata).toBeUndefined();
+	});
+
 	it("uses updated stream options for save-point snapshots without mutating the active request", async () => {
 		const capturedOptions: StreamOptions[] = [];
 		const registration = registerFauxProvider();
@@ -202,5 +289,27 @@ describe("AgentHarness stream configuration", () => {
 
 		expect(seenPayloads).toEqual([{ steps: ["provider"] }, { steps: ["provider", "first"] }]);
 		expect(finalPayload).toEqual({ steps: ["provider", "first", "second"] });
+	});
+
+	it("passes provider payloads through unchanged when no payload hooks are registered", async () => {
+		let finalPayload: unknown;
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([
+			async (_context, options, _state, model) => {
+				finalPayload = await options?.onPayload?.({ untouched: true }, model);
+				return fauxAssistantMessage("ok");
+			},
+		]);
+
+		const harness = createHarness({
+			env: new NodeExecutionEnv({ cwd: process.cwd() }),
+			session: new Session(new InMemorySessionStorage()),
+			model: registration.getModel(),
+		});
+
+		await harness.prompt("hello");
+
+		expect(finalPayload).toEqual({ untouched: true });
 	});
 });

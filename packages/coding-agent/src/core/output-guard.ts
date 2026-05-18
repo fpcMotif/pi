@@ -58,6 +58,7 @@ export async function flushRawStdout(): Promise<void> {
 	if (stdoutTakeoverState) {
 		await new Promise<void>((resolve, reject) => {
 			stdoutTakeoverState?.rawStdoutWrite("", (err) => {
+				/* v8 ignore next -- defensive: a no-op empty-write only fails under OS-level stdout-closed conditions outside this unit-test scope. */
 				if (err) reject(err);
 				else resolve();
 			});
@@ -67,6 +68,7 @@ export async function flushRawStdout(): Promise<void> {
 
 	await new Promise<void>((resolve, reject) => {
 		process.stdout.write("", (err) => {
+			/* v8 ignore next -- defensive: a no-op empty-write only fails under OS-level stdout-closed conditions outside this unit-test scope. */
 			if (err) reject(err);
 			else resolve();
 		});

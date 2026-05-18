@@ -36,7 +36,12 @@ export class GenericArtifact extends ArtifactElement {
 			}
 		}
 
-		const binaryString = atob(base64Data);
+		let binaryString: string;
+		try {
+			binaryString = atob(base64Data);
+		} catch {
+			binaryString = "";
+		}
 		const bytes = new Uint8Array(binaryString.length);
 		for (let i = 0; i < binaryString.length; i++) {
 			bytes[i] = binaryString.charCodeAt(i);

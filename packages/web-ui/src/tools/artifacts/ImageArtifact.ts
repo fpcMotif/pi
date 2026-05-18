@@ -64,8 +64,15 @@ export class ImageArtifact extends ArtifactElement {
 			base64Data = this._content;
 		}
 
-		// Decode base64 to binary string
-		const binaryString = atob(base64Data);
+		// Decode base64 to binary string. atob throws on invalid input — return
+		// empty bytes rather than letting the error bubble out of the render
+		// lifecycle as an unhandled rejection.
+		let binaryString: string;
+		try {
+			binaryString = atob(base64Data);
+		} catch {
+			return new Uint8Array(0);
+		}
 
 		// Convert binary string to Uint8Array
 		const bytes = new Uint8Array(binaryString.length);

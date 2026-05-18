@@ -95,9 +95,7 @@ describe("Session.send liftPart -- defensive guard against non-record stream par
 			expect(events.map((e) => e._tag)).toEqual(["LlmPart", "Finish"]);
 		}).pipe(
 			Effect.provide(
-				directStubLanguageModelStream([
-					{ type: "tool-result", id: "call_x", name: "ToolX", result: { ok: true } },
-				]),
+				directStubLanguageModelStream([{ type: "tool-result", id: "call_x", name: "ToolX", result: { ok: true } }]),
 			),
 		),
 	);
