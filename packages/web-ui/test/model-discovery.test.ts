@@ -157,6 +157,13 @@ describe("discoverLlamaCppModels", () => {
 		}));
 		await expect(discoverLlamaCppModels("http://h")).rejects.toThrow(/Invalid response format/);
 	});
+
+	it("wraps a non-Error rejection with String() in the message", async () => {
+		(globalThis as Record<string, unknown>).fetch = vi.fn(async () => {
+			throw "raw llama failure";
+		});
+		await expect(discoverLlamaCppModels("http://h")).rejects.toThrow(/raw llama failure/);
+	});
 });
 
 describe("discoverVLLMModels", () => {
@@ -208,6 +215,13 @@ describe("discoverVLLMModels", () => {
 		}));
 		await expect(discoverVLLMModels("http://h")).rejects.toThrow(/Invalid response format/);
 	});
+
+	it("wraps a non-Error rejection with String() in the message", async () => {
+		(globalThis as Record<string, unknown>).fetch = vi.fn(async () => {
+			throw "raw vllm failure";
+		});
+		await expect(discoverVLLMModels("http://h")).rejects.toThrow(/raw vllm failure/);
+	});
 });
 
 describe("discoverLMStudioModels", () => {
@@ -250,6 +264,13 @@ describe("discoverLMStudioModels", () => {
 			throw new Error("ws closed");
 		};
 		await expect(discoverLMStudioModels("http://localhost:1234")).rejects.toThrow(/LM Studio discovery failed/);
+	});
+
+	it("wraps a non-Error rejection with String() in the message", async () => {
+		lmStudioState.listDownloadedModels = async () => {
+			throw "raw lmstudio failure";
+		};
+		await expect(discoverLMStudioModels("http://localhost:1234")).rejects.toThrow(/raw lmstudio failure/);
 	});
 });
 

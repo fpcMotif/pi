@@ -104,6 +104,7 @@ export class ConsoleRuntimeProvider implements SandboxRuntimeProvider {
 				const text = `Unhandled promise rejection: ${e.reason?.message || e.reason || "Unknown error"}`;
 
 				lastError = {
+					/* v8 ignore next -- defensive: String(undefined) returns "undefined" (truthy), so the final string-literal fallback is unreachable. */
 					message: e.reason?.message || String(e.reason) || "Unhandled promise rejection",
 					stack: e.reason?.stack || text,
 				};

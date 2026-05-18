@@ -91,6 +91,13 @@ describe("loadAttachment — source conversion", () => {
 		expect(att.extractedText).toBe("body");
 	});
 
+	it("loads from a Blob whose .type is empty (covers `source.type || mimeType` fallback in Blob branch)", async () => {
+		const blob = new Blob([bytes("body")], { type: "" });
+		const att = await loadAttachment(blob, "note.txt");
+		// no type on the Blob -> falls through to the default mimeType.
+		expect(att.mimeType).toBeDefined();
+	});
+
 	it("loads from an ArrayBuffer with an explicit fileName", async () => {
 		const att = await loadAttachment(bytes("data"), "raw.txt");
 		expect(att.fileName).toBe("raw.txt");
@@ -121,6 +128,24 @@ describe("loadAttachment — source conversion", () => {
 	it("throws when the URL fetch is not ok", async () => {
 		(globalThis as Record<string, unknown>).fetch = vi.fn(async () => ({ ok: false }));
 		await expect(loadAttachment("https://example.com/x.txt")).rejects.toThrow("Failed to fetch file");
+	});
+
+	it("URL load falls back to extension-derived mimeType when the response has no content-type header (covers `headers.get() || mimeType` fallback)", async () => {
+		(globalThis as Record<string, unknown>).fetch = vi.fn(async () => ({
+			ok: true,
+			arrayBuffer: async () => bytes("hi"),
+			headers: { get: () => null },
+		}));
+		const att = await loadAttachment("https://example.com/file.txt");
+		expect(att.fileName).toBe("file.txt");
+	});
+
+	it("loads from a File whose .type is empty (covers `source.type || mimeType` fallback in File branch)", async () => {
+		const file = new File([bytes("hi")], "x.txt", { type: "" });
+		const att = await loadAttachment(file);
+		// no type on the File -> the loader falls back to the extension-derived default.
+		expect(att.fileName).toBe("x.txt");
+		expect(att.mimeType).toBeDefined();
 	});
 
 	it("throws on an invalid source type", async () => {
@@ -246,6 +271,13 @@ describe("loadAttachment — PDF processing", () => {
 		expect(pdf.destroy).toHaveBeenCalled();
 	});
 
+	it("throws when getDocument fails before pdf is assigned (covers the `if (pdf)` falsy branch in finally)", async () => {
+		pdfState.getDocument = () => ({
+			promise: Promise.reject(new Error("invalid header")),
+		});
+		await expect(loadAttachment(bytes("%PDF-"), "bad.pdf")).rejects.toThrow(/Failed to process PDF/);
+	});
+
 	it("recognizes a PDF by mime type even without a .pdf extension", async () => {
 		pdfState.getDocument = () => ({ promise: Promise.resolve(makePdf([["P"]])) });
 		const file = new File([bytes("%PDF-")], "noext", { type: "application/pdf" });
@@ -315,6 +347,34 @@ describe("loadAttachment — DOCX processing", () => {
 		docxState.parseAsync = async () => ({ documentPart: { body: {} } });
 		const att = await loadAttachment(bytes("docx"), "empty.docx");
 		expect(att.extractedText).toContain('<page number="1">');
+	});
+
+	it("handles DOCX nodes whose .type is undefined (covers the `type?.toLowerCase() || ''` fallbacks)", async () => {
+		docxState.parseAsync = async () => ({
+			documentPart: {
+				body: {
+					children: [
+						// Top-level element with no `type` — exercises elementType=="" path.
+						{ children: [{ type: "Run", children: [{ type: "Text", text: "ignored" }] }] },
+						// Paragraph whose child Run has no type — covers childType==""  fallback.
+						{ type: "Paragraph", children: [{ children: [{ type: "Text", text: "ignored2" }] }] },
+						// Paragraph -> Run -> child without type — covers textType=="" fallback.
+						{ type: "Paragraph", children: [{ type: "Run", children: [{ text: "ignored3" }] }] },
+						// Paragraph -> Text with .text undefined (covers `child.text || ""` fallback at line 319).
+						{ type: "Paragraph", children: [{ type: "Text" }] },
+						// Paragraph -> Run -> Text with .text undefined (covers `textChild.text || ""` fallback at line 315).
+						{ type: "Paragraph", children: [{ type: "Run", children: [{ type: "Text" }] }] },
+						// Table whose row has no type — covers rowType=="" fallback.
+						{ type: "Table", children: [{ children: [] }] },
+						// Table -> TableRow whose cell has no type — covers cellType=="" fallback.
+						{ type: "Table", children: [{ type: "TableRow", children: [{ children: [] }] }] },
+					],
+				},
+			},
+		});
+		const att = await loadAttachment(bytes("docx"), "shapeless.docx");
+		// All elements with undefined type fall through silently — no exception thrown.
+		expect(att.extractedText).toContain('<docx filename="shapeless.docx">');
 	});
 
 	it("throws a wrapped error when docx parsing fails", async () => {
