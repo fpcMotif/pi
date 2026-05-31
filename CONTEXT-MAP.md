@@ -4,6 +4,8 @@
 
 This map describes the post-rewrite target shape from ADR-0002 through ADR-0017. During the phased migration in ADR-0006, legacy packages and dependencies can still exist in the checkout while the context docs describe the intended 1.0 architecture. **ADR-0017** layers a monorepo-wide 100%-coverage requirement on every surviving + deprecated package, enforced via vitest + v8 in CI; see that ADR for excludes and sequencing.
 
+> **Branch consolidation (Effect-v4 refactor PRs):** the six in-flight refactor PRs (#1, #5, #6, #7, #9, #10) were merged into a single base on `#9`. The decision record — base choice, the 6 grafted correctness fixes, the skip list, and the post-consolidation quality backlog — is in [docs/effect-v4-pr-consolidation.md](./docs/effect-v4-pr-consolidation.md).
+
 ## Contexts (post-rewrite shape)
 
 - [pi-tui](./packages/tui/CONTEXT.md) — generic terminal renderer with differential output. **Not touched by the Effect rewrite** (ADR-0002).
