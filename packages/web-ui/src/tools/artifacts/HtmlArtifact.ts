@@ -26,6 +26,11 @@ export class HtmlArtifact extends ArtifactElement {
 
 	private _content = "";
 	private logs: Array<{ type: "log" | "error"; text: string }> = [];
+	// The content most recently handed to the sandbox. `updated()` keys
+	// re-execution on content identity against this, so unrelated reactive
+	// updates (view-mode toggle, log appends, …) never trigger a spurious
+	// sandbox teardown + iframe recreate.
+	private _executedContent: string | undefined = undefined;
 
 	// Refs for DOM elements
 	public sandboxIframeRef: Ref<SandboxIframe> = createRef();
@@ -134,6 +139,8 @@ export class HtmlArtifact extends ArtifactElement {
 
 		// Load content - this handles sandbox registration, consumer registration, and iframe creation
 		sandbox.loadContent(sandboxId, modifiedHtml, this.runtimeProviders, [consumer]);
+		// Record what we executed so `updated()` won't re-run for the same content.
+		this._executedContent = html;
 	}
 
 	override get content(): string {
@@ -156,9 +163,13 @@ export class HtmlArtifact extends ArtifactElement {
 
 	override updated(changedProperties: Map<string | number | symbol, unknown>) {
 		super.updated(changedProperties);
-		// If we have content but haven't executed yet (e.g., during reconstruction),
-		// execute when the iframe ref becomes available
-		if (this._content && this.sandboxIframeRef.value && this.logs.length === 0) {
+		// Execute (or re-execute) only when the content actually changed since the
+		// last execution AND the iframe is mounted. Keying on content identity —
+		// not a "no logs yet" heuristic — both covers the reconstruction case
+		// (iframe ref becomes available after content is set) and prevents a full
+		// sandbox teardown + new iframe on every unrelated reactive update for an
+		// artifact that never logs.
+		if (this._content && this.sandboxIframeRef.value && this._content !== this._executedContent) {
 			this.executeContent(this._content);
 		}
 	}

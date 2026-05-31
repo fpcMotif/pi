@@ -49,6 +49,15 @@ export class SandboxIframe extends LitElement {
 	private iframe?: HTMLIFrameElement;
 
 	/**
+	 * The window "message" listener for `open-external-url` requests from the
+	 * sandboxed iframe. Stored on the instance so it can be removed before each
+	 * reload and in `disconnectedCallback` — otherwise every `loadContent` call
+	 * leaks a permanent global listener for the page's lifetime (compounds badly
+	 * with repeated artifact re-renders).
+	 */
+	private externalUrlHandler?: (e: MessageEvent) => void;
+
+	/**
 	 * Optional: Provide a function that returns the sandbox HTML URL.
 	 * If provided, the iframe will use this URL instead of srcdoc.
 	 * This is required for browser extensions with strict CSP.
@@ -68,7 +77,16 @@ export class SandboxIframe extends LitElement {
 		// Note: We don't unregister the sandbox here for loadContent() mode
 		// because the caller (HtmlArtifact) owns the sandbox lifecycle.
 		// For execute() mode, the sandbox is unregistered in the cleanup function.
+		this.removeExternalUrlHandler();
 		this.iframe?.remove();
+	}
+
+	/** Remove the currently-registered `open-external-url` window listener, if any. */
+	private removeExternalUrlHandler(): void {
+		if (this.externalUrlHandler) {
+			window.removeEventListener("message", this.externalUrlHandler);
+			this.externalUrlHandler = undefined;
+		}
 	}
 
 	/**
@@ -146,7 +164,9 @@ export class SandboxIframe extends LitElement {
 		// Update router with iframe reference BEFORE appending to DOM
 		RUNTIME_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
 
-		// Listen for open-external-url messages from iframe
+		// Listen for open-external-url messages from iframe. Remove any handler
+		// from a previous load first so reloads don't stack global listeners.
+		this.removeExternalUrlHandler();
 		const externalUrlHandler = (e: MessageEvent) => {
 			if (e.data.type === "open-external-url" && e.source === this.iframe?.contentWindow) {
 				// Use chrome.tabs API to open in new tab
@@ -159,6 +179,7 @@ export class SandboxIframe extends LitElement {
 				}
 			}
 		};
+		this.externalUrlHandler = externalUrlHandler;
 		window.addEventListener("message", externalUrlHandler);
 
 		// Listen for sandbox-ready and sandbox-error messages directly
@@ -217,13 +238,16 @@ export class SandboxIframe extends LitElement {
 		// Update router with iframe reference BEFORE appending to DOM
 		RUNTIME_MESSAGE_ROUTER.setSandboxIframe(sandboxId, this.iframe);
 
-		// Listen for open-external-url messages from iframe
+		// Listen for open-external-url messages from iframe. Remove any handler
+		// from a previous load first so reloads don't stack global listeners.
+		this.removeExternalUrlHandler();
 		const externalUrlHandler = (e: MessageEvent) => {
 			if (e.data.type === "open-external-url" && e.source === this.iframe?.contentWindow) {
 				// Fallback for non-extension context
 				window.open(e.data.url, "_blank");
 			}
 		};
+		this.externalUrlHandler = externalUrlHandler;
 		window.addEventListener("message", externalUrlHandler);
 
 		this.appendChild(this.iframe);

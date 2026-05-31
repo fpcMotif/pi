@@ -266,15 +266,34 @@ describe("HtmlArtifact", () => {
 		expect(unregisterSandboxMock).toHaveBeenCalledWith("artifact-disc.html");
 	});
 
-	it("updated re-executes when sandbox ref exists and logs are empty (covers the re-exec branch)", async () => {
+	it("updated re-executes only when content changes since last execution (content-identity keyed)", async () => {
 		const el = (await make("up.html", "<p>x</p>")) as HTMLElement & {
 			logs: unknown[];
+			content: string;
+			sandboxIframeRef: { value?: unknown };
 			updateComplete?: Promise<unknown>;
 		};
-		const before = sandboxCalls.length;
-		el.logs = []; // reset
+		const afterInitial = sandboxCalls.length;
+
+		// An unrelated reactive update with UNCHANGED content must NOT re-execute.
+		// (The old `logs.length === 0` heuristic wrongly re-ran the whole sandbox
+		// here for any artifact that never logged.) Covers the
+		// `_content === _executedContent` skip arm.
+		el.logs = [];
 		(el as HTMLElement).requestUpdate?.();
 		await el.updateComplete;
-		expect(sandboxCalls.length).toBeGreaterThan(before);
+		expect(sandboxCalls.length).toBe(afterInitial);
+
+		// Reconstruction path: content changes while the iframe ref is momentarily
+		// unavailable (so the content setter's own execute is skipped), then a later
+		// update with the iframe present re-executes via `updated()`. Covers the
+		// `_content !== _executedContent` re-exec arm.
+		const savedRef = el.sandboxIframeRef.value;
+		el.sandboxIframeRef.value = undefined;
+		el.content = "<p>y</p>";
+		el.sandboxIframeRef.value = savedRef;
+		(el as HTMLElement).requestUpdate?.();
+		await el.updateComplete;
+		expect(sandboxCalls.length).toBe(afterInitial + 1);
 	});
 });
