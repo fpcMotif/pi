@@ -32,7 +32,7 @@ describe("getAgentSessionContextUsage", () => {
 		const sm = SessionManager.inMemory();
 		expect(
 			getAgentSessionContextUsage({
-				model: undefined,
+				contextWindow: undefined,
 				messages: [],
 				sessionManager: sm,
 			}),
@@ -43,7 +43,7 @@ describe("getAgentSessionContextUsage", () => {
 		const sm = SessionManager.inMemory();
 		expect(
 			getAgentSessionContextUsage({
-				model: { contextWindow: 0 },
+				contextWindow: 0,
 				messages: [],
 				sessionManager: sm,
 			}),
@@ -54,7 +54,7 @@ describe("getAgentSessionContextUsage", () => {
 		const sm = SessionManager.inMemory();
 		expect(
 			getAgentSessionContextUsage({
-				model: {},
+				contextWindow: undefined,
 				messages: [],
 				sessionManager: sm,
 			}),
@@ -66,7 +66,7 @@ describe("getAgentSessionContextUsage", () => {
 		sm.appendMessage(userMsg("hello"));
 		sm.appendMessage(assistantMsg("response"));
 		const usage = getAgentSessionContextUsage({
-			model: { contextWindow: 1000 },
+			contextWindow: 1000,
 			messages: [userMsg("hello"), assistantMsg("response")],
 			sessionManager: sm,
 		});

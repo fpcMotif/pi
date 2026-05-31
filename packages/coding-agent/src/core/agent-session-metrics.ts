@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { calculateContextTokens, estimateContextTokens } from "./compaction/index.js";
 import type { ContextUsage } from "./extensions/index.js";
-import { getLatestCompactionEntry, type SessionManager } from "./session-manager.js";
+import type { SessionManager } from "./session-manager.js";
 
 /** Session statistics for /session command */
 export interface SessionStats {
@@ -30,10 +30,10 @@ export function getAgentSessionStats(options: {
 	contextUsage?: ContextUsage;
 }): SessionStats {
 	const { messages, sessionFile, sessionId, contextUsage } = options;
-	const userMessages = messages.filter((message) => message.role === "user").length;
-	const assistantMessages = messages.filter((message) => message.role === "assistant").length;
-	const toolResults = messages.filter((message) => message.role === "toolResult").length;
 
+	let userMessages = 0;
+	let assistantMessages = 0;
+	let toolResults = 0;
 	let toolCalls = 0;
 	let totalInput = 0;
 	let totalOutput = 0;
@@ -42,16 +42,25 @@ export function getAgentSessionStats(options: {
 	let totalCost = 0;
 
 	for (const message of messages) {
-		if (message.role !== "assistant") {
-			continue;
+		switch (message.role) {
+			case "user":
+				userMessages++;
+				break;
+			case "assistant":
+				assistantMessages++;
+				for (const content of message.content) {
+					if (content.type === "toolCall") toolCalls++;
+				}
+				totalInput += message.usage.input;
+				totalOutput += message.usage.output;
+				totalCacheRead += message.usage.cacheRead;
+				totalCacheWrite += message.usage.cacheWrite;
+				totalCost += message.usage.cost.total;
+				break;
+			case "toolResult":
+				toolResults++;
+				break;
 		}
-
-		toolCalls += message.content.filter((content) => content.type === "toolCall").length;
-		totalInput += message.usage.input;
-		totalOutput += message.usage.output;
-		totalCacheRead += message.usage.cacheRead;
-		totalCacheWrite += message.usage.cacheWrite;
-		totalCost += message.usage.cost.total;
 	}
 
 	return {
@@ -75,40 +84,35 @@ export function getAgentSessionStats(options: {
 }
 
 export function getAgentSessionContextUsage(options: {
-	model: { contextWindow?: number } | undefined;
+	contextWindow: number | undefined;
 	messages: AgentMessage[];
 	sessionManager: SessionManager;
 }): ContextUsage | undefined {
-	const { model, messages, sessionManager } = options;
-	if (!model) {
-		return undefined;
-	}
-
-	const contextWindow = model.contextWindow ?? 0;
-	if (contextWindow <= 0) {
+	const { contextWindow, messages, sessionManager } = options;
+	if (!contextWindow || contextWindow <= 0) {
 		return undefined;
 	}
 
 	// After compaction, the last assistant usage reflects pre-compaction context size.
 	// Usage is only trustworthy once an assistant responded after the latest compaction.
 	const branchEntries = sessionManager.getBranch();
-	const latestCompaction = getLatestCompactionEntry(branchEntries);
+	let compactionIndex = -1;
+	for (let i = branchEntries.length - 1; i >= 0; i--) {
+		if (branchEntries[i].type === "compaction") {
+			compactionIndex = i;
+			break;
+		}
+	}
 
-	if (latestCompaction) {
-		const compactionIndex = branchEntries.lastIndexOf(latestCompaction);
+	if (compactionIndex !== -1) {
 		let hasPostCompactionUsage = false;
 		for (let i = branchEntries.length - 1; i > compactionIndex; i--) {
 			const entry = branchEntries[i];
-			if (entry.type === "message" && entry.message.role === "assistant") {
-				const assistant = entry.message;
-				if (assistant.stopReason !== "aborted" && assistant.stopReason !== "error") {
-					const contextTokens = calculateContextTokens(assistant.usage);
-					if (contextTokens > 0) {
-						hasPostCompactionUsage = true;
-					}
-					break;
-				}
-			}
+			if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+			const assistant = entry.message;
+			if (assistant.stopReason === "aborted" || assistant.stopReason === "error") continue;
+			hasPostCompactionUsage = calculateContextTokens(assistant.usage) > 0;
+			break;
 		}
 
 		if (!hasPostCompactionUsage) {
@@ -117,11 +121,10 @@ export function getAgentSessionContextUsage(options: {
 	}
 
 	const estimate = estimateContextTokens(messages);
-	const percent = (estimate.tokens / contextWindow) * 100;
 
 	return {
 		tokens: estimate.tokens,
 		contextWindow,
-		percent,
+		percent: (estimate.tokens / contextWindow) * 100,
 	};
 }

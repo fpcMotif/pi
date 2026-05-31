@@ -102,7 +102,7 @@ export function setCapabilities(caps: TerminalCapabilities): void {
 	cachedCapabilities = caps;
 }
 
-const KITTY_PREFIX = "\x1b_G";
+export const KITTY_PREFIX = "\x1b_G";
 const ITERM2_PREFIX = "\x1b]1337;File=";
 
 export function isImageLine(line: string): boolean {

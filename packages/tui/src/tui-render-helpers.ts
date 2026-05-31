@@ -1,15 +1,13 @@
-import { deleteKittyImage, isImageLine } from "./terminal-image.js";
+import { deleteKittyImage, isImageLine, KITTY_PREFIX } from "./terminal-image.js";
 import { normalizeTerminalOutput, visibleWidth } from "./utils.js";
-
-const KITTY_SEQUENCE_PREFIX = "\x1b_G";
 
 export const SEGMENT_RESET = "\x1b[0m\x1b]8;;\x07";
 
 export function extractKittyImageIds(line: string): number[] {
-	const sequenceStart = line.indexOf(KITTY_SEQUENCE_PREFIX);
+	const sequenceStart = line.indexOf(KITTY_PREFIX);
 	if (sequenceStart === -1) return [];
 
-	const paramsStart = sequenceStart + KITTY_SEQUENCE_PREFIX.length;
+	const paramsStart = sequenceStart + KITTY_PREFIX.length;
 	const paramsEnd = line.indexOf(";", paramsStart);
 	if (paramsEnd === -1) return [];
 
