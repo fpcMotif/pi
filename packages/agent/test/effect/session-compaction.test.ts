@@ -243,9 +243,15 @@ describe("Session.send compaction triggers", () => {
 			expect(instructionText).toContain("## Goals");
 			expect(instructionText).toContain("## Decisions");
 			expect(instructionText).toContain("## Files Touched");
+			expect(instructionText).toContain("## Critical Context");
 			expect(instructionText).toContain("## Next Steps");
 			// And the slice-28 "context checkpoint" framing language survives.
 			expect(instructionText).toContain("context checkpoint");
+			// The load-bearing-facts preservation preamble must survive: compaction
+			// DISCARDS the summarised-away prefix, so the prompt names the categories
+			// of fact that must be preserved verbatim (ADR-0019, grafted from PR #10).
+			expect(instructionText).toContain("Preserve exact file paths");
+			expect(instructionText).toContain("DISCARDED");
 		}),
 	);
 });

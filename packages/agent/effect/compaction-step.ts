@@ -12,17 +12,24 @@ import { SessionState } from "./session-state.js";
  * message and returns a structured context checkpoint another assistant can
  * load to continue the work. The instruction asks for explicit markdown
  * sections so the summary stays parseable and the next turn can rely on a
- * predictable shape (slice 38). Empty sections are omitted by the model
+ * predictable shape (slice 38 — structured-checkpoint summary prompt). The
+ * preamble asks the model to preserve exact file paths, function names,
+ * error messages, and constraints verbatim — the conversation prefix being
+ * summarised is DISCARDED after compaction, so anything not captured here is
+ * permanently lost from the long-term session state (the load-bearing-facts
+ * fix grafted from PR #10 / ADR-0019). Empty sections are omitted by the model
  * rather than padded.
  */
 export const SUMMARIZATION_INSTRUCTION =
-	"Summarize the conversation above into a structured context checkpoint that another assistant can load to continue the work. Use the following markdown sections, omitting any that would be empty:\n\n" +
+	"Summarize the conversation above into a structured context checkpoint that another assistant can load to continue the work. Preserve exact file paths, function names, error messages, and any constraints or blockers verbatim — the conversation prefix being summarised will be DISCARDED, so anything not captured here is lost. Use the following markdown sections, omitting any that would be empty:\n\n" +
 	"## Goals\n" +
 	"- The user-facing goals of this session, prioritised.\n\n" +
 	"## Decisions\n" +
 	"- Material decisions made and their rationale.\n\n" +
 	"## Files Touched\n" +
 	"- Exact file paths read, written, edited, or referenced.\n\n" +
+	"## Critical Context\n" +
+	"- Constraints, preferences, blockers, exact function names, error messages, or any other detail the next assistant must NOT forget.\n\n" +
 	"## Next Steps\n" +
 	"- Concrete actions the next assistant should take.";
 
