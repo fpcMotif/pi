@@ -25,8 +25,10 @@
  * (existing tests + simple callers); strings are normalised to
  * `new NewPrompt({ prompt })` at the top of `send`.
  */
-import { Schema } from "effect";
+import { Effect, Schema } from "effect";
 import { Prompt } from "effect/unstable/ai";
+
+import { SchemaError } from "./agent-error.js";
 
 export class NewPrompt extends Schema.TaggedClass<NewPrompt>()("NewPrompt", {
 	prompt: Schema.String,
@@ -56,8 +58,31 @@ export type Input = NewPrompt | Continue | Retry | AcceptedPromptEnvelope;
 export const normalize = (input: string | Input): Input =>
 	typeof input === "string" ? new NewPrompt({ prompt: input }) : input;
 
-export const promptFromAcceptedEnvelope = (envelope: AcceptedPromptEnvelope): Prompt.Prompt =>
-	Prompt.make([...(envelope.injectedMessages ?? []), { role: "user", content: envelope.content }] as never);
+const mapAcceptedEnvelopeSchemaError = (error: Schema.SchemaError): SchemaError =>
+	new SchemaError({
+		description: `Invalid accepted prompt envelope: ${String(error)}`,
+	});
+
+/**
+ * Build the prompt for an `AcceptedPromptEnvelope`, Schema-validating the
+ * host-preflighted `injectedMessages` and the final user message BEFORE they
+ * reach `Session.send`'s history. A malformed envelope fails with `SchemaError`
+ * (the typed `AgentError` channel) instead of pushing invalid messages into
+ * durable state and crashing far downstream in the provider (PR #10 1c234ca9).
+ */
+export const promptFromAcceptedEnvelope = Effect.fn("promptFromAcceptedEnvelope")(function* (
+	envelope: AcceptedPromptEnvelope,
+) {
+	const injectedMessages = yield* Schema.decodeUnknownEffect(Schema.Array(Prompt.Message))(
+		envelope.injectedMessages ?? [],
+	).pipe(Effect.mapError(mapAcceptedEnvelopeSchemaError));
+	const finalUserMessage = yield* Schema.decodeUnknownEffect(Prompt.UserMessage)({
+		role: "user",
+		content: envelope.content,
+	}).pipe(Effect.mapError(mapAcceptedEnvelopeSchemaError));
+
+	return Prompt.fromMessages([...injectedMessages, finalUserMessage]);
+});
 
 /**
  * Roll a `Prompt` back to (and including) its last `user` message. Used by
@@ -81,7 +106,5 @@ export const rollbackToLastUserMessage = (history: Prompt.Prompt): Prompt.Prompt
 		}
 	}
 	if (lastUserIdx === -1) return history;
-	// Re-encode the slice as a Prompt via `Prompt.make`. The encoded message
-	// shape lines up with what Prompt.make expects.
-	return Prompt.make(messages.slice(0, lastUserIdx + 1) as never);
+	return Prompt.fromMessages(messages.slice(0, lastUserIdx + 1));
 };

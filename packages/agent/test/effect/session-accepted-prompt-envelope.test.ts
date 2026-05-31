@@ -1,7 +1,8 @@
 import { it } from "@effect/vitest";
-import { Effect, Stream, SubscriptionRef } from "effect";
+import { Cause, Effect, Stream, SubscriptionRef } from "effect";
 import { describe, expect } from "vitest";
 
+import { SchemaError } from "../../effect/agent-error.js";
 import { AcceptedPromptEnvelope } from "../../effect/agent-input.js";
 import { Session } from "../../effect/session.js";
 import { stubLanguageModelStream } from "../../test-support/stub-language-model-stream.js";
@@ -87,6 +88,31 @@ describe("Session.send accepts AcceptedPromptEnvelope", () => {
 			expect(snapshot.history.content.map((message) => message.role)).toEqual(["system", "user", "assistant"]);
 			expect(snapshot.history.content[0]?.content).toBe("custom system");
 			expect(textFromContent(snapshot.history.content[1]?.content)).toBe("final prompt");
+		}).pipe(Effect.provide(stubLanguageModelStream(assistantParts))),
+	);
+
+	it.effect("fails invalid injected messages before mutating history", () =>
+		Effect.gen(function* () {
+			const session = yield* Session.empty;
+
+			const exit = yield* Effect.exit(
+				Stream.runDrain(
+					session.send(
+						new AcceptedPromptEnvelope({
+							content: "final prompt",
+							injectedMessages: [{ role: "bogus", content: "invalid" }],
+						}),
+					),
+				),
+			);
+
+			const failure = exit._tag === "Failure" ? Cause.findErrorOption(exit.cause) : undefined;
+			const error = failure?._tag === "Some" ? failure.value : undefined;
+			expect(error).toBeInstanceOf(SchemaError);
+
+			const snapshot = yield* SubscriptionRef.get(session.state);
+			expect(snapshot.turnCount).toBe(0);
+			expect(snapshot.history.content).toEqual([]);
 		}).pipe(Effect.provide(stubLanguageModelStream(assistantParts))),
 	);
 });

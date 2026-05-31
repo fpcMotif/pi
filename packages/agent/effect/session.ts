@@ -167,7 +167,7 @@ import {
 import { COMPACTION_THRESHOLD, KEEP_RECENT_TOKENS } from "./compaction.js";
 import { makeAttemptStream } from "./attempt-stream.js";
 import { runCompactionStep } from "./compaction-step.js";
-import { Hooks } from "./hooks.js";
+import { composeHooks, Hooks } from "./hooks.js";
 import { DEFAULT_MAX_LLM_RETRIES, makeRetrySchedule } from "./retry.js";
 import { SessionState } from "./session-state.js";
 import { SessionStore } from "./stores/session-store.js";
@@ -247,7 +247,11 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 
 						// Observer hooks — read once per send. `Hooks` is a `Context.Reference`
 						// with a no-op default, so this never adds to `send`'s `R` channel.
-						const hooks = yield* Hooks;
+						// Wrap in `composeHooks` so a defect in a single user-provided hook
+						// is absorbed (ADR-0018) — the n=1 path matches the n≥2 fan-out and a
+						// buggy observer cannot leave a durable session in a partial-turn
+						// state (resilience fix grafted from PR #10).
+						const hooks = composeHooks(yield* Hooks);
 
 						// Lifecycle hook: fired at stream open with the normalised input.
 						// Observer-only — host code records turn metadata or pre-flight side
@@ -268,13 +272,25 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						//    - Continue:  leave history as-is; the existing conversation IS the prompt.
 						//    - Retry:     roll history back to the last `user` message (dropping the
 						//                 trailing assistant turn), then proceed like Continue.
+						// `promptFromAcceptedEnvelope` is now an Effect that Schema-validates
+						// the host-preflighted envelope BEFORE we mutate history (PR #10
+						// 1c234ca9): a malformed `injectedMessages` / final user message
+						// fails with `SchemaError` here, leaving durable state untouched
+						// (turnCount stays 0). Hoisted out of the synchronous
+						// `SubscriptionRef.update` below; `Prompt.empty` for the other
+						// variants where it is unused.
+						const acceptedEnvelopePrompt =
+							normalized._tag === "AcceptedPromptEnvelope"
+								? yield* promptFromAcceptedEnvelope(normalized)
+								: Prompt.empty;
+
 						yield* SubscriptionRef.update(state, (s) => {
 							const nextHistory = ((): Prompt.Prompt => {
 								switch (normalized._tag) {
 									case "NewPrompt":
 										return Prompt.concat(s.history, normalized.prompt);
 									case "AcceptedPromptEnvelope": {
-										const withEnvelope = Prompt.concat(s.history, promptFromAcceptedEnvelope(normalized));
+										const withEnvelope = Prompt.concat(s.history, acceptedEnvelopePrompt);
 										return normalized.systemPromptOverride === undefined
 											? withEnvelope
 											: Prompt.setSystem(withEnvelope, normalized.systemPromptOverride);
@@ -289,6 +305,13 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						});
 						const postInput = yield* SubscriptionRef.get(state);
 
+						// Persist the accepted user turn BEFORE compaction opens its summary
+						// call (PR #10 393b515c). A compaction-summary failure (rate limit /
+						// network / model error) must NOT lose the just-accepted user turn:
+						// durable sessions reload `postInput` instead of the partial turn.
+						// For `Session.empty` / `Session.make` this is a no-op.
+						yield* options.persist(postInput);
+
 						// 1. COMPACTION CHECK — runs AFTER the input-variant update on the
 						//    post-input history. See `compaction-step.ts`. The returned
 						//    `CompactionApplied` event is prepended to the stream below so
@@ -300,12 +323,15 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 
 						const snapshot = yield* SubscriptionRef.get(state);
 
-						// 1a. Persist the post-bump snapshot so `Session.durable` reloads
-						//     the latest turnCount + history. Runs once per send, before
-						//     the upstream opens — a failed send still persists the
-						//     turnCount bump. For `Session.empty` / `Session.make` this is
-						//     a no-op (`persist: () => Effect.void`).
-						yield* options.persist(snapshot);
+						// 1a. Re-persist the post-compaction snapshot ONLY when compaction
+						//     actually fired and changed state. The pre-compaction
+						//     `postInput` snapshot was already persisted above, so disk
+						//     writes stay proportional to the work done and compaction
+						//     failures keep the durable accepted-turn state intact
+						//     (PR #10 393b515c). No-op for `Session.empty` / `Session.make`.
+						if (compactionEvent !== undefined) {
+							yield* options.persist(snapshot);
+						}
 
 						// 1b. Per-send attempt counter. Lives in the outer Effect.gen so the
 						//     Stream.retry re-runs of the inner Effect.gen below all share it —
