@@ -1248,6 +1248,29 @@ function formatParsedKey(codepoint: number, modifier: number, baseLayoutKey?: nu
 	return formatKeyNameWithModifiers(keyName, modifier);
 }
 
+/**
+ * Whether `data` is exactly one printable Unicode codepoint.
+ *
+ * Accepts a single BMP code unit or a complete astral surrogate pair, and
+ * rejects C0/C1 control characters, DEL, lone surrogate halves, and strings
+ * that contain more than one codepoint. Used to decode raw printable
+ * keystrokes (including non-ASCII and emoji) into a single key event when no
+ * escape-sequence protocol is in play.
+ */
+function isSinglePrintableCodepoint(data: string): boolean {
+	const codepoint = data.codePointAt(0);
+	if (codepoint === undefined) return false;
+	// Must be exactly one codepoint: 1 UTF-16 unit for BMP, 2 for astral.
+	if (String.fromCodePoint(codepoint).length !== data.length) return false;
+	// Reject C0 controls (0x00-0x1F).
+	if (codepoint < 0x20) return false;
+	// Reject DEL (0x7F) and C1 controls (0x80-0x9F).
+	if (codepoint >= 0x7f && codepoint <= 0x9f) return false;
+	// Reject lone surrogate code units (0xD800-0xDFFF).
+	if (codepoint >= 0xd800 && codepoint <= 0xdfff) return false;
+	return true;
+}
+
 export function parseKey(data: string): string | undefined {
 	const kitty = parseKittySequence(data);
 	if (kitty) {
@@ -1317,9 +1340,15 @@ export function parseKey(data: string): string | undefined {
 		if (code >= 1 && code <= 26) {
 			return `ctrl+${String.fromCharCode(code + 96)}`;
 		}
-		if (code >= 32 && code <= 126) {
-			return data;
-		}
+	}
+
+	// Raw printable character forwarded by StdinBuffer. Covers ASCII (32-126),
+	// non-ASCII BMP characters like 'é' (U+00E9) and '世' (U+4E16), and
+	// astral/emoji codepoints like '🎉' (U+1F389) delivered as a surrogate pair
+	// (data.length === 2). Without this, non-Kitty terminals silently drop every
+	// keystroke outside the printable ASCII range.
+	if (isSinglePrintableCodepoint(data)) {
+		return data;
 	}
 
 	return undefined;
