@@ -13,7 +13,6 @@ export class StreamingMessageContainer extends LitElement {
 	@state() private _message: AgentMessage | null = null;
 	private _pendingMessage: AgentMessage | null = null;
 	private _updateScheduled = false;
-	private _immediateUpdate = false;
 
 	protected override createRenderRoot(): HTMLElement | DocumentFragment {
 		return this;
@@ -29,33 +28,31 @@ export class StreamingMessageContainer extends LitElement {
 		// Store the latest message
 		this._pendingMessage = message;
 
-		// If this is an immediate update (like clearing), apply it right away
+		// If this is an immediate update (like clearing), apply it right away.
+		// Nulling _pendingMessage cancels any already-scheduled frame so it can't
+		// overwrite this with a stale snapshot.
 		if (immediate || message === null) {
-			this._immediateUpdate = true;
 			this._message = message;
 			this.requestUpdate();
-			// Cancel any pending updates since we're clearing
 			this._pendingMessage = null;
-			this._updateScheduled = false;
 			return;
 		}
 
-		// Otherwise batch updates for performance during streaming
+		// Otherwise batch updates for performance during streaming. A single
+		// scheduled frame always commits the most-recent pending snapshot, so a
+		// delta that arrives after an interleaved immediate update still wins.
 		if (!this._updateScheduled) {
 			this._updateScheduled = true;
 
-			requestAnimationFrame(async () => {
-				// Only apply the update if we haven't been cleared
-				if (!this._immediateUpdate && this._pendingMessage !== null) {
+			requestAnimationFrame(() => {
+				if (this._pendingMessage !== null) {
 					// Deep clone the message to ensure Lit detects changes in nested properties
 					// (like toolCall.arguments being mutated during streaming)
 					this._message = JSON.parse(JSON.stringify(this._pendingMessage));
 					this.requestUpdate();
 				}
-				// Reset for next batch
 				this._pendingMessage = null;
 				this._updateScheduled = false;
-				this._immediateUpdate = false;
 			});
 		}
 	}
