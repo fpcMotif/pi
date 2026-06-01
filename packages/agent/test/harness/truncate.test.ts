@@ -125,4 +125,17 @@ describe("truncation utilities", () => {
 			wasTruncated: true,
 		});
 	});
+
+	it("never splits a surrogate pair at the truncation boundary", () => {
+		// "a😀b" code units: 'a', high-surrogate, low-surrogate, 'b'.
+		// Cutting at maxChars=2 lands between the surrogate halves; the dangling
+		// high surrogate must be dropped rather than emitted on its own.
+		const split = truncateLine("a😀b", 2);
+		expect(split).toEqual({ text: "a... [truncated]", wasTruncated: true });
+		expect(split.text).not.toMatch(/[\uD800-\uDFFF]/);
+
+		// A complete pair that fits within maxChars is preserved intact.
+		const kept = truncateLine("a😀b", 3);
+		expect(kept).toEqual({ text: "a😀... [truncated]", wasTruncated: true });
+	});
 });

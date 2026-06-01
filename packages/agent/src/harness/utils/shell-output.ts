@@ -30,6 +30,24 @@ export function sanitizeBinaryOutput(str: string): string {
 		.join("");
 }
 
+/**
+ * Close a temp-file WriteStream and resolve only once it has flushed.
+ *
+ * The bare `stream.end()` returns synchronously and the file is still being
+ * written; a consumer that reads `fullOutputPath` right away can hit ENOENT or
+ * a partially-flushed file. Awaiting the 'finish' callback guarantees the file
+ * is complete before we hand back its path.
+ */
+function finishStream(stream: WriteStream | undefined): Promise<void> {
+	return new Promise<void>((resolve) => {
+		if (!stream) {
+			resolve();
+			return;
+		}
+		stream.end(() => resolve());
+	});
+}
+
 export async function executeShellWithCapture(
 	env: ExecutionEnv,
 	command: string,
@@ -82,7 +100,7 @@ export async function executeShellWithCapture(
 		if (truncationResult.truncated) {
 			ensureTempFile();
 		}
-		tempFileStream?.end();
+		await finishStream(tempFileStream);
 		const cancelled = options?.signal?.aborted ?? false;
 		return {
 			output: truncationResult.truncated ? truncationResult.content : fullOutput,
@@ -98,7 +116,7 @@ export async function executeShellWithCapture(
 			if (truncationResult.truncated) {
 				ensureTempFile();
 			}
-			tempFileStream?.end();
+			await finishStream(tempFileStream);
 			return {
 				output: truncationResult.truncated ? truncationResult.content : fullOutput,
 				exitCode: undefined,
@@ -107,7 +125,7 @@ export async function executeShellWithCapture(
 				fullOutputPath: tempFilePath,
 			};
 		}
-		tempFileStream?.end();
+		await finishStream(tempFileStream);
 		throw err;
 	}
 }
