@@ -222,9 +222,15 @@ function extractCompleteSequences(buffer: string): { sequences: string[]; remain
 				return { sequences, remainder: remaining };
 			}
 		} else {
-			// Not an escape sequence - take a single character
-			sequences.push(remaining[0]!);
-			pos++;
+			// Not an escape sequence - take a single full code point.
+			// Using remaining[0] would slice one UTF-16 code unit, splitting an
+			// astral code point (e.g. an emoji like "🎉") into its high/low
+			// surrogate halves. Each lone surrogate is then emitted as its own
+			// "data" event and dropped by downstream key parsing. Reading a whole
+			// code point keeps a surrogate pair together as one emitted sequence.
+			const char = String.fromCodePoint(remaining.codePointAt(0)!);
+			sequences.push(char);
+			pos += char.length;
 		}
 	}
 

@@ -48,6 +48,20 @@ describe("StdinBuffer", () => {
 			processInput("hello 世界");
 			assert.deepStrictEqual(emittedSequences, ["h", "e", "l", "l", "o", " ", "世", "界"]);
 		});
+
+		it("should keep an astral code point (emoji) intact as a single sequence", () => {
+			// "🎉" (U+1F389) is a surrogate pair in JS (🎉). Slicing one
+			// UTF-16 code unit at a time would emit each surrogate separately, and
+			// downstream key parsing drops the lone halves. The whole code point
+			// must survive as one "data" sequence.
+			processInput("🎉");
+			assert.deepStrictEqual(emittedSequences, ["🎉"]);
+		});
+
+		it("should keep astral code points intact when mixed with BMP characters", () => {
+			processInput("a🎉b世🚀");
+			assert.deepStrictEqual(emittedSequences, ["a", "🎉", "b", "世", "🚀"]);
+		});
 	});
 
 	describe("Complete Escape Sequences", () => {
