@@ -148,14 +148,26 @@ export class RuntimeMessageRouter {
 				// 1. Try provider handlers first (for bidirectional comm)
 				for (const provider of context.providers) {
 					if (provider.handleMessage) {
-						await provider.handleMessage(e.data, respond);
+						try {
+							await provider.handleMessage(e.data, respond);
+						} catch (error) {
+							// Isolate each handler: one throwing/rejecting provider must not
+							// starve later providers + consumers, and must not reject this
+							// fire-and-forget listener with an uncaught promise rejection.
+							console.error("[RuntimeMessageRouter] provider message handler failed:", error);
+						}
 						// Don't stop - let consumers also handle the message
 					}
 				}
 
 				// 2. Broadcast to consumers (one-way messages or lifecycle events)
 				for (const consumer of context.consumers) {
-					await consumer.handleMessage(e.data);
+					try {
+						await consumer.handleMessage(e.data);
+					} catch (error) {
+						// Isolate each consumer: one bad consumer must not starve the others.
+						console.error("[RuntimeMessageRouter] consumer message handler failed:", error);
+					}
 					// Don't stop - let all consumers see the message
 				}
 			};
@@ -189,14 +201,26 @@ export class RuntimeMessageRouter {
 					// 1. Try provider handlers first (for bidirectional comm)
 					for (const provider of context.providers) {
 						if (provider.handleMessage) {
-							await provider.handleMessage(message, respond);
+							try {
+								await provider.handleMessage(message, respond);
+							} catch (error) {
+								// Isolate each handler: one throwing/rejecting provider must not
+								// starve later providers + consumers, and must not reject this
+								// fire-and-forget async block with an uncaught promise rejection.
+								console.error("[RuntimeMessageRouter] provider message handler failed:", error);
+							}
 							// Don't stop - let consumers also handle the message
 						}
 					}
 
 					// 2. Broadcast to consumers (one-way messages or lifecycle events)
 					for (const consumer of context.consumers) {
-						await consumer.handleMessage(message);
+						try {
+							await consumer.handleMessage(message);
+						} catch (error) {
+							// Isolate each consumer: one bad consumer must not starve the others.
+							console.error("[RuntimeMessageRouter] consumer message handler failed:", error);
+						}
 						// Don't stop - let all consumers see the message
 					}
 				})();
