@@ -262,5 +262,9 @@ export function truncateLine(
 	if (line.length <= maxChars) {
 		return { text: line, wasTruncated: false };
 	}
-	return { text: `${line.slice(0, maxChars)}... [truncated]`, wasTruncated: true };
+	// slice() counts UTF-16 code units, so cutting at maxChars can split a
+	// surrogate pair and leave a lone high surrogate at the boundary. Strip a
+	// dangling high surrogate so we only ever emit whole code points.
+	const sliced = line.slice(0, maxChars).replace(/[\uD800-\uDBFF]$/, "");
+	return { text: `${sliced}... [truncated]`, wasTruncated: true };
 }

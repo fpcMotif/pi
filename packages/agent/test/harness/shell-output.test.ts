@@ -1,4 +1,4 @@
-import { readdir, rm } from "node:fs/promises";
+import { readdir, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -170,6 +170,27 @@ describe("shell output capture", () => {
 				.filter((name) => name.startsWith("bash-") && name.endsWith(".log") && !before.has(name))
 				.map((name) => rm(join(tmpdir(), name), { force: true })),
 		);
+	});
+
+	it("flushes the full output file before returning so it can be read immediately", async () => {
+		const payload = "x".repeat(DEFAULT_MAX_BYTES * 2 + 64);
+		const env = createEnv(async (_command, options) => {
+			options?.onStdout?.("prefix\n");
+			options?.onStdout?.(payload);
+			return { stdout: "", stderr: "", exitCode: 0 };
+		});
+
+		const result = await executeShellWithCapture(env, "ignored");
+
+		expect(result.fullOutputPath).toBeDefined();
+		if (result.fullOutputPath) {
+			// The stream has been awaited to 'finish', so the file is complete the
+			// moment its path is handed back - no ENOENT, no partial flush.
+			const contents = await readFile(result.fullOutputPath, "utf-8");
+			expect(contents.startsWith("prefix\n")).toBe(true);
+			expect(contents.length).toBeGreaterThanOrEqual(payload.length);
+			await rm(result.fullOutputPath, { force: true });
+		}
 	});
 
 	it("writes previously captured chunks to the full output file once the byte limit is exceeded", async () => {

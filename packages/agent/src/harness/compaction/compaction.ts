@@ -144,9 +144,13 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 /**
  * Calculate total context tokens from usage.
  * Uses the native totalTokens field when available, falls back to computing from components.
+ *
+ * Uses a nullish check rather than `||` so a provider that legitimately reports
+ * `totalTokens === 0` (e.g. an empty/edge response) is honored instead of
+ * silently falling back to summing the components.
  */
 export function calculateContextTokens(usage: Usage): number {
-	return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+	return usage.totalTokens ?? usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 }
 
 /**
@@ -429,11 +433,23 @@ export function findCutPoint(
 		// Check if we've exceeded the budget
 		if (accumulatedTokens >= keepRecentTokens) {
 			// Find the closest valid cut point at or after this entry
+			let found = false;
 			for (let c = 0; c < cutPoints.length; c++) {
 				if (cutPoints[c] >= i) {
 					cutIndex = cutPoints[c];
+					found = true;
 					break;
 				}
+			}
+			// No valid cut point exists at or after this entry (e.g. an oversized
+			// trailing tool result, which can never itself be a cut point). Fall
+			// back to the latest valid cut point before it: cutPoints is ascending,
+			// so when nothing is >= i every cut point is < i and the last one is the
+			// closest preceding boundary. This keeps the unavoidable tail with the
+			// turn that produced it instead of silently retaining everything from
+			// cutPoints[0].
+			if (!found) {
+				cutIndex = cutPoints[cutPoints.length - 1];
 			}
 			break;
 		}

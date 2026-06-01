@@ -164,7 +164,12 @@ describe("harness compaction", () => {
 
 	it("calculates total context tokens from usage", () => {
 		expect(calculateContextTokens(createMockUsage(1000, 500, 200, 100))).toBe(1800);
-		expect(calculateContextTokens({ ...createMockUsage(10, 5, 2, 1), totalTokens: 0 })).toBe(18);
+		// A legitimately reported total of 0 is honored, not treated as "missing".
+		expect(calculateContextTokens({ ...createMockUsage(10, 5, 2, 1), totalTokens: 0 })).toBe(0);
+		// When totalTokens is absent, fall back to summing the components.
+		expect(
+			calculateContextTokens({ ...createMockUsage(10, 5, 2, 1), totalTokens: undefined as unknown as number }),
+		).toBe(18);
 	});
 
 	it("checks compaction threshold", () => {
@@ -194,6 +199,40 @@ describe("harness compaction", () => {
 
 		const result = findCutPoint(entries, 0, entries.length, 2500);
 		expect(entries[result.firstKeptEntryIndex]?.type).toBe("message");
+	});
+
+	it("falls back to the latest valid cut point when an oversized trailing tool result has none after it", () => {
+		const user = createMessageEntry(createUserMessage("kick off a big tool call"));
+		const assistant = createMessageEntry(
+			{
+				...createAssistantMessage("calling tool", createMockUsage(100, 10)),
+				content: [{ type: "toolCall", id: "tool-1", name: "read", arguments: { path: "src/big.ts" } }],
+			},
+			user.id,
+		);
+		// A tool result is never a valid cut point, and this one is huge enough to
+		// blow the keepRecentTokens budget on its own. There is no cut point at or
+		// after it, so the cut must fall back to the assistant turn that produced it
+		// (index 1) rather than silently keeping everything from cutPoints[0] (the
+		// user message at index 0).
+		const toolResult = createMessageEntry(
+			{
+				role: "toolResult",
+				toolCallId: "tool-1",
+				toolName: "read",
+				content: [{ type: "text", text: "x".repeat(8000) }],
+				isError: false,
+				timestamp: Date.now(),
+			} as unknown as AgentMessage,
+			assistant.id,
+		);
+		const entries = [user, assistant, toolResult];
+
+		expect(findCutPoint(entries, 0, entries.length, 1)).toEqual({
+			firstKeptEntryIndex: 1,
+			turnStartIndex: 0,
+			isSplitTurn: true,
+		});
 	});
 
 	it("estimates tokens for custom message variants and finds turn starts", () => {
