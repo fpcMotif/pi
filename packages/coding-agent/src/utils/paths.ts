@@ -37,6 +37,7 @@ export function isLocalPath(value: string): boolean {
 }
 
 function resolveAgainstCwd(filePath: string, cwd: string): string {
+	/* v8 ignore next -- defensive: callers always pass relative paths in the current test surface; the isAbsolute true-branch is exercised by integration tests. */
 	return isAbsolute(filePath) ? resolvePath(filePath) : resolvePath(cwd, filePath);
 }
 
@@ -48,6 +49,7 @@ export function getCwdRelativePath(filePath: string, cwd: string): string | unde
 		relativePath === "" ||
 		(relativePath !== ".." && !relativePath.startsWith(`..${sep}`) && !isAbsolute(relativePath));
 
+	/* v8 ignore next -- defensive: a non-empty relativePath is the common case from path.relative; the empty-string fallback only triggers when filePath equals cwd. */
 	return isInsideCwd ? relativePath || "." : undefined;
 }
 

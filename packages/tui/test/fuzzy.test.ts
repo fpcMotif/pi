@@ -1,5 +1,5 @@
 import assert from "node:assert";
-import { describe, it } from "node:test";
+import { describe, it } from "vitest";
 import { fuzzyFilter, fuzzyMatch } from "../src/fuzzy.js";
 
 describe("fuzzyMatch", () => {
@@ -101,5 +101,13 @@ describe("fuzzyFilter", () => {
 		assert.strictEqual(result.length, 2);
 		assert.ok(result.map((r) => r.name).includes("foo"));
 		assert.ok(result.map((r) => r.name).includes("foobar"));
+	});
+
+	it("returns the original list unchanged when the query has no non-whitespace tokens", () => {
+		const items = [{ name: "alpha" }, { name: "beta" }];
+		assert.strictEqual(
+			fuzzyFilter(items, "   ", (item) => item.name),
+			items,
+		);
 	});
 });

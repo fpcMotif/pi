@@ -1,3 +1,18 @@
+/**
+ * Tracer bullet for toolkit threading through `Session.send`.
+ *
+ * `session.send(prompt, toolkit)` forwards the toolkit to
+ * `LanguageModel.streamText({ prompt, toolkit })`. The upstream OpenAi
+ * provider — driven by the canned `function_call` SSE event sequence — emits
+ * a `tool-call` part, the framework's outer wrapper invokes the toolkit's
+ * `GetWeather` handler (from `WeatherHandlers` Layer), the framework emits a
+ * `tool-result` part, and `Session.send`'s `liftPart` flatMap surfaces both
+ * as `ToolDispatched` and `ToolCompleted` AgentEvents.
+ *
+ * This is the end-to-end provider + tool + events test:
+ * stub-OpenAi-streaming → real OpenAiLanguageModel → framework tool dispatch
+ * → real handler → Session.send lifting.
+ */
 import { OpenAiLanguageModel } from "@effect/ai-openai";
 import { it } from "@effect/vitest";
 import { Effect, Layer, Schema, Stream } from "effect";
@@ -46,7 +61,6 @@ describe("Session.send threads a toolkit through to LanguageModel.streamText", (
 
 				const tags = events.map((e) => e._tag);
 
-				// Both lifted tool events must appear, in order, before Finish.
 				const dispatchedIdx = tags.indexOf("ToolDispatched");
 				const completedIdx = tags.indexOf("ToolCompleted");
 				const finishIdx = tags.indexOf("Finish");

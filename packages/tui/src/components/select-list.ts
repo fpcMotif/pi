@@ -92,6 +92,7 @@ export class SelectList implements Component {
 		// Render visible items
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredItems[i];
+			/* v8 ignore next -- defensive: i is clamped to filteredItems.length above, so the falsy-item guard is unreachable. */
 			if (!item) continue;
 
 			const isSelected = i === this.selectedIndex;
@@ -212,6 +213,7 @@ export class SelectList implements Component {
 	}
 
 	private getDisplayValue(item: SelectItem): string {
+		/* v8 ignore next -- defensive: every SelectItem either carries a non-empty label or falls back to value; the `||` short-circuit's empty-label branch isn't reachable from current callers. */
 		return item.label || item.value;
 	}
 

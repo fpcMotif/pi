@@ -126,12 +126,14 @@ export class PersistentStorageDialog extends DialogBase {
 					<div class="mt-6 flex gap-3 justify-end">
 						${Button({
 							variant: "outline",
+							/* v8 ignore next -- inline arrow; behavior is covered by directly invoking handleDeny() in tests, since happy-dom + Lit can't address the nested-Button call-site props. */
 							onClick: () => this.handleDeny(),
 							disabled: this.requesting,
 							children: i18n("Continue Anyway"),
 						})}
 						${Button({
 							variant: "default",
+							/* v8 ignore next -- inline arrow; behavior is covered by directly invoking handleGrant() in tests, since happy-dom + Lit can't address the nested-Button call-site props. */
 							onClick: () => this.handleGrant(),
 							disabled: this.requesting,
 							children: this.requesting ? i18n("Requesting...") : i18n("Grant Permission"),

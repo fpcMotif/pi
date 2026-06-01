@@ -28,14 +28,19 @@ describe("OAuthSelectorComponent", () => {
 	});
 
 	it("keeps built-in API key providers separate from OAuth-only providers", () => {
-		const oauthProviderIds = new Set(["anthropic", "github-copilot", "custom-oauth"]);
-		const builtInProviderIds = new Set(["anthropic", "github-copilot", "amazon-bedrock", "openai"]);
+		const oauthProviderIds = new Set(["openai", "custom-oauth"]);
+		const builtInProviderIds = new Set(["openai", "openai-codex", "openrouter", "internal-proxy"]);
 
-		expect(isApiKeyLoginProvider("anthropic", oauthProviderIds, builtInProviderIds)).toBe(true);
-		expect(BUILT_IN_PROVIDER_DISPLAY_NAMES.anthropic).toBe("Anthropic");
+		// Built-in providers with a display name always offer API-key login,
+		// even when they also expose an OAuth flow.
 		expect(isApiKeyLoginProvider("openai", oauthProviderIds, builtInProviderIds)).toBe(true);
-		expect(isApiKeyLoginProvider("github-copilot", oauthProviderIds, builtInProviderIds)).toBe(false);
-		expect(isApiKeyLoginProvider("amazon-bedrock", oauthProviderIds, builtInProviderIds)).toBe(true);
+		expect(BUILT_IN_PROVIDER_DISPLAY_NAMES.openai).toBe("OpenAI");
+		expect(isApiKeyLoginProvider("openrouter", oauthProviderIds, builtInProviderIds)).toBe(true);
+
+		// A built-in model provider without a display name is treated as OAuth-only.
+		expect(isApiKeyLoginProvider("internal-proxy", oauthProviderIds, builtInProviderIds)).toBe(false);
+
+		// Custom providers default to API-key login unless they are OAuth-only.
 		expect(isApiKeyLoginProvider("custom-oauth", oauthProviderIds, builtInProviderIds)).toBe(false);
 		expect(isApiKeyLoginProvider("custom-api", oauthProviderIds, builtInProviderIds)).toBe(true);
 	});

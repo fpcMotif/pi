@@ -223,6 +223,7 @@ export class KeybindingsManager {
 	getResolvedBindings(): KeybindingsConfig {
 		const resolved: KeybindingsConfig = {};
 		for (const id of Object.keys(this.definitions)) {
+			/* v8 ignore next -- defensive: every id in `definitions` is also keyed in `keysById` after registration, so the `?? []` fallback is unreachable. */
 			const keys = this.keysById.get(id as Keybinding) ?? [];
 			resolved[id] = keys.length === 1 ? keys[0]! : [...keys];
 		}

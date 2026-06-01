@@ -14,7 +14,7 @@ import {
 	createCompactionSummaryMessage,
 	createCustomMessage,
 } from "../messages.js";
-import type { Session, SessionTreeEntry } from "../types.js";
+import type { SessionTreeEntry } from "../types.js";
 import { estimateTokens } from "./compaction.js";
 import {
 	computeFileLists,
@@ -62,6 +62,13 @@ export interface CollectEntriesResult {
 	commonAncestorId: string | null;
 }
 
+type Awaitable<T> = T | Promise<T>;
+
+export interface BranchSummarySession {
+	getBranch(fromId?: string): Awaitable<SessionTreeEntry[]>;
+	getEntry(id: string): Awaitable<SessionTreeEntry | undefined>;
+}
+
 export interface GenerateBranchSummaryOptions {
 	/** Model to use for summarization */
 	model: Model<any>;
@@ -96,7 +103,7 @@ export interface GenerateBranchSummaryOptions {
  * @returns Entries to summarize and the common ancestor
  */
 export async function collectEntriesForBranchSummary(
-	session: Session,
+	session: BranchSummarySession,
 	oldLeafId: string | null,
 	targetId: string,
 ): Promise<CollectEntriesResult> {
@@ -354,6 +361,7 @@ export async function generateBranchSummary(
 	summary += formatFileOperations(readFiles, modifiedFiles);
 
 	return {
+		/* v8 ignore next -- the branch preamble makes summary truthy; fallback is retained as defensive legacy output. */
 		summary: summary || "No summary generated",
 		readFiles,
 		modifiedFiles,

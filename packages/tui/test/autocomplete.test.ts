@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { afterEach, beforeEach, describe, it, test } from "node:test";
+import { afterEach, beforeEach, describe, it, test } from "vitest";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.js";
 
 const resolveFdPath = (): string | null => {

@@ -214,6 +214,14 @@ function createExtensionAPI(
 			extension.handlers.set(event, list);
 		},
 
+		declareUICapabilities(declaration): void {
+			runtime.assertActive();
+			extension.uiCapabilityDeclaration = {
+				required: declaration.required ? [...declaration.required] : undefined,
+				optional: declaration.optional ? [...declaration.optional] : undefined,
+			};
+		},
+
 		registerTool(tool: ToolDefinition): void {
 			runtime.assertActive();
 			extension.tools.set(tool.name, {
@@ -221,6 +229,15 @@ function createExtensionAPI(
 				sourceInfo: extension.sourceInfo,
 			});
 			runtime.refreshTools();
+		},
+
+		registerToolRenderer(toolName: string, renderer): void {
+			runtime.assertActive();
+			extension.toolRenderers.set(toolName, {
+				toolName,
+				renderer,
+				sourceInfo: extension.sourceInfo,
+			});
 		},
 
 		registerCommand(name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">): void {
@@ -383,6 +400,8 @@ function createExtension(extensionPath: string, resolvedPath: string): Extension
 		sourceInfo: createSyntheticSourceInfo(extensionPath, { source, baseDir }),
 		handlers: new Map(),
 		tools: new Map(),
+		toolRenderers: new Map(),
+		uiCapabilityDeclaration: {},
 		messageRenderers: new Map(),
 		commands: new Map(),
 		flags: new Map(),

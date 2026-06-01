@@ -1,10 +1,10 @@
 import { it } from "@effect/vitest";
-import { Effect, Layer, Stream } from "effect";
-import { LanguageModel } from "effect/unstable/ai";
+import { Effect, Stream } from "effect";
 import { describe, expect } from "vitest";
 
 import type { AgentEvent, LlmPart } from "../../effect/agent-event.js";
 import { Session } from "../../effect/session.js";
+import { stubLanguageModelStream } from "../../test-support/stub-language-model-stream.js";
 
 /**
  * Slice (covering `effect/session.ts:liftPart` defensive guard) -- the
@@ -14,21 +14,11 @@ import { Session } from "../../effect/session.js";
  * in the source for defence-in-depth, and the v8 branch coverage gate needs
  * to see both arms exercised.
  *
- * These tests bypass the validation pipeline by constructing the
- * `LanguageModel.LanguageModel` Service directly via `Layer.succeed` + `.of`,
- * feeding primitives / `null` / unrecognised objects straight into the
- * `Session.send` Stream.
+ * These tests bypass the validation pipeline with the shared
+ * `stubLanguageModelStream` test-support Layer (a `LanguageModel.LanguageModel`
+ * Service built via `Layer.succeed` + `.of`), feeding primitives / `null` /
+ * unrecognised objects straight into the `Session.send` Stream.
  */
-const directStubLanguageModelStream = (parts: ReadonlyArray<unknown>) =>
-	Layer.succeed(
-		LanguageModel.LanguageModel,
-		LanguageModel.LanguageModel.of({
-			generateText: (() => Effect.die("directStub: generateText not implemented")) as never,
-			generateObject: (() => Effect.die("directStub: generateObject not implemented")) as never,
-			streamText: (() => Stream.fromIterable(parts)) as never,
-		}),
-	);
-
 const firstLlmPart = (events: ReadonlyArray<AgentEvent>): unknown => {
 	const event = events[0];
 	if (event?._tag !== "LlmPart") {
@@ -45,7 +35,7 @@ describe("Session.send liftPart -- defensive guard against non-record stream par
 
 			expect(events.map((e) => e._tag)).toEqual(["LlmPart", "Finish"]);
 			expect(firstLlmPart(events)).toBe("primitive-string-part");
-		}).pipe(Effect.provide(directStubLanguageModelStream(["primitive-string-part"]))),
+		}).pipe(Effect.provide(stubLanguageModelStream(["primitive-string-part"]))),
 	);
 
 	it.effect("a numeric part passes through as a single LlmPart", () =>
@@ -55,7 +45,7 @@ describe("Session.send liftPart -- defensive guard against non-record stream par
 
 			expect(events.map((e) => e._tag)).toEqual(["LlmPart", "Finish"]);
 			expect(firstLlmPart(events)).toBe(42);
-		}).pipe(Effect.provide(directStubLanguageModelStream([42]))),
+		}).pipe(Effect.provide(stubLanguageModelStream([42]))),
 	);
 
 	it.effect("a null part passes through as a single LlmPart", () =>
@@ -65,7 +55,7 @@ describe("Session.send liftPart -- defensive guard against non-record stream par
 
 			expect(events.map((e) => e._tag)).toEqual(["LlmPart", "Finish"]);
 			expect(firstLlmPart(events)).toBeNull();
-		}).pipe(Effect.provide(directStubLanguageModelStream([null]))),
+		}).pipe(Effect.provide(stubLanguageModelStream([null]))),
 	);
 
 	it.effect("an object with no recognised type tag passes through as a single LlmPart", () =>
@@ -75,7 +65,7 @@ describe("Session.send liftPart -- defensive guard against non-record stream par
 
 			expect(events.map((e) => e._tag)).toEqual(["LlmPart", "Finish"]);
 			expect(firstLlmPart(events)).toEqual({ type: "not-a-known-tag", payload: 1 });
-		}).pipe(Effect.provide(directStubLanguageModelStream([{ type: "not-a-known-tag", payload: 1 }]))),
+		}).pipe(Effect.provide(stubLanguageModelStream([{ type: "not-a-known-tag", payload: 1 }]))),
 	);
 
 	it.effect("a tool-call object missing string id/name falls through to base LlmPart only", () =>
@@ -84,7 +74,7 @@ describe("Session.send liftPart -- defensive guard against non-record stream par
 			const events = yield* Stream.runCollect(session.send("..."));
 
 			expect(events.map((e) => e._tag)).toEqual(["LlmPart", "Finish"]);
-		}).pipe(Effect.provide(directStubLanguageModelStream([{ type: "tool-call" }]))),
+		}).pipe(Effect.provide(stubLanguageModelStream([{ type: "tool-call" }]))),
 	);
 
 	it.effect("a tool-result object missing isFailure boolean falls through to base LlmPart only", () =>
@@ -95,9 +85,7 @@ describe("Session.send liftPart -- defensive guard against non-record stream par
 			expect(events.map((e) => e._tag)).toEqual(["LlmPart", "Finish"]);
 		}).pipe(
 			Effect.provide(
-				directStubLanguageModelStream([
-					{ type: "tool-result", id: "call_x", name: "ToolX", result: { ok: true } },
-				]),
+				stubLanguageModelStream([{ type: "tool-result", id: "call_x", name: "ToolX", result: { ok: true } }]),
 			),
 		),
 	);

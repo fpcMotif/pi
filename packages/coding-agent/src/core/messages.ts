@@ -5,7 +5,7 @@
  * and provides a transformer to convert them to LLM-compatible messages.
  */
 
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { type AgentMessage, type TranscriptAdapters, toLlm } from "@earendil-works/pi-agent-core";
 import type { ImageContent, Message, TextContent } from "@earendil-works/pi-ai";
 
 export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
@@ -145,51 +145,53 @@ export function createCustomMessage(
  * - Compaction's generateSummary (for summarization)
  * - Custom extensions and tools
  */
+const codingAgentTranscriptAdapters = {
+	bashExecution: (message: AgentMessage): Message[] => {
+		if (message.role !== "bashExecution" || message.excludeFromContext) return [];
+		return [
+			{
+				role: "user",
+				content: [{ type: "text", text: bashExecutionToText(message) }],
+				timestamp: message.timestamp,
+			},
+		];
+	},
+	custom: (message: AgentMessage): Message[] => {
+		if (message.role !== "custom") return [];
+		const content =
+			typeof message.content === "string" ? [{ type: "text" as const, text: message.content }] : message.content;
+		return [
+			{
+				role: "user",
+				content,
+				timestamp: message.timestamp,
+			},
+		];
+	},
+	branchSummary: (message: AgentMessage): Message[] => {
+		if (message.role !== "branchSummary") return [];
+		return [
+			{
+				role: "user",
+				content: [{ type: "text" as const, text: BRANCH_SUMMARY_PREFIX + message.summary + BRANCH_SUMMARY_SUFFIX }],
+				timestamp: message.timestamp,
+			},
+		];
+	},
+	compactionSummary: (message: AgentMessage): Message[] => {
+		if (message.role !== "compactionSummary") return [];
+		return [
+			{
+				role: "user",
+				content: [
+					{ type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + message.summary + COMPACTION_SUMMARY_SUFFIX },
+				],
+				timestamp: message.timestamp,
+			},
+		];
+	},
+} satisfies TranscriptAdapters;
+
 export function convertToLlm(messages: AgentMessage[]): Message[] {
-	return messages
-		.map((m): Message | undefined => {
-			switch (m.role) {
-				case "bashExecution":
-					// Skip messages excluded from context (!! prefix)
-					if (m.excludeFromContext) {
-						return undefined;
-					}
-					return {
-						role: "user",
-						content: [{ type: "text", text: bashExecutionToText(m) }],
-						timestamp: m.timestamp,
-					};
-				case "custom": {
-					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
-					return {
-						role: "user",
-						content,
-						timestamp: m.timestamp,
-					};
-				}
-				case "branchSummary":
-					return {
-						role: "user",
-						content: [{ type: "text" as const, text: BRANCH_SUMMARY_PREFIX + m.summary + BRANCH_SUMMARY_SUFFIX }],
-						timestamp: m.timestamp,
-					};
-				case "compactionSummary":
-					return {
-						role: "user",
-						content: [
-							{ type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + m.summary + COMPACTION_SUMMARY_SUFFIX },
-						],
-						timestamp: m.timestamp,
-					};
-				case "user":
-				case "assistant":
-				case "toolResult":
-					return m;
-				default:
-					// biome-ignore lint/correctness/noSwitchDeclarations: fine
-					const _exhaustiveCheck: never = m;
-					return undefined;
-			}
-		})
-		.filter((m) => m !== undefined);
+	return toLlm(messages, codingAgentTranscriptAdapters);
 }

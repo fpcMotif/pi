@@ -14,7 +14,8 @@ export async function getAuthToken(): Promise<string | undefined> {
 			break;
 		}
 	}
-	return authToken?.trim() || undefined;
+	// The loop only breaks once `authToken` is a non-empty, trimmed string.
+	return authToken;
 }
 
 export async function clearAuthToken() {

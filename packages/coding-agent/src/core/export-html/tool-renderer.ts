@@ -8,12 +8,12 @@
 import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type { Component } from "@earendil-works/pi-tui";
 import type { Theme } from "../../modes/interactive/theme/theme.js";
-import type { ToolDefinition, ToolRenderContext } from "../extensions/types.js";
+import type { ToolRenderContext, ToolRenderer } from "../extensions/types.js";
 import { ansiLinesToHtml } from "./ansi-to-html.js";
 
 export interface ToolHtmlRendererDeps {
-	/** Function to look up tool definition by name */
-	getToolDefinition: (name: string) => ToolDefinition | undefined;
+	/** Function to look up a tool renderer by name */
+	getToolRenderer: (name: string) => ToolRenderer | undefined;
 	/** Theme for styling */
 	theme: Theme;
 	/** Working directory for render context */
@@ -29,7 +29,7 @@ export interface ToolHtmlRenderer {
 	renderResult(
 		toolCallId: string,
 		toolName: string,
-		result: Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
+		result: (TextContent | ImageContent)[],
 		details: unknown,
 		isError: boolean,
 	): { collapsed?: string; expanded?: string } | undefined;
@@ -38,7 +38,7 @@ export interface ToolHtmlRenderer {
 /**
  * Create a tool HTML renderer.
  *
- * The renderer looks up tool definitions and invokes their renderCall/renderResult
+ * The renderer looks up tool renderers and invokes their renderCall/renderResult
  * methods, converting the resulting TUI Component output (ANSI) to HTML.
  */
 const ANSI_ESCAPE_REGEX = /\x1b\[[\d;]*m/g;
@@ -56,14 +56,14 @@ function trimRenderedResultLines(lines: string[]): string[] {
 }
 
 export function createToolHtmlRenderer(deps: ToolHtmlRendererDeps): ToolHtmlRenderer {
-	const { getToolDefinition, theme, cwd, width = 100 } = deps;
+	const { getToolRenderer, theme, cwd, width = 100 } = deps;
 
 	const renderedCallComponents = new Map<string, Component>();
 	const renderedResultComponents = new Map<string, Component>();
-	const renderedStates = new Map<string, any>();
+	const renderedStates = new Map<string, unknown>();
 	const renderedArgs = new Map<string, unknown>();
 
-	const getState = (toolCallId: string): any => {
+	const getState = (toolCallId: string): unknown => {
 		let state = renderedStates.get(toolCallId);
 		if (!state) {
 			state = {};
@@ -99,12 +99,12 @@ export function createToolHtmlRenderer(deps: ToolHtmlRendererDeps): ToolHtmlRend
 		renderCall(toolCallId: string, toolName: string, args: unknown): string | undefined {
 			try {
 				renderedArgs.set(toolCallId, args);
-				const toolDef = getToolDefinition(toolName);
-				if (!toolDef?.renderCall) {
+				const renderer = getToolRenderer(toolName);
+				if (!renderer?.renderCall) {
 					return undefined;
 				}
 
-				const component = toolDef.renderCall(
+				const component = renderer.renderCall(
 					args,
 					theme,
 					createRenderContext(toolCallId, renderedCallComponents.get(toolCallId), false, true, false),
@@ -121,26 +121,24 @@ export function createToolHtmlRenderer(deps: ToolHtmlRendererDeps): ToolHtmlRend
 		renderResult(
 			toolCallId: string,
 			toolName: string,
-			result: Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
+			result: (TextContent | ImageContent)[],
 			details: unknown,
 			isError: boolean,
 		): { collapsed?: string; expanded?: string } | undefined {
 			try {
-				const toolDef = getToolDefinition(toolName);
-				if (!toolDef?.renderResult) {
+				const renderer = getToolRenderer(toolName);
+				if (!renderer?.renderResult) {
 					return undefined;
 				}
 
-				// Build AgentToolResult from content array
-				// Cast content since session storage uses generic object types
 				const agentToolResult = {
-					content: result as (TextContent | ImageContent)[],
+					content: result,
 					details,
 					isError,
 				};
 
 				// Render collapsed
-				const collapsedComponent = toolDef.renderResult(
+				const collapsedComponent = renderer.renderResult(
 					agentToolResult,
 					{ expanded: false, isPartial: false },
 					theme,
@@ -150,7 +148,7 @@ export function createToolHtmlRenderer(deps: ToolHtmlRendererDeps): ToolHtmlRend
 				const collapsed = ansiLinesToHtml(trimRenderedResultLines(collapsedComponent.render(width)));
 
 				// Render expanded
-				const expandedComponent = toolDef.renderResult(
+				const expandedComponent = renderer.renderResult(
 					agentToolResult,
 					{ expanded: true, isPartial: false },
 					theme,

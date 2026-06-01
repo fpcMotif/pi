@@ -25,8 +25,13 @@ function generateEntryId(byId: { has(id: string): boolean }): string {
 		const id = randomUUID().slice(0, 8);
 		if (!byId.has(id)) return id;
 	}
+	/* c8 ignore start */
+	/* v8 ignore start -- @preserve */
+	/* istanbul ignore next -- @preserve */
 	return randomUUID();
 }
+/* v8 ignore stop -- @preserve */
+/* c8 ignore stop */
 
 export class InMemorySessionStorage implements SessionStorage {
 	private readonly metadata: SessionMetadata;

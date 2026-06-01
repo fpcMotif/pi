@@ -1,11 +1,26 @@
 import { it } from "@effect/vitest";
 import { Effect, Layer } from "effect";
+import { Prompt } from "effect/unstable/ai";
 import { KeyValueStore } from "effect/unstable/persistence";
 import { describe, expect } from "vitest";
 
 import { SchemaError, StoreError } from "../../../effect/agent-error.js";
 import { SessionState } from "../../../effect/session-state.js";
 import { layerKeyValueStore, SessionStore } from "../../../effect/stores/session-store.js";
+
+/**
+ * Build a full `SessionState` from a partial spec. Fills the fields added in
+ * later slices (`history`, `inputTokens`, `outputTokens`) with their empty
+ * defaults so these store tests keep expressing fixtures as just a `turnCount`.
+ */
+const makeSessionState = (fields: { readonly turnCount: number }): SessionState =>
+	new SessionState({
+		turnCount: fields.turnCount,
+		history: Prompt.empty,
+		inputTokens: 0,
+		outputTokens: 0,
+		compactionCount: 0,
+	});
 
 /**
  * Slice 18 (c) -- error-mapping paths for `layerKeyValueStore`. The happy-path
@@ -193,7 +208,7 @@ const expectSchemaError = (error: unknown): SchemaError => {
 };
 
 const invalidSessionState = (): SessionState => {
-	const state = new SessionState({ turnCount: 1 });
+	const state = makeSessionState({ turnCount: 1 });
 	Object.defineProperty(state, "turnCount", { value: "not-a-number" });
 	return state;
 };
@@ -202,7 +217,7 @@ describe("SessionStore (KV-backed) -- KV error path surfaces StoreError", () => 
 	it.effect("save: records.set failure surfaces StoreError with operation=save", () =>
 		Effect.gen(function* () {
 			const store = yield* SessionStore;
-			const error = yield* Effect.flip(store.save("s1", new SessionState({ turnCount: 1 })));
+			const error = yield* Effect.flip(store.save("s1", makeSessionState({ turnCount: 1 })));
 			const storeError = expectStoreError(error);
 			expect(storeError.operation).toBe("save");
 			expect(storeError.store).toBe("SessionStore");
@@ -265,7 +280,7 @@ describe("SessionStore (KV-backed) -- Schema decode error surfaces SchemaError",
 	it.effect("save: corrupted index JSON surfaces SchemaError (records.set succeeds, loadIndex schema-fails)", () =>
 		Effect.gen(function* () {
 			const store = yield* SessionStore;
-			const error = yield* Effect.flip(store.save("s1", new SessionState({ turnCount: 1 })));
+			const error = yield* Effect.flip(store.save("s1", makeSessionState({ turnCount: 1 })));
 			expectSchemaError(error);
 		}).pipe(
 			Effect.provide(layerKeyValueStore.pipe(Layer.provide(preloadedKvLayer([["indexes/sessions", "garbage"]])))),
@@ -287,7 +302,7 @@ describe("SessionStore (KV-backed) -- saveIndex error path (records.set succeeds
 	it.effect("save: KV.set on `indexes/sessions` failure surfaces StoreError with operation=save-index", () =>
 		Effect.gen(function* () {
 			const store = yield* SessionStore;
-			const error = yield* Effect.flip(store.save("s1", new SessionState({ turnCount: 1 })));
+			const error = yield* Effect.flip(store.save("s1", makeSessionState({ turnCount: 1 })));
 			const storeError = expectStoreError(error);
 			expect(storeError.operation).toBe("save-index");
 			expect(storeError.message).toMatch(/set failed for indexes\/sessions/);
@@ -359,10 +374,10 @@ describe("SessionStore (KV-backed) -- index update conditional branches", () => 
 	it.effect("save: re-saving an already-indexed id does NOT call saveIndex a second time", () =>
 		Effect.gen(function* () {
 			const store = yield* SessionStore;
-			yield* store.save("s1", new SessionState({ turnCount: 1 }));
+			yield* store.save("s1", makeSessionState({ turnCount: 1 }));
 			// Second save must take the `if (!index.ids.includes(id))` false
 			// branch -- saveIndex is skipped, but the records.set still runs.
-			yield* store.save("s1", new SessionState({ turnCount: 99 }));
+			yield* store.save("s1", makeSessionState({ turnCount: 99 }));
 			const ids = yield* store.list;
 			expect(ids).toEqual(["s1"]);
 		}).pipe(Effect.provide(layerKeyValueStore.pipe(Layer.provide(KeyValueStore.layerMemory)))),

@@ -55,18 +55,46 @@ describe("restoreSandboxEnv", () => {
 			delete process.env[key];
 		}
 
-		readFileSync.mockReturnValue("FOO=bar\0BAZ=qux\0");
+		// Leading "=value" and bare entries must be ignored (idx <= 0).
+		readFileSync.mockReturnValue("FOO=bar\0BAZ=qux\0=leading\0bare\0");
 
 		restoreSandboxEnv();
 
 		expect(readFileSync).toHaveBeenCalledWith("/proc/self/environ", "utf-8");
 		expect(process.env.FOO).toBe("bar");
 		expect(process.env.BAZ).toBe("qux");
+		expect(process.env.bare).toBeUndefined();
 
 		// Restore.
 		for (const key of Object.keys(process.env)) {
 			delete process.env[key];
 		}
+		Object.assign(process.env, envBackup);
+
+		if (originalVersions) {
+			Object.defineProperty(process, "versions", originalVersions);
+		}
+		readFileSync.mockReset();
+	});
+
+	it("ignores an unreadable /proc/self/environ", () => {
+		const originalVersions = Object.getOwnPropertyDescriptor(process, "versions");
+		Object.defineProperty(process, "versions", {
+			value: { bun: "1.2.0", node: "20.0.0" },
+		});
+
+		const envBackup = { ...process.env };
+		for (const key of Object.keys(process.env)) {
+			delete process.env[key];
+		}
+
+		readFileSync.mockImplementation(() => {
+			throw new Error("ENOENT");
+		});
+
+		expect(() => restoreSandboxEnv()).not.toThrow();
+		expect(Object.keys(process.env)).toEqual([]);
+
 		Object.assign(process.env, envBackup);
 
 		if (originalVersions) {

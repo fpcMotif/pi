@@ -85,6 +85,15 @@ async function runSessionSuite(
 			expect(context.messages[1]?.role).toBe("custom");
 		});
 
+		it("stores custom entries without affecting context", async () => {
+			const session = new Session(await createStorage());
+			await session.appendMessage(createUserMessage("one"));
+			await session.appendCustomEntry("event", { ok: true });
+			const entries = await session.getEntries();
+			expect(entries.at(-1)).toMatchObject({ type: "custom", customType: "event", data: { ok: true } });
+			expect((await session.buildContext()).messages).toHaveLength(1);
+		});
+
 		it("supports labels and session info entries without affecting context", async () => {
 			const session = new Session(await createStorage());
 			const user1 = await session.appendMessage(createUserMessage("one"));
@@ -98,9 +107,20 @@ async function runSessionSuite(
 			expect((await session.buildContext()).messages).toHaveLength(1);
 		});
 
+		it("treats blank session names as unset", async () => {
+			const session = new Session(await createStorage());
+			await session.appendSessionName("   ");
+			expect(await session.getSessionName()).toBeUndefined();
+		});
+
 		it("rejects labels for missing entries", async () => {
 			const session = new Session(await createStorage());
 			await expect(session.appendLabel("missing", "checkpoint")).rejects.toThrow("Entry missing not found");
+		});
+
+		it("rejects moves to missing entries", async () => {
+			const session = new Session(await createStorage());
+			await expect(session.moveTo("missing")).rejects.toThrow("Entry missing not found");
 		});
 
 		it("persists leaf changes and appended entries via storage", async () => {

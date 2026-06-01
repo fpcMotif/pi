@@ -50,6 +50,10 @@ function createSseResponse(events: ProxyAssistantMessageEvent[]): Response {
 	);
 }
 
+function throwNonError(value: unknown): never {
+	throw value;
+}
+
 afterEach(() => {
 	vi.unstubAllGlobals();
 });
@@ -145,6 +149,31 @@ describe("streamProxy", () => {
 		});
 	});
 
+	it("keeps empty tool arguments while streaming incomplete tool JSON", async () => {
+		const fetchStub = (async (): Promise<Response> =>
+			createSseResponse([
+				{ type: "start" },
+				{ type: "toolcall_start", contentIndex: 0, id: "tool-1", toolName: "read" },
+				{ type: "toolcall_delta", contentIndex: 0, delta: '{"path":' },
+				{ type: "toolcall_end", contentIndex: 0 },
+				{ type: "done", reason: "toolUse", usage },
+			])) satisfies typeof fetch;
+		vi.stubGlobal("fetch", fetchStub);
+
+		const stream = streamProxy(model, context, { authToken: "token", proxyUrl: "https://proxy.example" });
+		const events = await collectEvents(stream);
+		const result = await stream.result();
+
+		expect(events.map((event) => event.type)).toEqual([
+			"start",
+			"toolcall_start",
+			"toolcall_delta",
+			"toolcall_end",
+			"done",
+		]);
+		expect(result.content).toEqual([{ type: "toolCall", id: "tool-1", name: "read", arguments: {} }]);
+	});
+
 	it("emits proxy error responses as stream errors", async () => {
 		const fetchStub = (async (): Promise<Response> =>
 			new Response(JSON.stringify({ error: "denied" }), {
@@ -162,6 +191,37 @@ describe("streamProxy", () => {
 		expect(result.errorMessage).toBe("Proxy error: denied");
 	});
 
+	it("falls back to HTTP status when proxy error JSON cannot be parsed", async () => {
+		const fetchStub = (async (): Promise<Response> =>
+			new Response("not json", {
+				status: 502,
+				statusText: "Bad Gateway",
+			})) satisfies typeof fetch;
+		vi.stubGlobal("fetch", fetchStub);
+
+		const stream = streamProxy(model, context, { authToken: "token", proxyUrl: "https://proxy.example" });
+		const events = await collectEvents(stream);
+		const result = await stream.result();
+
+		expect(events.map((event) => event.type)).toEqual(["error"]);
+		expect(result.errorMessage).toBe("Proxy error: 502 Bad Gateway");
+	});
+
+	it("stringifies non-error fetch failures", async () => {
+		const fetchStub = (async (): Promise<Response> => {
+			throwNonError("network string");
+		}) satisfies typeof fetch;
+		vi.stubGlobal("fetch", fetchStub);
+
+		const stream = streamProxy(model, context, { authToken: "token", proxyUrl: "https://proxy.example" });
+		const events = await collectEvents(stream);
+		const result = await stream.result();
+
+		expect(events.map((event) => event.type)).toEqual(["error"]);
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toBe("network string");
+	});
+
 	it("emits protocol errors when deltas arrive for the wrong content type", async () => {
 		const fetchStub = (async (): Promise<Response> =>
 			createSseResponse([
@@ -177,6 +237,69 @@ describe("streamProxy", () => {
 		expect(events.map((event) => event.type)).toEqual(["start", "error"]);
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toBe("Received text_delta for non-text content");
+	});
+
+	it("emits protocol errors for mismatched end and tool events", async () => {
+		const cases: Array<{ event: ProxyAssistantMessageEvent; message: string }> = [
+			{ event: { type: "text_end", contentIndex: 0, contentSignature: "sig" }, message: "Received text_end" },
+			{ event: { type: "thinking_delta", contentIndex: 0, delta: "x" }, message: "Received thinking_delta" },
+			{
+				event: { type: "thinking_end", contentIndex: 0, contentSignature: "sig" },
+				message: "Received thinking_end",
+			},
+			{ event: { type: "toolcall_delta", contentIndex: 0, delta: "{}" }, message: "Received toolcall_delta" },
+		];
+
+		for (const testCase of cases) {
+			const fetchStub = (async (): Promise<Response> =>
+				createSseResponse([{ type: "start" }, testCase.event])) satisfies typeof fetch;
+			vi.stubGlobal("fetch", fetchStub);
+
+			const stream = streamProxy(model, context, { authToken: "token", proxyUrl: "https://proxy.example" });
+			const events = await collectEvents(stream);
+			const result = await stream.result();
+
+			expect(events.map((event) => event.type)).toEqual(["start", "error"]);
+			expect(result.errorMessage).toContain(testCase.message);
+		}
+	});
+
+	it("ignores orphan toolcall_end events and handles server error events", async () => {
+		const fetchStub = (async (): Promise<Response> =>
+			createSseResponse([
+				{ type: "start" },
+				{ type: "toolcall_end", contentIndex: 0 },
+				{ type: "error", reason: "error", errorMessage: "server failed", usage },
+			])) satisfies typeof fetch;
+		vi.stubGlobal("fetch", fetchStub);
+
+		const stream = streamProxy(model, context, { authToken: "token", proxyUrl: "https://proxy.example" });
+		const events = await collectEvents(stream);
+		const result = await stream.result();
+
+		expect(events.map((event) => event.type)).toEqual(["start", "error"]);
+		expect(result.stopReason).toBe("error");
+		expect(result.errorMessage).toBe("server failed");
+		expect(result.usage).toEqual(usage);
+	});
+
+	it("ignores unknown proxy events", async () => {
+		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+		const fetchStub = (async (): Promise<Response> =>
+			createSseResponse([
+				{ type: "start" },
+				{ type: "unknown" } as unknown as ProxyAssistantMessageEvent,
+				{ type: "done", reason: "stop", usage },
+			])) satisfies typeof fetch;
+		vi.stubGlobal("fetch", fetchStub);
+
+		const stream = streamProxy(model, context, { authToken: "token", proxyUrl: "https://proxy.example" });
+		const events = await collectEvents(stream);
+		const result = await stream.result();
+
+		expect(events.map((event) => event.type)).toEqual(["start", "done"]);
+		expect(result.stopReason).toBe("stop");
+		expect(warn).toHaveBeenCalledWith("Unhandled proxy event type: unknown");
 	});
 
 	it("marks stream errors as aborted when the request signal aborts", async () => {
@@ -206,5 +329,34 @@ describe("streamProxy", () => {
 		expect(events.map((event) => event.type)).toEqual(["error"]);
 		expect(result.stopReason).toBe("aborted");
 		expect(result.errorMessage).toBe("Request aborted by user");
+	});
+
+	it("cancels the active response reader when aborted after fetch resolves", async () => {
+		const controller = new AbortController();
+		let cancelled = false;
+		const fetchStub = (async (): Promise<Response> => {
+			setTimeout(() => controller.abort(), 0);
+			return new Response(
+				new ReadableStream<Uint8Array>({
+					cancel() {
+						cancelled = true;
+					},
+				}),
+				{ status: 200 },
+			);
+		}) satisfies typeof fetch;
+		vi.stubGlobal("fetch", fetchStub);
+
+		const stream = streamProxy(model, context, {
+			authToken: "token",
+			proxyUrl: "https://proxy.example",
+			signal: controller.signal,
+		});
+		const events = await collectEvents(stream);
+		const result = await stream.result();
+
+		expect(cancelled).toBe(true);
+		expect(events.map((event) => event.type)).toEqual(["error"]);
+		expect(result.stopReason).toBe("aborted");
 	});
 });

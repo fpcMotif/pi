@@ -20,8 +20,35 @@ class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMe
 			},
 		);
 		queueMicrotask(() => {
-			this.push({ type: "done", reason: message.stopReason, message });
+			const reason = message.stopReason;
+			if (reason === "error" || reason === "aborted") {
+				this.push({ type: "error", reason, error: message });
+			} else {
+				this.push({ type: "done", reason, message });
+			}
 		});
+	}
+}
+
+class ManualAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
+	constructor() {
+		super(
+			(event) => event.type === "done" || event.type === "error",
+			(event) => {
+				if (event.type === "done") return event.message;
+				if (event.type === "error") return event.error;
+				throw new Error("Unexpected event type");
+			},
+		);
+	}
+
+	finish(message: AssistantMessage): void {
+		const reason = message.stopReason;
+		if (reason === "error" || reason === "aborted") {
+			this.push({ type: "error", reason, error: message });
+		} else {
+			this.push({ type: "done", reason, message });
+		}
 	}
 }
 
@@ -70,6 +97,10 @@ function createUserMessage(text: string): UserMessage {
 		content: text,
 		timestamp: Date.now(),
 	};
+}
+
+function throwNonError(value: unknown): never {
+	throw value;
 }
 
 describe("Agent", () => {
@@ -159,6 +190,97 @@ describe("Agent", () => {
 		]);
 	});
 
+	it("exposes queue modes, busy guards, and explicit queue clearing", async () => {
+		let stream: ManualAssistantStream | undefined;
+		const agent = new Agent({
+			initialState: { model: createModel() },
+			streamFn: async () => {
+				stream = new ManualAssistantStream();
+				return stream;
+			},
+		});
+
+		agent.steeringMode = "all";
+		agent.followUpMode = "all";
+		expect(agent.steeringMode).toBe("all");
+		expect(agent.followUpMode).toBe("all");
+
+		const promptPromise = agent.prompt("busy");
+		expect(agent.signal?.aborted).toBe(false);
+		const waitDuringRun = agent.waitForIdle();
+		let waitSettled = false;
+		void waitDuringRun.then(() => {
+			waitSettled = true;
+		});
+		await Promise.resolve();
+		expect(waitSettled).toBe(false);
+		await expect(agent.prompt("second")).rejects.toThrow("Agent is already processing a prompt");
+		await expect(agent.continue()).rejects.toThrow("Agent is already processing");
+
+		agent.steer(createUserMessage("steer"));
+		agent.followUp(createUserMessage("follow"));
+		expect(agent.hasQueuedMessages()).toBe(true);
+		agent.clearSteeringQueue();
+		expect(agent.hasQueuedMessages()).toBe(true);
+		agent.clearFollowUpQueue();
+		expect(agent.hasQueuedMessages()).toBe(false);
+		agent.steer(createUserMessage("steer again"));
+		agent.followUp(createUserMessage("follow again"));
+		agent.clearAllQueues();
+		expect(agent.hasQueuedMessages()).toBe(false);
+
+		stream?.finish(createAssistantMessage("done"));
+		await promptPromise;
+		await expect(waitDuringRun).resolves.toBeUndefined();
+		await expect(agent.waitForIdle()).resolves.toBeUndefined();
+	});
+
+	it("normalizes prompt input variants and continues from user messages", async () => {
+		const seenLastRoles: string[] = [];
+		const seenLastContent: string[] = [];
+		const agent = new Agent({
+			initialState: { model: createModel() },
+			streamFn: async (_model, context) => {
+				const last = context.messages.at(-1);
+				seenLastRoles.push(last?.role ?? "");
+				seenLastContent.push(last?.role === "user" ? String(last.content) : "");
+				return new MockAssistantStream(createAssistantMessage(`reply ${seenLastRoles.length}`));
+			},
+		});
+
+		await agent.prompt(createUserMessage("single"));
+		await agent.prompt([createUserMessage("array")]);
+		await agent.prompt("with image", [{ type: "image", mimeType: "image/png", data: "abc" }]);
+		agent.state.messages = [createUserMessage("continue user")];
+		await agent.continue();
+
+		expect(seenLastRoles).toEqual(["user", "user", "user", "user"]);
+		expect(seenLastContent[0]).toBe("single");
+		expect(seenLastContent[1]).toBe("array");
+		expect(seenLastContent[2]).toBe("[object Object],[object Object]");
+		expect(seenLastContent[3]).toBe("continue user");
+	});
+
+	it("continues from an assistant message with only a queued follow-up", async () => {
+		const seenPrompts: string[] = [];
+		const agent = new Agent({
+			initialState: {
+				model: createModel(),
+				messages: [createAssistantMessage("ready")],
+			},
+			streamFn: async (_model, context) => {
+				const last = context.messages.at(-1);
+				seenPrompts.push(last?.role === "user" ? String(last.content) : "");
+				return new MockAssistantStream(createAssistantMessage("followed"));
+			},
+		});
+		agent.followUp(createUserMessage("follow only"));
+
+		await agent.continue();
+
+		expect(seenPrompts).toEqual(["follow only"]);
+	});
+
 	it("records a failed run as an assistant error message", async () => {
 		const events: AgentEvent[] = [];
 		const agent = new Agent({
@@ -190,6 +312,59 @@ describe("Agent", () => {
 			"turn_end",
 			"agent_end",
 		]);
+	});
+
+	it("stringifies non-error provider failures", async () => {
+		const agent = new Agent({
+			initialState: { model: createModel() },
+			streamFn: async () => {
+				throwNonError("provider string");
+			},
+		});
+
+		await agent.prompt("hello");
+
+		expect(agent.state.errorMessage).toBe("provider string");
+		expect(agent.state.messages.at(-1)).toMatchObject({
+			role: "assistant",
+			stopReason: "error",
+			errorMessage: "provider string",
+		});
+	});
+
+	it("records aborted failures when the active signal aborts before provider failure", async () => {
+		let releaseStart!: () => void;
+		const started = new Promise<void>((resolve) => {
+			releaseStart = resolve;
+		});
+		const agent = new Agent({
+			initialState: { model: createModel() },
+			streamFn: async (_model, _context, options) => {
+				releaseStart();
+				await new Promise((_resolve, reject) => {
+					options?.signal?.addEventListener(
+						"abort",
+						() => {
+							reject("aborted string");
+						},
+						{ once: true },
+					);
+				});
+				throw new Error("unreachable");
+			},
+		});
+
+		const promptPromise = agent.prompt("hello");
+		await started;
+		agent.abort();
+		await promptPromise;
+
+		expect(agent.state.errorMessage).toBe("aborted string");
+		expect(agent.state.messages.at(-1)).toMatchObject({
+			role: "assistant",
+			stopReason: "aborted",
+			errorMessage: "aborted string",
+		});
 	});
 
 	it("rejects invalid continuation states", async () => {

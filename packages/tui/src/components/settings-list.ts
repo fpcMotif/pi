@@ -123,6 +123,7 @@ export class SettingsList implements Component {
 		// Render visible items
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = displayItems[i];
+			/* v8 ignore next -- defensive: i is clamped to displayItems.length above, so the falsy-item guard is unreachable. */
 			if (!item) continue;
 
 			const isSelected = i === this.selectedIndex;
