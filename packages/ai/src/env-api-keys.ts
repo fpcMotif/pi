@@ -19,12 +19,15 @@ const NODE_OS_SPECIFIER = "node:" + "os";
 const NODE_PATH_SPECIFIER = "node:" + "path";
 
 function getBuiltinModule<T>(id: string): T | undefined {
+	/* v8 ignore next */
 	if (typeof process === "undefined") return undefined;
 	return (process as ProcessWithBuiltinModule).getBuiltinModule?.(id) as T | undefined;
 }
 
 // Eagerly load in Node.js/Bun environment only
-/* v8 ignore next -- the outer condition is exercised in non-Node (browser-smoke) builds; under vitest+node the true branch is the only one taken. */
+// The outer condition is exercised in non-Node browser-smoke builds; under
+// vitest+node the true branch is the only branch available.
+/* v8 ignore next */
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 	dynamicImport(NODE_FS_SPECIFIER).then((m) => {
 		_existsSync = (m as NodeFs).existsSync;
@@ -49,17 +52,22 @@ let _procEnvCache: Map<string, string> | null = null;
  */
 function getProcEnv(key: string): string | undefined {
 	if (!process.versions?.bun) return undefined;
-	/* v8 ignore next -- defensive: the preceding `process.versions?.bun` access already required `process` to be defined, so this guard is unreachable. */
+	// Defensive only: the preceding `process.versions?.bun` access already
+	// required `process` to be defined.
+	/* v8 ignore next */
 	if (typeof process === "undefined") return undefined;
 
 	// If process.env already has entries, the bug is not triggered.
-	/* v8 ignore next -- v8 reports an artifactual third branch alongside the two paths exercised by `env-api-keys-bun.test.ts` (empty / populated process.env). */
+	// Bun canary reports an artifactual third branch alongside the two paths
+	// exercised by `env-api-keys-bun.test.ts` (empty / populated process.env).
+	/* v8 ignore next */
 	if (Object.keys(process.env).length > 0) return undefined;
 
 	if (_procEnvCache === null) {
 		// _readFileSync is populated by the same eager dynamicImport that
 		// loads _existsSync at module init; if it hasn't landed yet, do not
 		// cache the miss so the next caller can retry once the import resolves.
+		/* v8 ignore next */
 		if (!_readFileSync) return undefined;
 
 		const procEnv = new Map<string, string>();
@@ -87,6 +95,7 @@ function hasVertexAdcCredentials(): boolean {
 		const fsModule = getBuiltinModule<NodeFs>("fs");
 		const osModule = getBuiltinModule<NodeOs>("os");
 		const pathModule = getBuiltinModule<NodePath>("path");
+		/* v8 ignore next 3 */
 		const existsSync = _existsSync ?? fsModule?.existsSync ?? null;
 		const homedir = _homedir ?? osModule?.homedir ?? null;
 		const join = _join ?? pathModule?.join ?? null;
@@ -94,7 +103,7 @@ function hasVertexAdcCredentials(): boolean {
 		// If node modules haven't loaded yet (async import race at startup),
 		// return false WITHOUT caching so the next call retries once they're ready.
 		// Only cache false permanently in a browser environment where fs is never available.
-		/* v8 ignore next 8 -- defensive: the dynamic import resolves before any test exercises this path; the race-condition fallback covers async startup that unit tests don't trigger. */
+		/* v8 ignore next 8 */
 		if (!existsSync || !homedir || !join) {
 			const isNode = typeof process !== "undefined" && (process.versions?.node || process.versions?.bun);
 			if (!isNode) {
