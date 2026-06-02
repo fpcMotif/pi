@@ -105,7 +105,7 @@ describe("Bash -- Effect-shaped tool", () => {
 	it.effect("prepends commandPrefix to the command handed to the Service", () =>
 		Effect.gen(function* () {
 			let seen: BashExecRequest | undefined;
-			const result = yield* bashHandler(CWD, { commandPrefix: "set -e" })({ command: "npm test" }).pipe(
+			const result = yield* bashHandler(CWD, { commandPrefix: "set -e" })({ command: "bun run test" }).pipe(
 				Effect.provide(
 					stubBashOperations({
 						output: "",
@@ -117,9 +117,9 @@ describe("Bash -- Effect-shaped tool", () => {
 				),
 			);
 
-			expect(seen?.command).toBe("set -e\nnpm test");
+			expect(seen?.command).toBe("set -e\nbun run test");
 			// The result reports the resolved command actually run.
-			expect(result.command).toBe("set -e\nnpm test");
+			expect(result.command).toBe("set -e\nbun run test");
 		}),
 	);
 

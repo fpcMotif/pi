@@ -824,6 +824,10 @@ export function stopThemeWatcher(): void {
 	themeWatcher = undefined;
 }
 
+export function getThemeWatcherForTesting(): fs.FSWatcher | undefined {
+	return themeWatcher;
+}
+
 // ============================================================================
 // HTML Export Helpers
 // ============================================================================

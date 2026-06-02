@@ -10,7 +10,7 @@
 		"README.md"
 	],
 	"scripts": {
-		"clean": "shx rm -rf dist",
+		"clean": "rm -rf dist",
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "vitest --run",
@@ -22,7 +22,7 @@
 		"lint:effect": "oxlint test-support test/effect",
 		"fmt:effect": "oxfmt test-support test/effect CONTEXT.md",
 		"fmt:effect:check": "oxfmt --check test-support test/effect CONTEXT.md",
-		"prepublishOnly": "npm run clean && npm run build"
+		"prepublishOnly": "bun run clean && bun run build"
 	},
 	"dependencies": {
 		"@earendil-works/pi-ai": "^0.74.0",

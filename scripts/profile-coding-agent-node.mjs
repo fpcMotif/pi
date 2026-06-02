@@ -17,13 +17,15 @@ const startupBenchmarkEnvName = "PI_STARTUP_BENCHMARK";
 
 function printHelp() {
 	console.log(`Usage:
-  node scripts/profile-coding-agent-node.mjs [options]
+  bun scripts/profile-coding-agent-node.mjs [options]
 
 Profiles coding-agent startup with the runtime selected below:
-- npm run profile:tui     -> builds packages/coding-agent and profiles TUI startup with Node
-- npm run profile:rpc     -> builds packages/coding-agent and profiles RPC startup with Node
-- bun run profile:tui     -> profiles TUI startup from src/cli.ts directly with Bun
-- bun run profile:rpc     -> profiles RPC startup from src/cli.ts directly with Bun
+- bun run profile:tui                      -> profiles TUI startup from src/cli.ts directly with Bun
+- bun run profile:rpc                      -> profiles RPC startup from src/cli.ts directly with Bun
+- bun scripts/profile-coding-agent-node.mjs --runtime node --mode tui
+                                           -> builds packages/coding-agent and profiles TUI startup with Node
+- bun scripts/profile-coding-agent-node.mjs --runtime node --mode rpc
+                                           -> builds packages/coding-agent and profiles RPC startup with Node
 
 Options:
   --mode <name>          tui or rpc (default: tui)
@@ -279,22 +281,11 @@ async function waitForExit(child, errorPrefix) {
 }
 
 async function runBuild() {
-	process.stdout.write("Building packages/tui, packages/ai, packages/agent, and packages/coding-agent...\n");
+	process.stdout.write("Building workspace packages...\n");
 	const startedAt = performance.now();
 	const child = spawn(
-		"npm",
-		[
-			"run",
-			"build",
-			"--workspace",
-			"packages/tui",
-			"--workspace",
-			"packages/ai",
-			"--workspace",
-			"packages/agent",
-			"--workspace",
-			"packages/coding-agent",
-		],
+		"bun",
+		["run", "build"],
 		{
 			cwd: repoRoot,
 			env: process.env,

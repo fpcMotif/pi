@@ -1,4 +1,7 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
+
+const modelsSrcIndex = fileURLToPath(new URL("../models/src/index.ts", import.meta.url));
 
 // ADR-0017: pi-ai is deprecated per ADR-0005 but in coverage scope as a
 // forcing function to surface dead/buggy legacy behavior before the
@@ -58,5 +61,11 @@ export default defineConfig({
 				statements: 100,
 			},
 		},
+	},
+	resolve: {
+		alias: [
+			{ find: /^@earendil-works\/pi-models$/, replacement: modelsSrcIndex },
+			{ find: /^@mariozechner\/pi-models$/, replacement: modelsSrcIndex },
+		],
 	},
 });

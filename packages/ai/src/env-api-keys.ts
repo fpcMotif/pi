@@ -1,8 +1,15 @@
 // NEVER convert to top-level imports - breaks browser/Vite builds (web-ui)
-let _existsSync: typeof import("node:fs").existsSync | null = null;
-let _readFileSync: typeof import("node:fs").readFileSync | null = null;
-let _homedir: typeof import("node:os").homedir | null = null;
-let _join: typeof import("node:path").join | null = null;
+type NodeFs = typeof import("node:fs");
+type NodeOs = typeof import("node:os");
+type NodePath = typeof import("node:path");
+type ProcessWithBuiltinModule = typeof process & {
+	getBuiltinModule?: (id: string) => unknown;
+};
+
+let _existsSync: NodeFs["existsSync"] | null = null;
+let _readFileSync: NodeFs["readFileSync"] | null = null;
+let _homedir: NodeOs["homedir"] | null = null;
+let _join: NodePath["join"] | null = null;
 
 type DynamicImport = (specifier: string) => Promise<unknown>;
 
@@ -11,18 +18,23 @@ const NODE_FS_SPECIFIER = "node:" + "fs";
 const NODE_OS_SPECIFIER = "node:" + "os";
 const NODE_PATH_SPECIFIER = "node:" + "path";
 
+function getBuiltinModule<T>(id: string): T | undefined {
+	if (typeof process === "undefined") return undefined;
+	return (process as ProcessWithBuiltinModule).getBuiltinModule?.(id) as T | undefined;
+}
+
 // Eagerly load in Node.js/Bun environment only
 /* v8 ignore next -- the outer condition is exercised in non-Node (browser-smoke) builds; under vitest+node the true branch is the only one taken. */
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 	dynamicImport(NODE_FS_SPECIFIER).then((m) => {
-		_existsSync = (m as typeof import("node:fs")).existsSync;
-		_readFileSync = (m as typeof import("node:fs")).readFileSync;
+		_existsSync = (m as NodeFs).existsSync;
+		_readFileSync = (m as NodeFs).readFileSync;
 	});
 	dynamicImport(NODE_OS_SPECIFIER).then((m) => {
-		_homedir = (m as typeof import("node:os")).homedir;
+		_homedir = (m as NodeOs).homedir;
 	});
 	dynamicImport(NODE_PATH_SPECIFIER).then((m) => {
-		_join = (m as typeof import("node:path")).join;
+		_join = (m as NodePath).join;
 	});
 }
 
@@ -45,24 +57,24 @@ function getProcEnv(key: string): string | undefined {
 	if (Object.keys(process.env).length > 0) return undefined;
 
 	if (_procEnvCache === null) {
-		_procEnvCache = new Map();
 		// _readFileSync is populated by the same eager dynamicImport that
-		// loads _existsSync at module init; if it hasn't landed yet, fall
-		// through (the cache stays empty for this call and the next caller
-		// retries once the async import resolves).
-		if (_readFileSync) {
-			try {
-				const data = _readFileSync("/proc/self/environ", "utf-8") as string;
-				for (const entry of data.split("\0")) {
-					const idx = entry.indexOf("=");
-					if (idx > 0) {
-						_procEnvCache.set(entry.slice(0, idx), entry.slice(idx + 1));
-					}
+		// loads _existsSync at module init; if it hasn't landed yet, do not
+		// cache the miss so the next caller can retry once the import resolves.
+		if (!_readFileSync) return undefined;
+
+		const procEnv = new Map<string, string>();
+		try {
+			const data = _readFileSync("/proc/self/environ", "utf-8") as string;
+			for (const entry of data.split("\0")) {
+				const idx = entry.indexOf("=");
+				if (idx > 0) {
+					procEnv.set(entry.slice(0, idx), entry.slice(idx + 1));
 				}
-			} catch {
-				// /proc/self/environ may not be readable.
 			}
+		} catch {
+			// /proc/self/environ may not be readable.
 		}
+		_procEnvCache = procEnv;
 	}
 
 	return _procEnvCache.get(key);
@@ -72,11 +84,18 @@ let cachedVertexAdcCredentialsExists: boolean | null = null;
 
 function hasVertexAdcCredentials(): boolean {
 	if (cachedVertexAdcCredentialsExists === null) {
+		const fsModule = getBuiltinModule<NodeFs>("fs");
+		const osModule = getBuiltinModule<NodeOs>("os");
+		const pathModule = getBuiltinModule<NodePath>("path");
+		const existsSync = _existsSync ?? fsModule?.existsSync ?? null;
+		const homedir = _homedir ?? osModule?.homedir ?? null;
+		const join = _join ?? pathModule?.join ?? null;
+
 		// If node modules haven't loaded yet (async import race at startup),
 		// return false WITHOUT caching so the next call retries once they're ready.
 		// Only cache false permanently in a browser environment where fs is never available.
 		/* v8 ignore next 8 -- defensive: the dynamic import resolves before any test exercises this path; the race-condition fallback covers async startup that unit tests don't trigger. */
-		if (!_existsSync || !_homedir || !_join) {
+		if (!existsSync || !homedir || !join) {
 			const isNode = typeof process !== "undefined" && (process.versions?.node || process.versions?.bun);
 			if (!isNode) {
 				// Definitively in a browser — safe to cache false permanently
@@ -88,11 +107,11 @@ function hasVertexAdcCredentials(): boolean {
 		// Check GOOGLE_APPLICATION_CREDENTIALS env var first (standard way)
 		const gacPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || getProcEnv("GOOGLE_APPLICATION_CREDENTIALS");
 		if (gacPath) {
-			cachedVertexAdcCredentialsExists = _existsSync(gacPath);
+			cachedVertexAdcCredentialsExists = existsSync(gacPath);
 		} else {
 			// Fall back to default ADC path (lazy evaluation)
-			cachedVertexAdcCredentialsExists = _existsSync(
-				_join(_homedir(), ".config", "gcloud", "application_default_credentials.json"),
+			cachedVertexAdcCredentialsExists = existsSync(
+				join(homedir(), ".config", "gcloud", "application_default_credentials.json"),
 			);
 		}
 	}

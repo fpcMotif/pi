@@ -4,10 +4,10 @@ This page gets you from install to a useful first pi session.
 
 ## Install
 
-Pi is distributed as an npm package:
+Pi is distributed as a package:
 
 ```bash
-npm install -g @earendil-works/pi-coding-agent
+bun install -g @earendil-works/pi-coding-agent
 ```
 
 Then start pi in the project directory you want it to work on:
@@ -68,7 +68,7 @@ Pi loads context files at startup. Add an `AGENTS.md` file to tell it how to wor
 ```markdown
 # Project Instructions
 
-- Run `npm run check` after code changes.
+- Run `bun run check` after code changes.
 - Do not run production migrations locally.
 - Keep responses concise.
 ```
@@ -98,7 +98,7 @@ Images can be pasted with Ctrl+V (Alt+V on Windows) or dragged into supported te
 In interactive mode:
 
 ```text
-!npm run lint
+!bun run lint
 ```
 
 The command output is sent to the model. Use `!!command` to run a command without adding its output to the model context.

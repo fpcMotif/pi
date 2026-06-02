@@ -617,7 +617,7 @@ export async function main(args: string[], options?: MainOptions) {
 		const extensionFlags = resourceLoader
 			.getExtensions()
 			.extensions.flatMap((extension) => Array.from(extension.flags.values()));
-		printHelp(extensionFlags);
+		printHelp(extensionFlags, appMode === "interactive" ? "stdout" : "stderr");
 		process.exit(0);
 	}
 

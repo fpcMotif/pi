@@ -89,7 +89,7 @@ export interface Settings {
 	shellPath?: string; // Custom shell path (e.g., for Cygwin users on Windows)
 	quietStartup?: boolean;
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
-	npmCommand?: string[]; // Command used for npm package lookup/install operations, argv-style (e.g., ["mise", "exec", "node@20", "--", "npm"])
+	bunCommand?: string[]; // Bun command used for registry package lookup/install operations, argv-style (e.g., ["bun", "--config", "bunfig.toml"])
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
 	enableInstallTelemetry?: boolean; // default: true - anonymous version/update ping after changelog-detected updates
 	packages?: PackageSource[]; // Array of npm/git package sources (string or object with filtering)
@@ -774,13 +774,13 @@ export class SettingsManager {
 		this.save();
 	}
 
-	getNpmCommand(): string[] | undefined {
-		return this.settings.npmCommand ? [...this.settings.npmCommand] : undefined;
+	getBunCommand(): string[] | undefined {
+		return this.settings.bunCommand ? [...this.settings.bunCommand] : undefined;
 	}
 
-	setNpmCommand(command: string[] | undefined): void {
-		this.globalSettings.npmCommand = command ? [...command] : undefined;
-		this.markModified("npmCommand");
+	setBunCommand(command: string[] | undefined): void {
+		this.globalSettings.bunCommand = command ? [...command] : undefined;
+		this.markModified("bunCommand");
 		this.save();
 	}
 

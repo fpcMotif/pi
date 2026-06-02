@@ -4,6 +4,7 @@ import { defineConfig } from "vitest/config";
 const aiSrcIndex = fileURLToPath(new URL("../ai/src/index.ts", import.meta.url));
 const aiSrcOAuth = fileURLToPath(new URL("../ai/src/oauth.ts", import.meta.url));
 const agentSrcIndex = fileURLToPath(new URL("../agent/src/index.ts", import.meta.url));
+const modelsSrcIndex = fileURLToPath(new URL("../models/src/index.ts", import.meta.url));
 const tuiSrcIndex = fileURLToPath(new URL("../tui/src/index.ts", import.meta.url));
 
 // ADR-0017: monorepo-wide 100% on all four v8 metrics. Covers both
@@ -57,8 +58,8 @@ export default defineConfig({
 				"src/modes/interactive/**",
 				"src/modes/rpc/**",
 				// Top-level CLI scaffolding (config, migrations, package-manager
-				// CLI wrapper) drives real npm + git interactions; covered by
-				// the per-feature integration tests.
+				// CLI wrapper) drives real Bun package-source + git interactions;
+				// covered by the per-feature integration tests.
 				"src/config.ts",
 				"src/migrations.ts",
 				"src/package-manager-cli.ts",
@@ -146,10 +147,12 @@ export default defineConfig({
 			{ find: /^@earendil-works\/pi-ai$/, replacement: aiSrcIndex },
 			{ find: /^@earendil-works\/pi-ai\/oauth$/, replacement: aiSrcOAuth },
 			{ find: /^@earendil-works\/pi-agent-core$/, replacement: agentSrcIndex },
+			{ find: /^@earendil-works\/pi-models$/, replacement: modelsSrcIndex },
 			{ find: /^@earendil-works\/pi-tui$/, replacement: tuiSrcIndex },
 			{ find: /^@mariozechner\/pi-ai$/, replacement: aiSrcIndex },
 			{ find: /^@mariozechner\/pi-ai\/oauth$/, replacement: aiSrcOAuth },
 			{ find: /^@mariozechner\/pi-agent-core$/, replacement: agentSrcIndex },
+			{ find: /^@mariozechner\/pi-models$/, replacement: modelsSrcIndex },
 			{ find: /^@mariozechner\/pi-tui$/, replacement: tuiSrcIndex },
 		],
 	},
