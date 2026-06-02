@@ -388,10 +388,18 @@ describe("isValidThinkingLevel", () => {
 });
 
 describe("printHelp", () => {
+	function captureStdout(fn: () => void): string {
+		const writeSpy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+		try {
+			fn();
+			return writeSpy.mock.calls.map((call) => String(call[0])).join("");
+		} finally {
+			writeSpy.mockRestore();
+		}
+	}
+
 	test("prints help text with usage and tools", () => {
-		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-		printHelp();
-		const output = logSpy.mock.calls.flat().join("\n");
+		const output = captureStdout(() => printHelp());
 		expect(output).toContain("Usage:");
 		expect(output).toContain("--provider");
 		expect(output).toContain("--model");
@@ -399,32 +407,27 @@ describe("printHelp", () => {
 		expect(output).toContain("read");
 		expect(output).toContain("edit");
 		expect(output).toContain("write");
-		logSpy.mockRestore();
 	});
 
 	test("prints help text with no extension flags", () => {
-		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-		printHelp([]);
-		const output = logSpy.mock.calls.flat().join("\n");
+		const output = captureStdout(() => printHelp([]));
 		expect(output).toContain("Usage:");
 		expect(output).not.toContain("Extension CLI Flags:");
-		logSpy.mockRestore();
 	});
 
 	test("prints help text with extension flags", () => {
-		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-		printHelp([
-			{ name: "plan", type: "boolean", description: "Plan mode", extensionPath: "plan.ts" },
-			{ name: "myflag", type: "string", extensionPath: "ext.ts" },
-		]);
-		const output = logSpy.mock.calls.flat().join("\n");
+		const output = captureStdout(() =>
+			printHelp([
+				{ name: "plan", type: "boolean", description: "Plan mode", extensionPath: "plan.ts" },
+				{ name: "myflag", type: "string", extensionPath: "ext.ts" },
+			]),
+		);
 		expect(output).toContain("Extension CLI Flags:");
 		expect(output).toContain("--plan");
 		expect(output).toContain("--myflag");
 		expect(output).toContain("<value>");
 		expect(output).toContain("Plan mode");
 		expect(output).toContain("Registered by ext.ts");
-		logSpy.mockRestore();
 	});
 });
 

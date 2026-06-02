@@ -285,6 +285,14 @@ export class FooterDataProvider {
 		this.scheduleGitWatcherRetry();
 	}
 
+	private handleReftableWatcherError(): void {
+		closeWatcher(this.reftableWatcher);
+		this.reftableWatcher = null;
+		closeWatcher(this.reftableTablesListWatcher);
+		this.reftableTablesListWatcher = null;
+		this.scheduleGitWatcherRetry();
+	}
+
 	private setupGitWatcher(): void {
 		this.clearGitWatchers();
 		if (!this.gitPaths) return;
@@ -301,38 +309,14 @@ export class FooterDataProvider {
 			},
 			() => this.handleGitWatcherError(),
 		);
-		if (!this.headWatcher) {
-			return;
-		}
 
 		// In reftable repos, branch switches update files in the reftable directory
 		// instead of HEAD. Watch it separately so the footer picks up those changes.
 		const reftableDir = join(this.gitPaths.commonGitDir, "reftable");
 		if (existsSync(reftableDir)) {
-			this.reftableWatcher = watchWithErrorHandler(
-				reftableDir,
-				() => {
-					this.scheduleRefresh();
-				},
-				() => this.handleGitWatcherError(),
-			);
-			if (!this.reftableWatcher) {
-				return;
-			}
-
 			const tablesListPath = join(reftableDir, "tables.list");
 			if (existsSync(tablesListPath)) {
 				this.reftableTablesListPath = tablesListPath;
-				this.reftableTablesListWatcher = watchWithErrorHandler(
-					tablesListPath,
-					() => {
-						this.scheduleRefresh();
-					},
-					() => this.handleGitWatcherError(),
-				);
-				if (!this.reftableTablesListWatcher) {
-					return;
-				}
 				watchFile(tablesListPath, { interval: 250 }, (current, previous) => {
 					if (
 						current.mtimeMs !== previous.mtimeMs ||
@@ -342,7 +326,27 @@ export class FooterDataProvider {
 						this.scheduleRefresh();
 					}
 				});
+
+				this.reftableTablesListWatcher = watchWithErrorHandler(
+					tablesListPath,
+					() => {
+						this.scheduleRefresh();
+					},
+					() => this.handleReftableWatcherError(),
+				);
 			}
+
+			this.reftableWatcher = watchWithErrorHandler(
+				reftableDir,
+				() => {
+					this.scheduleRefresh();
+				},
+				() => this.handleReftableWatcherError(),
+			);
+
+			// Prime one async read for reftable repos so branch state is refreshed
+			// even when the first tables.list write happens before polling settles.
+			this.scheduleRefresh();
 		}
 	}
 }

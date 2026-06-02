@@ -56,16 +56,16 @@ if [[ -n "$PLATFORM" ]]; then
 fi
 
 echo "==> Installing dependencies..."
-npm ci
+bun install --frozen-lockfile
 
 if [[ "$SKIP_DEPS" == "false" ]]; then
-    echo "==> Installing cross-platform native bindings..."
-    # npm ci only installs optional deps for the current platform
-    # We need all platform bindings for bun cross-compilation
-    # Use --force to bypass platform checks (os/cpu restrictions in package.json)
-    # Install all in one command to avoid npm removing packages from previous installs
-    npm install --no-save --force \
-        @mariozechner/clipboard-darwin-arm64@0.3.0 \
+	echo "==> Installing cross-platform native bindings..."
+	# bun install only installs optional deps for the current platform
+	# We need all platform bindings for bun cross-compilation
+	# Use --force to bypass platform checks (os/cpu restrictions in package.json)
+	# Install all in one command to avoid removing packages from previous installs
+	bun add --no-save --force --os=* --cpu=* \
+		@mariozechner/clipboard-darwin-arm64@0.3.0 \
         @mariozechner/clipboard-darwin-x64@0.3.0 \
         @mariozechner/clipboard-linux-x64-gnu@0.3.0 \
         @mariozechner/clipboard-linux-arm64-gnu@0.3.0 \
@@ -84,7 +84,7 @@ else
 fi
 
 echo "==> Building all packages..."
-npm run build
+bun run build
 
 echo "==> Building binaries..."
 cd packages/coding-agent
@@ -167,7 +167,7 @@ done
 echo ""
 echo "==> Build complete!"
 echo "Archives available in packages/coding-agent/binaries/"
-ls -lh *.tar.gz *.zip 2>/dev/null || true
+eza --icons --git -lh *.tar.gz *.zip 2>/dev/null || true
 echo ""
 echo "Extracted directories for testing:"
 for platform in "${PLATFORMS[@]}"; do

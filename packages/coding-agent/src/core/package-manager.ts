@@ -1076,12 +1076,12 @@ export class DefaultPackageManager implements PackageManager {
 
 	private async installNpmBatch(specs: string[], scope: InstalledSourceScope): Promise<void> {
 		if (scope === "user") {
-			await this.runNpmCommand(["install", "-g", ...specs]);
+			await this.runBunPackageCommand(["install", "-g", ...specs]);
 			return;
 		}
 		const installRoot = this.getNpmInstallRoot(scope, false);
 		this.ensureNpmProject(installRoot);
-		await this.runNpmCommand(["install", ...specs, "--prefix", installRoot]);
+		await this.runBunPackageCommand(["add", ...specs], { cwd: installRoot });
 	}
 
 	async checkForAvailableUpdates(): Promise<PackageUpdate[]> {
@@ -1398,14 +1398,17 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async getLatestNpmVersion(packageName: string): Promise<string> {
-		const npmCommand = this.getNpmCommand();
+		const bunCommand = this.getBunCommand();
 		const stdout = await this.runCommandCapture(
-			npmCommand.command,
-			[...npmCommand.args, "view", packageName, "version", "--json"],
-			{ cwd: this.cwd, timeoutMs: NETWORK_TIMEOUT_MS },
+			bunCommand.command,
+			[...bunCommand.args, "info", packageName, "version", "--json"],
+			{
+				cwd: this.cwd,
+				timeoutMs: NETWORK_TIMEOUT_MS,
+			},
 		);
 		const raw = stdout.trim();
-		if (!raw) throw new Error("Empty response from npm view");
+		if (!raw) throw new Error("Empty response from package version lookup");
 		return JSON.parse(raw);
 	}
 
@@ -1617,56 +1620,56 @@ export class DefaultPackageManager implements PackageManager {
 		return { name, version };
 	}
 
-	private getNpmCommand(): { command: string; args: string[] } {
-		const configuredCommand = this.settingsManager.getNpmCommand();
+	private getBunCommand(): { command: string; args: string[] } {
+		const configuredCommand = this.settingsManager.getBunCommand();
 		if (!configuredCommand || configuredCommand.length === 0) {
-			return { command: "npm", args: [] };
+			return { command: "bun", args: [] };
 		}
 		const [command, ...args] = configuredCommand;
 		if (!command) {
-			throw new Error("Invalid npmCommand: first array entry must be a non-empty command");
+			throw new Error("Invalid bunCommand: first array entry must be a non-empty command");
+		}
+		const commandName = basename(command).toLowerCase();
+		if (commandName !== "bun" && commandName !== "bun.exe" && commandName !== "bun.cmd") {
+			throw new Error("Invalid bunCommand: first array entry must be bun");
 		}
 		return { command, args };
 	}
 
-	private async runNpmCommand(args: string[], options?: { cwd?: string }): Promise<void> {
-		const npmCommand = this.getNpmCommand();
-		await this.runCommand(npmCommand.command, [...npmCommand.args, ...args], options);
+	private async runBunPackageCommand(args: string[], options?: { cwd?: string }): Promise<void> {
+		const bunCommand = this.getBunCommand();
+		await this.runCommand(bunCommand.command, [...bunCommand.args, ...args], options);
 	}
 
 	private getGitDependencyInstallArgs(): string[] {
-		const configuredCommand = this.settingsManager.getNpmCommand();
-		if (configuredCommand && configuredCommand.length > 0) {
-			return ["install"];
-		}
-		return ["install", "--omit=dev"];
+		return ["install", "--production"];
 	}
 
-	private runNpmCommandSync(args: string[]): string {
-		const npmCommand = this.getNpmCommand();
-		return this.runCommandSync(npmCommand.command, [...npmCommand.args, ...args]);
+	private runBunPackageCommandSync(args: string[]): string {
+		const bunCommand = this.getBunCommand();
+		return this.runCommandSync(bunCommand.command, [...bunCommand.args, ...args]);
 	}
 
 	private async installNpm(source: NpmSource, scope: SourceScope, temporary: boolean): Promise<void> {
 		if (scope === "user" && !temporary) {
-			await this.runNpmCommand(["install", "-g", source.spec]);
+			await this.runBunPackageCommand(["install", "-g", source.spec]);
 			return;
 		}
 		const installRoot = this.getNpmInstallRoot(scope, temporary);
 		this.ensureNpmProject(installRoot);
-		await this.runNpmCommand(["install", source.spec, "--prefix", installRoot]);
+		await this.runBunPackageCommand(["add", source.spec], { cwd: installRoot });
 	}
 
 	private async uninstallNpm(source: NpmSource, scope: SourceScope): Promise<void> {
 		if (scope === "user") {
-			await this.runNpmCommand(["uninstall", "-g", source.name]);
+			await this.runBunPackageCommand(["remove", "-g", source.name]);
 			return;
 		}
 		const installRoot = this.getNpmInstallRoot(scope, false);
 		if (!existsSync(installRoot)) {
 			return;
 		}
-		await this.runNpmCommand(["uninstall", source.name, "--prefix", installRoot]);
+		await this.runBunPackageCommand(["remove", source.name], { cwd: installRoot });
 	}
 
 	private async installGit(source: GitSource, scope: SourceScope): Promise<void> {
@@ -1686,7 +1689,7 @@ export class DefaultPackageManager implements PackageManager {
 		}
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
-			await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
+			await this.runBunPackageCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
 		}
 	}
 
@@ -1721,7 +1724,7 @@ export class DefaultPackageManager implements PackageManager {
 
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
-			await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
+			await this.runBunPackageCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
 		}
 	}
 
@@ -1800,18 +1803,13 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private getGlobalNpmRoot(): string {
-		const npmCommand = this.getNpmCommand();
-		const commandKey = [npmCommand.command, ...npmCommand.args].join("\0");
+		const bunCommand = this.getBunCommand();
+		const commandKey = [bunCommand.command, ...bunCommand.args].join("\0");
 		if (this.globalNpmRoot && this.globalNpmRootCommandKey === commandKey) {
 			return this.globalNpmRoot;
 		}
-		const isBunPackageManager = npmCommand.command === "bun";
-		if (isBunPackageManager) {
-			const binDir = this.runNpmCommandSync(["pm", "bin", "-g"]).trim();
-			this.globalNpmRoot = join(dirname(binDir), "install", "global", "node_modules");
-		} else {
-			this.globalNpmRoot = this.runNpmCommandSync(["root", "-g"]).trim();
-		}
+		const binDir = this.runBunPackageCommandSync(["pm", "bin", "-g"]).trim();
+		this.globalNpmRoot = join(dirname(binDir), "install", "global", "node_modules");
 		this.globalNpmRootCommandKey = commandKey;
 		return this.globalNpmRoot;
 	}

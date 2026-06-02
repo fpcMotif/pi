@@ -1,8 +1,8 @@
 /**
- * Example extension with its own npm dependencies.
+ * Example extension with its own Bun-managed dependencies.
  * Tests that jiti resolves modules from the extension's own node_modules.
  *
- * Requires: npm install in this directory
+ * Requires: bun install in this directory
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";

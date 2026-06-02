@@ -7,10 +7,25 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 /**
  * Interactive example of using coding-agent via RpcClient.
- * Usage: npx tsx test/rpc-example.ts
+ * Usage: bun test/rpc-example.ts
  */
 
+function printHelp(): void {
+	console.log(`Usage: bun test/rpc-example.ts
+
+Interactive example of using coding-agent via RpcClient.
+
+Options:
+  --help  Show this message
+`);
+}
+
 async function main() {
+	if (process.argv.includes("--help")) {
+		printHelp();
+		return;
+	}
+
 	const client = new RpcClient({
 		cliPath: join(__dirname, "../dist/cli.js"),
 		provider: "anthropic",

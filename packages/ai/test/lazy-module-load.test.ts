@@ -1,13 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const require = createRequire(import.meta.url);
-const tsxLoader = require.resolve("tsx/esm");
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const aiEntryUrl = new URL("../src/index.ts", import.meta.url).href;
+const modelsEntryUrl = new URL("../../models/src/index.ts", import.meta.url).href;
 
 // pi-ai was narrowed to the OpenAI-family providers (ADR-0003 / ADR-0006), so
 // the `openai` SDK is the only heavyweight provider dependency. Each provider
@@ -25,22 +23,36 @@ function runProbe(action: string): ProbeResult {
 
 		const targets = new Set(${JSON.stringify(SDK_SPECIFIERS)});
 		const loaded = [];
+		function targetFor(specifier) {
+			if (targets.has(specifier)) return specifier;
+			const normalized = specifier.replaceAll("\\\\", "/");
+			for (const target of targets) {
+				if (normalized.includes(\`/node_modules/.bun/\${target}@\`) || normalized.includes(\`/node_modules/\${target}/\`)) {
+					return target;
+				}
+			}
+		}
 
 		registerHooks({
 			resolve(specifier, context, nextResolve) {
-				if (targets.has(specifier)) {
-					loaded.push(specifier);
+				const target = targetFor(specifier);
+				if (target) {
+					loaded.push(target);
+				}
+				if (specifier === "@earendil-works/pi-models") {
+					return { url: ${JSON.stringify(modelsEntryUrl)}, shortCircuit: true };
 				}
 				return nextResolve(specifier, context);
 			},
 		});
 
-		const mod = await import(${JSON.stringify(aiEntryUrl)});
+		const imported = await import(${JSON.stringify(aiEntryUrl)});
+		const mod = imported.default ?? imported;
 		${action}
 		console.log(JSON.stringify({ loadedSpecifiers: [...new Set(loaded)] }));
 	`;
 
-	const result = spawnSync(process.execPath, ["--import", tsxLoader, "--input-type=module", "--eval", script], {
+	const result = spawnSync(process.execPath, ["--import", "jiti/register", "--input-type=module", "--eval", script], {
 		cwd: packageRoot,
 		encoding: "utf8",
 		timeout: 30000,

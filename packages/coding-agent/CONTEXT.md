@@ -9,7 +9,7 @@
 - **`src/modes/`** - interactive, print/json, and RPC user workflows. _(legacy lane — rewrite-pending)_
 - **`src/bun/`** - Bun binary entry path for the post-rewrite CLI distribution. _(legacy lane — rewrite-pending)_
 - **`effect/`** - _New, Effect v4 **production** code._ Folds into `src/` at the ADR-0006 phase-4 cutover. Currently: `effect/tools/` — the seven built-in tools as pure `Tool.make` definitions with pluggable `*Operations` Services (ADR-0010), plus the `BuiltinToolkit` registry.
-- **`test/effect/`** - _New, Effect-based._ Tracer-bullet tests for the `effect/` lane, run with `npm run test:effect`.
+- **`test/effect/`** - _New, Effect-based._ Tracer-bullet tests for the `effect/` lane, run with `bun run test:effect`.
 - **`docs/` and `examples/`** - public user and extension documentation.
 
 ## Effect rewrite status (`effect/` lane)

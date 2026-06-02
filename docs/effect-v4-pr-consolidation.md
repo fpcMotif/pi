@@ -1,7 +1,7 @@
 # Effect-v4 PR consolidation — how six refactor PRs became one
 
-**Status:** the `claude/effect-v4-consolidated` branch supersedes PRs #1, #5, #6, #7, #9, #10.
-**TL;DR:** PR **#9** (`claude/refactor-effectful-module-bakKb`) is the integration base — the only confirmed-**green** branch and a strict descendant of the shared #1 foundation. We grafted **6 unique correctness/feature commits from #10**, re-targeted onto #9's module layout, plus **~13 file-level cleanups from #5/#6/#7**. Everything else was subsumed or skipped. `react-doctor` was inapplicable (zero React — `web-ui` is Lit, `tui` is a bespoke renderer); a Lit/TUI anti-pattern audit was run instead and its P0 bugs were fixed.
+**Status:** PR #12 (`claude/effect-v4-consolidated`) was merged into `main` on 2026-06-01 and supersedes PRs #1, #5, #6, #7, #9, #10. Its GitHub `build-check-test-coverage` check passed on 2026-06-01, and the remaining open superseded PRs were closed after the merge.
+**TL;DR:** PR **#9** (`claude/refactor-effectful-module-bakKb`) is the integration base — the first confirmed-**green** branch and a strict descendant of the shared #1 foundation. We grafted **6 unique correctness/feature commits from #10**, re-targeted onto #9's module layout, plus **~13 file-level cleanups from #5/#6/#7**. Everything else was subsumed or skipped. `react-doctor` was inapplicable (zero React — `web-ui` is Lit, `tui` is a bespoke renderer); a Lit/TUI anti-pattern audit was run instead and its P0 bugs were fixed.
 
 This document exists so that future work (and future agents) can see *why* each decision was made without re-deriving the branch topology.
 
@@ -31,7 +31,7 @@ main (9cb86b75, slices 12g/12h)
 Same goal, incompatible layouts. The two refactors **cannot both be merged** — one must be the base and the other's *unique value* grafted on top.
 
 ### Why #10 was RED (and why it doesn't matter)
-`#1` and `#10` fail CI on `npm ci` — a **stale `package-lock.json`**, not broken code. #9 carries the fix (`cfe7cce3 chore: refresh package-lock.json`). **Never pull #10's lockfile over #9's** or you reintroduce the red state.
+`#1` and `#10` failed CI on their old npm install path — a **stale `package-lock.json`**, not broken Effect code. #9 carried the old fix (`cfe7cce3 chore: refresh package-lock.json`), and the later local hardening moved the repo to Bun as the only runnable package toolchain. **Never pull #10's lockfile over #12**; the final branch drops the legacy npm lock entirely and treats `bun.lock` as the package-manager truth.
 
 ---
 
@@ -107,3 +107,56 @@ All three are single-commit cleanups on the #1/`b2b47fa0` base. Their large diff
 ## 8. How this was produced
 
 A multi-agent review workflow (14 agents) mapped all six PRs read-only, adversarially verified each candidate graft against #9 (is it real? already present?), and synthesised the ordered graft plan above. Grafts were applied and tested one at a time (`packages/agent` effect suite: 191 tests green throughout); the small-PR cleanups and Lit fixes followed. See the branch commit history for the per-graft commits, each crediting its origin commit.
+
+---
+
+## 9. Bun-only toolchain hardening
+
+After PR #12 was identified as the real consolidation target, the active toolchain was hardened so runnable project commands use Bun/Bunx only:
+
+- CI, binary-build workflow, and Husky use `bun install --frozen-lockfile`, `bun run check`, `bun run check:browser-smoke`, `bun run coverage:all:100`, and the Bun binary build script without a Node/npm setup step.
+- Root/package scripts use `bun run --cwd ...`, `bunx ...`, `bun scripts/...`, and plain shell utilities instead of npm/npx/shx wrappers.
+- Manual TypeScript probes and generator scripts use direct `bun` shebangs/help text instead of legacy TS-runner paths.
+- Bun-native `version-workspaces.mjs` and `publish-workspaces.mjs` replace the old npm workspace version/publish commands.
+- `package-lock.json` is removed; `bun.lock` is the only package lockfile.
+- `pi` self-update and package-source operations no longer route through npm/pnpm/yarn. `npmCommand` is replaced with `bunCommand`, and non-Bun command overrides are rejected.
+- User-facing update instructions reuse the same Bun ownership/writability gate as self-update execution, so source checkouts and unmanaged wrappers do not get misleading `bun install -g ...` guidance.
+- Root `tsgo --noEmit` now has explicit fetch/WebSocket types under Bun's isolated linker (`DOM` libs plus root `undici-types`), matching existing source that uses `fetch`, `Response`, `Headers`, `RequestInit`, and WebSocket APIs.
+- Package-source terminology such as `npm:@scope/pkg` remains as a source protocol/registry label; it does not mean npm is used as the package manager.
+- Historical changelog entries and generated model headers may still mention older npm commands. The generated registry files are not normal edit targets; update their generators or rebuild the generator path before changing those headers.
+
+Latest local evidence from `/private/tmp/pi-pr12`:
+
+```sh
+bun install
+bun run check
+bunx vitest --run test/config.test.ts test/package-manager.test.ts test/package-command-paths.test.ts test/stdout-cleanliness.test.ts test/git-update.test.ts test/effect/tools/bash.test.ts
+HOME=/private/tmp/pi-pr12-home PI_CODING_AGENT_DIR=/private/tmp/pi-pr12-agent-dir PI_CODING_AGENT_SESSION_DIR=/private/tmp/pi-pr12-session-dir TMPDIR=/private/tmp/pi-pr12-bun-tmp bun run test
+bun test/codex-websocket-cached-probe.ts --help
+bun test/sdk-codex-cache-probe-tool-loop.ts --help
+bun test/rpc-example.ts --help
+bun test/streaming-render-debug.ts
+bun test/test-theme-colors.ts dark
+bun scripts/version-workspaces.mjs patch --dry-run
+bun scripts/publish-workspaces.mjs --list
+bun scripts/publish-workspaces.mjs --dry-run
+bun add file:<local-package>
+bun remove <local-package-name>
+bun install --production
+bun info typescript version --json
+bunx react-doctor@latest --json --no-score --fail-on none .
+git diff --check
+```
+
+Results:
+
+- `bun run check` passed end to end.
+- Focused self-update regression checks passed: `test/config.test.ts` and `test/package-command-paths.test.ts` (19 passed, 1 Windows-only skip).
+- Focused Bun/toolchain regression suite passed: 6 test files, 138 tests passed, 1 Windows-only skip.
+- Real Bun CLI command-shape probes passed for project-local package add/remove, git dependency production install, and registry version lookup (`bun info ... version --json` returns a JSON string).
+- Full workspace `bun run test` passed with redirected home/session/temp dirs: models 38, tui 1128, ai 376 with 6 skipped, agent 496, coding-agent 1379 with 27 skipped, web-ui 835.
+- Manual probe/help smoke paths run directly with `bun`; `rpc-example.ts --help` now exits before booting the agent.
+- Workspace version/publish helper smoke checks passed: version dry-run would update 6 packages from `0.74.0` to `0.74.1`; publish order lists the 6 non-private packages in dependency order; publish dry-run packs all six packages via `bun pm pack --dry-run` without registry auth.
+- `react-doctor@latest` exited with `NoReactDependencyError`; the JSON report had zero diagnostics because this repo has no React dependency.
+- Active command-surface grep is clean for npm script/installer invocations, legacy TS-runner paths, npm/pnpm/yarn self-update paths, and `npmCommand` outside preserved changelog history, package-source `npm:` terminology, generated registry headers, and explicit legacy-negative tests.
+- The reftable footer watcher flake found during full-suite verification was fixed locally: optional `fs.watch` failures now leave the `watchFile` fallback active, and reftable repos get an initial refresh so the first `tables.list` write cannot race the polling baseline.

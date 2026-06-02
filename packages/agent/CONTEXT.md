@@ -5,10 +5,10 @@
 ## What's where
 
 - **`src/`** — Existing pi-agent-core (TypeBox, async iterators, `@earendil-works/pi-ai` deps). Untouched by the rewrite until phase 4.
-- **`test/`** — Existing tests for the existing `src/`. Under the root AGENTS.md rules, run explicit test files through Vitest rather than `npm test`.
+- **`test/`** — Existing tests for the existing `src/`. Under the root AGENTS.md rules, run explicit test files through Vitest rather than `bun test`.
 - **`effect/`** — _New, Effect-based **production** code._ Schemas (`agent-event.ts`, `agent-error.ts`, `agent-input.ts`), state (`session-state.ts`), and the tracer-bullet `Session` loop (`session.ts`). Folds into `src/` during ADR-0006 phase 4.
 - **`test-support/`** — _New, Effect-based._ Reusable Layer fixtures: `stubLanguageModel`, `stubOpenAiClient`, `stubOpenAiClientScripted`, `stubOpenAiClientStreaming`. Will be deep-published as `@earendil-works/pi-agent-core/test-support` per ADR-0015.
-- **`test/effect/`** — _New, Effect-based._ Tracer-bullet tests proving the v4 surface works against the stubs above. Run with `npm run test:effect`.
+- **`test/effect/`** — _New, Effect-based._ Tracer-bullet tests proving the v4 surface works against the stubs above. Run with `bun run test:effect`.
 
 ## Temporary code/test knowledge store
 
@@ -18,12 +18,12 @@ Current verification snapshot for `packages/agent`, captured on 2026-05-13:
 
 ```powershell
 # from packages/agent/
-npx.cmd vitest --run --coverage --no-file-parallelism --maxWorkers=1 --minWorkers=1 --coverage.reportsDirectory=coverage-fresh --coverage.reporter=text --coverage.reporter=lcovonly
+bunx.cmd vitest --run --coverage --no-file-parallelism --maxWorkers=1 --minWorkers=1 --coverage.reportsDirectory=coverage-fresh --coverage.reporter=text --coverage.reporter=lcovonly
 ```
 
-Result: 53 test files passed, 364 tests passed, with 100% statements, branches, functions, and lines under V8 coverage for `src/**/*.ts` and `effect/**/*.ts`. This is the direct Vitest coverage invocation for this package, not `npm test`.
+Result: 53 test files passed, 364 tests passed, with 100% statements, branches, functions, and lines under V8 coverage for `src/**/*.ts` and `effect/**/*.ts`. This is the direct Vitest coverage invocation for this package, not `bun test`.
 
-Current stricter gate: `npm run coverage:agent:100` runs the package's `test:coverage:100` script, which enforces statements, branches, functions, and lines at 100%. The current worktree satisfies this gate for `packages/agent`; the branch-coverage blocker has been closed with behavior tests first and narrow `v8 ignore next` annotations only for proven unreachable defensive branches:
+Current stricter gate: `bun run coverage:agent:100` runs the package's `test:coverage:100` script, which enforces statements, branches, functions, and lines at 100%. The current worktree satisfies this gate for `packages/agent`; the branch-coverage blocker has been closed with behavior tests first and narrow `v8 ignore next` annotations only for proven unreachable defensive branches:
 
 - `agent-loop.ts` EventStream result extraction fallback: the extractor is invoked only for the `agent_end` terminal event.
 - `proxy.ts` EventStream error extractor fallback and `parseStreamingJson(...) || {}` fallback: the extractor is terminal-event constrained and `parseStreamingJson` always returns an object.
@@ -108,7 +108,6 @@ Thirty-eight tracer bullets, all GREEN, all without an API key:
 
     **v4 note**: `SubscriptionRef` is **not** structurally a `Ref` in v4 (internal shape differs — `Ref` stores `ref.current`, `SubscriptionRef` stores `value` + `pubsub`). Use `SubscriptionRef.get(ref)` to read a SubscriptionRef; `Ref.get` on a SubscriptionRef throws `Cannot read properties of undefined (reading 'current')`.
 
-<<<<<<< HEAD
 17.   **Toolkit threading through `Session.send`** (slice 12f — real end-to-end agent loop). `Session.send` now takes an optional second `toolkit?: LanguageModel.ToolkitInput<Tools>` argument, generic over `Tools extends Record<string, Tool.Any>` so concrete `Toolkit.make(GetWeather)` infers precisely without widening to a Record-with-index. The toolkit is forwarded to `LanguageModel.streamText({ prompt, toolkit })`; handler resolution services come from the runtime context (via `WeatherHandlers = Weather.toLayer({ GetWeather: handler })` provided alongside the LanguageModel layer).
 
 
@@ -568,10 +567,10 @@ bunx oxfmt --check test-support test/effect CONTEXT.md  # format check
 Or via package scripts:
 
 ```sh
-npm run test:effect
-npm run lint:effect
-npm run fmt:effect
-npm run fmt:effect:check
+bun run test:effect
+bun run lint:effect
+bun run fmt:effect
+bun run fmt:effect:check
 ```
 
 ## What's not here yet
