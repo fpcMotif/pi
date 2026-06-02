@@ -222,9 +222,13 @@ function extractCompleteSequences(buffer: string): { sequences: string[]; remain
 				return { sequences, remainder: remaining };
 			}
 		} else {
-			// Not an escape sequence - take a single character
-			sequences.push(remaining[0]!);
-			pos++;
+			// Not an escape sequence - take a single Unicode codepoint.
+			// Slicing by UTF-16 code unit (remaining[0]) would split astral
+			// characters like '🎉' (U+1F389) into two lone surrogate halves, so
+			// advance by the full codepoint (1 code unit for BMP, 2 for astral).
+			const char = String.fromCodePoint(remaining.codePointAt(0)!);
+			sequences.push(char);
+			pos += char.length;
 		}
 	}
 
