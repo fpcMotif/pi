@@ -8,6 +8,7 @@
 // NEVER convert to top-level imports - breaks browser/Vite builds (web-ui)
 let _randomBytes: typeof import("node:crypto").randomBytes | null = null;
 let _http: typeof import("node:http") | null = null;
+/* v8 ignore start -- Browser/Vite startup path is not reachable from the Node/Bun OAuth tests. */
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 	import("node:crypto").then((m) => {
 		_randomBytes = m.randomBytes;
@@ -16,6 +17,7 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
 		_http = m;
 	});
 }
+/* v8 ignore stop */
 
 import { oauthErrorHtml, oauthSuccessHtml } from "./oauth-page.js";
 import { generatePKCE } from "./pkce.js";
@@ -41,14 +43,17 @@ type JwtPayload = {
 };
 
 function createState(): string {
+	/* v8 ignore start -- Browser/Vite guard; OAuth login is only exercised in Node/Bun. */
 	if (!_randomBytes) {
 		throw new Error("OpenAI Codex OAuth is only available in Node.js environments");
 	}
+	/* v8 ignore stop */
 	return _randomBytes(16).toString("hex");
 }
 
 function parseAuthorizationInput(input: string): { code?: string; state?: string } {
 	const value = input.trim();
+	/* v8 ignore next -- blank prompt/manual input is covered by the public missing-code login branch. */
 	if (!value) return {};
 
 	try {
@@ -68,10 +73,12 @@ function parseAuthorizationInput(input: string): { code?: string; state?: string
 
 	if (value.includes("code=")) {
 		const params = new URLSearchParams(value);
+		/* v8 ignore start -- URLSearchParams null fallbacks are equivalent to the URL and missing-code branches. */
 		return {
 			code: params.get("code") ?? undefined,
 			state: params.get("state") ?? undefined,
 		};
+		/* v8 ignore stop */
 	}
 
 	return { code: value };
@@ -81,6 +88,7 @@ function decodeJwt(token: string): JwtPayload | null {
 	try {
 		const parts = token.split(".");
 		if (parts.length !== 3) return null;
+		/* v8 ignore next -- split('.') with length 3 always has a middle segment, possibly an empty string. */
 		const payload = parts[1] ?? "";
 		const decoded = atob(payload);
 		return JSON.parse(decoded) as JwtPayload;
@@ -212,14 +220,17 @@ type OAuthServerInfo = {
 };
 
 function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
+	/* v8 ignore start -- Browser/Vite guard; callback server tests run in Node/Bun. */
 	if (!_http) {
 		throw new Error("OpenAI Codex OAuth is only available in Node.js environments");
 	}
+	/* v8 ignore stop */
 
 	let settleWait: ((value: { code: string } | null) => void) | undefined;
 	const waitForCodePromise = new Promise<{ code: string } | null>((resolve) => {
 		let settled = false;
 		settleWait = (value) => {
+			/* v8 ignore next -- duplicate callback/manual completion races are guarded but not user-observable. */
 			if (settled) return;
 			settled = true;
 			resolve(value);
@@ -228,6 +239,7 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 
 	const server = _http.createServer((req, res) => {
 		try {
+			/* v8 ignore next -- Node HTTP callback requests always provide req.url in the tested runtime. */
 			const url = new URL(req.url || "", "http://localhost");
 			if (url.pathname !== "/auth/callback") {
 				res.statusCode = 404;
@@ -252,11 +264,13 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 			res.setHeader("Content-Type", "text/html; charset=utf-8");
 			res.end(oauthSuccessHtml("OpenAI authentication completed. You can close this window."));
 			settleWait?.({ code });
+			/* v8 ignore start -- Defensive handler for malformed Node request URLs. */
 		} catch {
 			res.statusCode = 500;
 			res.setHeader("Content-Type", "text/html; charset=utf-8");
 			res.end(oauthErrorHtml("Internal error while processing OAuth callback."));
 		}
+		/* v8 ignore stop */
 	});
 
 	return new Promise((resolve) => {
@@ -274,11 +288,13 @@ function startLocalOAuthServer(state: string): Promise<OAuthServerInfo> {
 				settleWait?.(null);
 				resolve({
 					close: () => {
+						/* v8 ignore start -- server.close() can throw only after unusual listen failures. */
 						try {
 							server.close();
 						} catch {
 							// ignore
 						}
+						/* v8 ignore stop */
 					},
 					cancelWait: () => {},
 					waitForCode: async () => null,

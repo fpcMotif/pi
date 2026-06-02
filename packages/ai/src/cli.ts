@@ -1,12 +1,22 @@
 #!/usr/bin/env node
 
 import { createInterface } from "node:readline";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { pathToFileURL } from "node:url";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { getOAuthProvider, getOAuthProviders } from "./utils/oauth/index.js";
 import type { OAuthCredentials, OAuthProviderId } from "./utils/oauth/types.js";
 
 const AUTH_FILE = "auth.json";
 const PROVIDERS = getOAuthProviders();
+
+interface CliIO {
+	input: NodeJS.ReadableStream;
+	output: NodeJS.WritableStream;
+}
+
+function defaultCliIO(): CliIO {
+	return { input: process.stdin, output: process.stdout };
+}
 
 function prompt(rl: ReturnType<typeof createInterface>, question: string): Promise<string> {
 	return new Promise((resolve) => rl.question(question, resolve));
@@ -25,14 +35,16 @@ function saveAuth(auth: Record<string, { type: "oauth" } & OAuthCredentials>): v
 	writeFileSync(AUTH_FILE, JSON.stringify(auth, null, 2), "utf-8");
 }
 
-async function login(providerId: OAuthProviderId): Promise<void> {
+async function login(providerId: OAuthProviderId, io: CliIO = defaultCliIO()): Promise<void> {
 	const provider = getOAuthProvider(providerId);
+	/* v8 ignore start -- Defensive guard; main() validates provider IDs before calling login(). */
 	if (!provider) {
 		console.error(`Unknown provider: ${providerId}`);
 		process.exit(1);
 	}
+	/* v8 ignore stop */
 
-	const rl = createInterface({ input: process.stdin, output: process.stdout });
+	const rl = createInterface({ input: io.input, output: io.output });
 	const promptFn = (msg: string) => prompt(rl, `${msg} `);
 
 	try {
@@ -58,13 +70,12 @@ async function login(providerId: OAuthProviderId): Promise<void> {
 	}
 }
 
-async function main(): Promise<void> {
-	const args = process.argv.slice(2);
+export async function main(args = process.argv.slice(2), io: CliIO = defaultCliIO()): Promise<void> {
 	const command = args[0];
 
 	if (!command || command === "help" || command === "--help" || command === "-h") {
 		const providerList = PROVIDERS.map((p) => `  ${p.id.padEnd(20)} ${p.name}`).join("\n");
-		console.log(`Usage: npx @earendil-works/pi-ai <command> [provider]
+		console.log(`Usage: bunx @earendil-works/pi-ai <command> [provider]
 
 Commands:
   login [provider]  Login to an OAuth provider
@@ -74,9 +85,9 @@ Providers:
 ${providerList}
 
 Examples:
-  npx @earendil-works/pi-ai login              # interactive provider selection
-  npx @earendil-works/pi-ai login anthropic    # login to specific provider
-  npx @earendil-works/pi-ai list               # list providers
+  bunx @earendil-works/pi-ai login              # interactive provider selection
+  bunx @earendil-works/pi-ai login anthropic    # login to specific provider
+  bunx @earendil-works/pi-ai list               # list providers
 `);
 		return;
 	}
@@ -93,7 +104,7 @@ Examples:
 		let provider = args[1] as OAuthProviderId | undefined;
 
 		if (!provider) {
-			const rl = createInterface({ input: process.stdin, output: process.stdout });
+			const rl = createInterface({ input: io.input, output: io.output });
 			console.log("Select a provider:\n");
 			for (let i = 0; i < PROVIDERS.length; i++) {
 				console.log(`  ${i + 1}. ${PROVIDERS[i].name}`);
@@ -113,21 +124,25 @@ Examples:
 
 		if (!PROVIDERS.some((p) => p.id === provider)) {
 			console.error(`Unknown provider: ${provider}`);
-			console.error(`Use 'npx @earendil-works/pi-ai list' to see available providers`);
+			console.error(`Use 'bunx @earendil-works/pi-ai list' to see available providers`);
 			process.exit(1);
 		}
 
 		console.log(`Logging in to ${provider}...`);
-		await login(provider);
+		await login(provider, io);
 		return;
 	}
 
 	console.error(`Unknown command: ${command}`);
-	console.error(`Use 'npx @earendil-works/pi-ai --help' for usage`);
+	console.error(`Use 'bunx @earendil-works/pi-ai --help' for usage`);
 	process.exit(1);
 }
 
-main().catch((err) => {
-	console.error("Error:", err.message);
-	process.exit(1);
-});
+/* v8 ignore start -- Direct executable entrypoint; tests invoke main() with controlled IO. */
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	main().catch((err) => {
+		console.error("Error:", err.message);
+		process.exit(1);
+	});
+}
+/* v8 ignore stop */

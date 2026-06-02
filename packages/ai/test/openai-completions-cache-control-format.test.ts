@@ -102,6 +102,20 @@ async function capturePayload(
 	return mockState.lastParams;
 }
 
+async function captureCustomPayload(
+	model: Model<"openai-completions">,
+	context: Parameters<typeof streamOpenAICompletions>[1],
+	options?: { cacheRetention?: "none" | "short" | "long" },
+): Promise<CapturedParams> {
+	await streamOpenAICompletions(model, context, { apiKey: "test-key", ...options }).result();
+
+	if (!mockState.lastParams) {
+		throw new Error("Expected payload to be captured");
+	}
+
+	return mockState.lastParams;
+}
+
 function getInstructionMessage(params: CapturedParams) {
 	return params.messages.find((message) => message.role === "system" || message.role === "developer");
 }
@@ -185,5 +199,89 @@ describe("openai-completions cacheControlFormat", () => {
 		expect(Array.isArray(instructionMessage?.content)).toBe(false);
 		expect(params.tools?.[0]?.cache_control).toBeUndefined();
 		expect(typeof params.messages[params.messages.length - 1]?.content).toBe("string");
+	});
+
+	it("does not add cache markers when replay history has no text part to mark", async () => {
+		const baseModel: Model<"openai-completions"> = {
+			id: "custom-qwen",
+			name: "Custom Qwen",
+			api: "openai-completions",
+			provider: "openrouter",
+			baseUrl: "https://example.com/v1",
+			reasoning: true,
+			input: ["text", "image"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 128000,
+			maxTokens: 32000,
+			compat: {
+				cacheControlFormat: "anthropic",
+			},
+		};
+
+		const toolHistory = await captureCustomPayload(baseModel, {
+			messages: [
+				{
+					role: "assistant",
+					api: "openai-completions",
+					provider: "openrouter",
+					model: "custom-qwen",
+					content: [{ type: "toolCall", id: "call_1", name: "read", arguments: { path: "README.md" } }],
+					usage: {
+						input: 0,
+						output: 0,
+						cacheRead: 0,
+						cacheWrite: 0,
+						totalTokens: 0,
+						cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+					},
+					stopReason: "toolUse",
+					timestamp: 1,
+				},
+			],
+		});
+		expect(toolHistory.tools).toEqual([]);
+		expect(toolHistory.messages[0]).toMatchObject({ role: "assistant", content: null });
+
+		const emptyAssistant = await captureCustomPayload(
+			{
+				...baseModel,
+				compat: { cacheControlFormat: "anthropic", requiresAssistantAfterToolResult: true },
+			},
+			{
+				messages: [
+					{
+						role: "assistant",
+						api: "openai-completions",
+						provider: "openrouter",
+						model: "custom-qwen",
+						content: [{ type: "toolCall", id: "call_2", name: "read", arguments: { path: "README.md" } }],
+						usage: {
+							input: 0,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 0,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+						},
+						stopReason: "toolUse",
+						timestamp: 1,
+					},
+				],
+			},
+		);
+		expect(emptyAssistant.messages[0]).toMatchObject({ role: "assistant", content: "" });
+
+		const imageOnly = await captureCustomPayload(baseModel, {
+			messages: [{ role: "user", content: [{ type: "image", mimeType: "image/png", data: "abcd" }], timestamp: 1 }],
+		});
+		expect(imageOnly.messages[0]).toEqual({
+			role: "user",
+			content: [{ type: "image_url", image_url: { url: "data:image/png;base64,abcd" } }],
+		});
 	});
 });

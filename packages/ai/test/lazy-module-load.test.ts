@@ -21,6 +21,8 @@ type ProbeResult = {
 	loadedSpecifiers: string[];
 };
 
+const RESULT_MARKER = "__PI_LAZY_PROBE_RESULT__";
+
 function runProbe(action: string): ProbeResult {
 	const script = `
 		import { registerHooks } from "node:module";
@@ -39,7 +41,7 @@ function runProbe(action: string): ProbeResult {
 
 		const mod = await import(${JSON.stringify(aiEntryUrl)});
 		${action}
-		console.log(JSON.stringify({ loadedSpecifiers: [...new Set(loaded)] }));
+		console.log(${JSON.stringify(RESULT_MARKER)} + JSON.stringify({ loadedSpecifiers: [...new Set(loaded)] }));
 	`;
 
 	const result = spawnSync(process.execPath, ["--import", tsxLoader, "--input-type=module", "--eval", script], {
@@ -55,12 +57,12 @@ function runProbe(action: string): ProbeResult {
 		.split(/\r?\n/)
 		.map((line) => line.trim())
 		.filter((line) => line.length > 0);
-	const lastLine = stdoutLines.at(-1);
-	if (!lastLine) {
-		throw new Error(`Probe produced no output\nSTDERR:\n${result.stderr}`);
+	const resultLine = stdoutLines.find((line) => line.startsWith(RESULT_MARKER));
+	if (!resultLine) {
+		throw new Error(`Probe produced no result marker\nSTDOUT:\n${result.stdout}\nSTDERR:\n${result.stderr}`);
 	}
 
-	return JSON.parse(lastLine) as ProbeResult;
+	return JSON.parse(resultLine.slice(RESULT_MARKER.length)) as ProbeResult;
 }
 
 describe("lazy provider module loading", () => {
@@ -69,14 +71,14 @@ describe("lazy provider module loading", () => {
 		expect(result.loadedSpecifiers).toEqual([]);
 	});
 
-	it("loads only the Anthropic SDK when calling the root lazy wrapper", () => {
+	it("loads only the OpenAI SDK when calling the root lazy wrapper", () => {
 		const result = runProbe(`
 			const model = {
-				id: "claude-sonnet-4-6",
-				name: "Claude Sonnet 4",
-				api: "anthropic-messages",
-				provider: "anthropic",
-				baseUrl: "https://api.anthropic.com",
+				id: "gpt-5.4",
+				name: "GPT-5.4",
+				api: "openai-responses",
+				provider: "openai",
+				baseUrl: "https://api.openai.com/v1",
 				reasoning: true,
 				input: ["text"],
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -84,19 +86,19 @@ describe("lazy provider module loading", () => {
 				maxTokens: 8192,
 			};
 			const context = { messages: [{ role: "user", content: "hi" }] };
-			await mod.streamSimpleAnthropic(model, context).result();
+			await mod.streamSimpleOpenAIResponses(model, context).result();
 		`);
 
-		expect(result.loadedSpecifiers).toEqual(["@anthropic-ai/sdk"]);
+		expect(result.loadedSpecifiers).toEqual(["openai"]);
 	});
 
-	it("loads only the Anthropic SDK when dispatching through streamSimple", () => {
+	it("loads only the OpenAI SDK when dispatching through streamSimple", () => {
 		const result = runProbe(`
-			const model = mod.getModel("anthropic", "claude-sonnet-4-6");
+			const model = mod.getModel("openai", "gpt-5.4");
 			const context = { messages: [{ role: "user", content: "hi" }] };
 			await mod.streamSimple(model, context).result();
 		`);
 
-		expect(result.loadedSpecifiers).toEqual(["@anthropic-ai/sdk"]);
+		expect(result.loadedSpecifiers).toEqual(["openai"]);
 	});
 });

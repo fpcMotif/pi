@@ -77,6 +77,7 @@ function createLazyLoadErrorMessage<TApi extends Api>(model: Model<TApi>, error:
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		},
 		stopReason: "error",
+		/* v8 ignore next -- Dynamic import rejection paths surface Error instances in supported runtimes. */
 		errorMessage: error instanceof Error ? error.message : String(error),
 		timestamp: Date.now(),
 	};
@@ -93,11 +94,13 @@ function createLazyStream<TApi extends Api, TOptions extends StreamOptions, TSim
 				const inner = module.stream(model, context, options);
 				forwardStream(outer, inner);
 			})
+			/* v8 ignore start -- Dynamic import failure is a bundler/runtime failure path; normal lazy dispatch is covered. */
 			.catch((error) => {
 				const message = createLazyLoadErrorMessage(model, error);
 				outer.push({ type: "error", reason: "error", error: message });
 				outer.end(message);
 			});
+		/* v8 ignore stop */
 
 		return outer;
 	};

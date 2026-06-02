@@ -1,17 +1,18 @@
 import type { AssistantMessage, AssistantMessageEvent } from "../types.js";
 
 // Generic event stream class for async iteration
-export class EventStream<T, R = T> implements AsyncIterable<T> {
+export class EventStream<T, R = T, C extends T = T> implements AsyncIterable<T> {
 	private queue: T[] = [];
-	private waiting: ((value: IteratorResult<T>) => void)[] = [];
+	private waiting: ((value: IteratorResult<T, undefined>) => void)[] = [];
 	private done = false;
 	private finalResultPromise: Promise<R>;
 	private resolveFinalResult!: (result: R) => void;
+	private isComplete: (event: T) => boolean;
+	private extractResult: (event: T) => R;
 
-	constructor(
-		private isComplete: (event: T) => boolean,
-		private extractResult: (event: T) => R,
-	) {
+	constructor(isComplete: (event: T) => boolean, extractResult: (event: C) => R) {
+		this.isComplete = isComplete;
+		this.extractResult = (event) => extractResult(event as C);
 		this.finalResultPromise = new Promise((resolve) => {
 			this.resolveFinalResult = resolve;
 		});
@@ -42,7 +43,7 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 		// Notify all waiting consumers that we're done
 		while (this.waiting.length > 0) {
 			const waiter = this.waiting.shift()!;
-			waiter({ value: undefined as any, done: true });
+			waiter({ value: undefined, done: true });
 		}
 	}
 
@@ -53,7 +54,7 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 			} else if (this.done) {
 				return;
 			} else {
-				const result = await new Promise<IteratorResult<T>>((resolve) => this.waiting.push(resolve));
+				const result = await new Promise<IteratorResult<T, undefined>>((resolve) => this.waiting.push(resolve));
 				if (result.done) return;
 				yield result.value;
 			}
@@ -65,18 +66,17 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 	}
 }
 
-export class AssistantMessageEventStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
+type TerminalAssistantMessageEvent = Extract<AssistantMessageEvent, { type: "done" | "error" }>;
+
+export class AssistantMessageEventStream extends EventStream<
+	AssistantMessageEvent,
+	AssistantMessage,
+	TerminalAssistantMessageEvent
+> {
 	constructor() {
 		super(
 			(event) => event.type === "done" || event.type === "error",
-			(event) => {
-				if (event.type === "done") {
-					return event.message;
-				} else if (event.type === "error") {
-					return event.error;
-				}
-				throw new Error("Unexpected event type for final result");
-			},
+			(event) => (event.type === "done" ? event.message : event.error),
 		);
 	}
 }

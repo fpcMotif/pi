@@ -2,6 +2,28 @@
 	"name": "@earendil-works/pi-ai",
 	"version": "0.74.0",
 	"description": "Unified LLM API with automatic model discovery and provider configuration",
+	"keywords": [
+		"ai",
+		"api",
+		"llm",
+		"openai",
+		"openrouter",
+		"unified"
+	],
+	"license": "MIT",
+	"author": "Mario Zechner",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/earendil-works/pi-mono.git",
+		"directory": "packages/ai"
+	},
+	"bin": {
+		"pi-ai": "./dist/cli.js"
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -27,21 +49,16 @@
 			"import": "./dist/oauth.js"
 		}
 	},
-	"bin": {
-		"pi-ai": "./dist/cli.js"
-	},
-	"files": [
-		"dist",
-		"README.md"
-	],
 	"scripts": {
-		"clean": "shx rm -rf dist",
-		"generate-image-models": "npx tsx scripts/generate-image-models.ts",
-		"build": "tsgo -p tsconfig.build.json",
-		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-		"dev:tsc": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
-		"test": "vitest --run",
-		"prepublishOnly": "npm run clean && npm run build"
+		"clean": "bunx shx rm -rf dist",
+		"generate-image-models": "bunx tsx scripts/generate-image-models.ts",
+		"build": "bunx tsgo -p tsconfig.build.json",
+		"dev": "bunx tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"dev:tsc": "bunx tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
+		"test": "HOME=/private/tmp/pi-ai-test-home bunx vitest --run",
+		"test:coverage:100": "HOME=/private/tmp/pi-ai-test-home bunx vitest --run --coverage --coverage.thresholds.lines=100 --coverage.thresholds.statements=100 --coverage.thresholds.functions=100 --coverage.thresholds.branches=100",
+		"test:coverage:event-stream:100": "HOME=/private/tmp/pi-ai-test-home bunx vitest --run test/event-stream.test.ts --coverage --coverage.include=src/utils/event-stream.ts --coverage.thresholds.lines=100 --coverage.thresholds.statements=100 --coverage.thresholds.functions=100 --coverage.thresholds.branches=100",
+		"prepublishOnly": "bun run clean && bun run build"
 	},
 	"dependencies": {
 		"@earendil-works/pi-models": "^0.74.0",
@@ -54,27 +71,12 @@
 		"undici": "^7.19.1",
 		"zod-to-json-schema": "^3.24.6"
 	},
-	"keywords": [
-		"ai",
-		"llm",
-		"openai",
-		"openrouter",
-		"unified",
-		"api"
-	],
-	"author": "Mario Zechner",
-	"license": "MIT",
-	"repository": {
-		"type": "git",
-		"url": "git+https://github.com/earendil-works/pi-mono.git",
-		"directory": "packages/ai"
-	},
-	"engines": {
-		"node": ">=20.0.0"
-	},
 	"devDependencies": {
 		"@types/node": "^24.3.0",
 		"canvas": "^3.2.0",
 		"vitest": "^3.2.4"
+	},
+	"engines": {
+		"node": ">=20.0.0"
 	}
 }

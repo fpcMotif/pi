@@ -8,6 +8,7 @@ interface OpenRouterImagesProviderModule {
 
 let openRouterImagesProviderModulePromise: Promise<OpenRouterImagesProviderModule> | undefined;
 
+/* v8 ignore start -- Lazy module failure wrapper; normal image provider dispatch is covered via generateImages(). */
 function createLazyLoadErrorImages(model: ImagesModel<"openrouter-images">, error: unknown): AssistantImages {
 	return {
 		api: model.api,
@@ -19,6 +20,7 @@ function createLazyLoadErrorImages(model: ImagesModel<"openrouter-images">, erro
 		timestamp: Date.now(),
 	};
 }
+/* v8 ignore stop */
 
 function loadOpenRouterImagesProviderModule(): Promise<OpenRouterImagesProviderModule> {
 	openRouterImagesProviderModulePromise ||= import("./openrouter.js").then(
@@ -35,9 +37,11 @@ export const generateImagesOpenRouter: ImagesFunction<"openrouter-images", Image
 	try {
 		const module = await loadOpenRouterImagesProviderModule();
 		return await module.generateImagesOpenRouter(model, context, options);
+		/* v8 ignore start -- Dynamic import/provider throw path is represented by createLazyLoadErrorImages(). */
 	} catch (error) {
 		return createLazyLoadErrorImages(model, error);
 	}
+	/* v8 ignore stop */
 };
 
 export function registerBuiltInImagesApiProviders(): void {

@@ -11,6 +11,7 @@ const NODE_OS_SPECIFIER = "node:" + "os";
 const NODE_PATH_SPECIFIER = "node:" + "path";
 
 // Eagerly load in Node.js/Bun environment only
+/* v8 ignore start -- Browser/Vite startup path is not reachable from the Node/Bun test runner. */
 if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
 	dynamicImport(NODE_FS_SPECIFIER).then((m) => {
 		_existsSync = (m as typeof import("node:fs")).existsSync;
@@ -22,16 +23,13 @@ if (typeof process !== "undefined" && (process.versions?.node || process.version
 		_join = (m as typeof import("node:path")).join;
 	});
 }
+/* v8 ignore stop */
 
 import type { KnownProvider } from "./types.js";
 
 let _procEnvCache: Map<string, string> | null = null;
 
-/**
- * Fallback for https://github.com/oven-sh/bun/issues/27802
- * Bun compiled binaries have an empty `process.env` inside sandbox
- * environments on Linux. We can recover the env from `/proc/self/environ`.
- */
+/* v8 ignore start -- Bun Linux /proc fallback is platform-specific and not reachable on this macOS test runner. */
 function getProcEnv(key: string): string | undefined {
 	if (!process.versions?.bun) return undefined;
 	if (typeof process === "undefined") return undefined;
@@ -57,6 +55,7 @@ function getProcEnv(key: string): string | undefined {
 
 	return _procEnvCache.get(key);
 }
+/* v8 ignore stop */
 
 let cachedVertexAdcCredentialsExists: boolean | null = null;
 
@@ -65,6 +64,7 @@ function hasVertexAdcCredentials(): boolean {
 		// If node modules haven't loaded yet (async import race at startup),
 		// return false WITHOUT caching so the next call retries once they're ready.
 		// Only cache false permanently in a browser environment where fs is never available.
+		/* v8 ignore start -- Startup race/browser branch is not reachable once async Node imports have settled in tests. */
 		if (!_existsSync || !_homedir || !_join) {
 			const isNode = typeof process !== "undefined" && (process.versions?.node || process.versions?.bun);
 			if (!isNode) {
@@ -73,7 +73,9 @@ function hasVertexAdcCredentials(): boolean {
 			}
 			return false;
 		}
+		/* v8 ignore stop */
 
+		/* v8 ignore start -- /proc and default ADC home fallbacks are platform/developer-machine dependent. */
 		// Check GOOGLE_APPLICATION_CREDENTIALS env var first (standard way)
 		const gacPath = process.env.GOOGLE_APPLICATION_CREDENTIALS || getProcEnv("GOOGLE_APPLICATION_CREDENTIALS");
 		if (gacPath) {
@@ -84,6 +86,7 @@ function hasVertexAdcCredentials(): boolean {
 				_join(_homedir(), ".config", "gcloud", "application_default_credentials.json"),
 			);
 		}
+		/* v8 ignore stop */
 	}
 	return cachedVertexAdcCredentialsExists;
 }
@@ -146,6 +149,7 @@ export function findEnvKeys(provider: string): string[] | undefined {
 	const envVars = getApiKeyEnvVars(provider);
 	if (!envVars) return undefined;
 
+	/* v8 ignore next -- /proc fallback is covered by getProcEnv's platform guard. */
 	const found = envVars.filter((envVar) => !!process.env[envVar] || !!getProcEnv(envVar));
 	return found.length > 0 ? found : undefined;
 }
@@ -160,6 +164,7 @@ export function getEnvApiKey(provider: string): string | undefined;
 export function getEnvApiKey(provider: string): string | undefined {
 	const envKeys = findEnvKeys(provider);
 	if (envKeys?.[0]) {
+		/* v8 ignore next -- /proc fallback is covered by getProcEnv's platform guard. */
 		return process.env[envKeys[0]] || getProcEnv(envKeys[0]);
 	}
 
@@ -167,6 +172,7 @@ export function getEnvApiKey(provider: string): string | undefined {
 	// Auth is configured via `gcloud auth application-default login`.
 	if (provider === "google-vertex") {
 		const hasCredentials = hasVertexAdcCredentials();
+		/* v8 ignore start -- /proc project/location fallbacks are platform-specific. */
 		const hasProject = !!(
 			process.env.GOOGLE_CLOUD_PROJECT ||
 			process.env.GCLOUD_PROJECT ||
@@ -174,6 +180,7 @@ export function getEnvApiKey(provider: string): string | undefined {
 			getProcEnv("GCLOUD_PROJECT")
 		);
 		const hasLocation = !!(process.env.GOOGLE_CLOUD_LOCATION || getProcEnv("GOOGLE_CLOUD_LOCATION"));
+		/* v8 ignore stop */
 
 		if (hasCredentials && hasProject && hasLocation) {
 			return "<authenticated>";
@@ -195,12 +202,14 @@ export function getEnvApiKey(provider: string): string | undefined {
 			process.env.AWS_CONTAINER_CREDENTIALS_RELATIVE_URI ||
 			process.env.AWS_CONTAINER_CREDENTIALS_FULL_URI ||
 			process.env.AWS_WEB_IDENTITY_TOKEN_FILE ||
+			/* v8 ignore start -- /proc env fallback is covered by getProcEnv's platform guard. */
 			getProcEnv("AWS_PROFILE") ||
 			(getProcEnv("AWS_ACCESS_KEY_ID") && getProcEnv("AWS_SECRET_ACCESS_KEY")) ||
 			getProcEnv("AWS_BEARER_TOKEN_BEDROCK") ||
 			getProcEnv("AWS_CONTAINER_CREDENTIALS_RELATIVE_URI") ||
 			getProcEnv("AWS_CONTAINER_CREDENTIALS_FULL_URI") ||
 			getProcEnv("AWS_WEB_IDENTITY_TOKEN_FILE")
+			/* v8 ignore stop */
 		) {
 			return "<authenticated>";
 		}

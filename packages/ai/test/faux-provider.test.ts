@@ -5,11 +5,12 @@ import {
 	fauxText,
 	fauxThinking,
 	fauxToolCall,
+	getApiProvider,
 	registerFauxProvider,
 	stream,
 	Type,
 } from "../src/index.js";
-import type { AssistantMessageEvent, Context } from "../src/types.js";
+import type { AssistantMessage, AssistantMessageEvent, Context } from "../src/types.js";
 
 async function collectEvents(streamResult: ReturnType<typeof stream>): Promise<AssistantMessageEvent[]> {
 	const events: AssistantMessageEvent[] = [];
@@ -65,6 +66,21 @@ describe("faux provider", () => {
 			{ type: "text", text: "done" },
 		]);
 		expect(response.stopReason).toBe("toolUse");
+	});
+
+	it("normalizes single helper blocks and empty text responses", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([fauxAssistantMessage(fauxText("single")), fauxAssistantMessage("")]);
+
+		const context: Context = {
+			messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
+		};
+		const single = await complete(registration.getModel(), context);
+		const emptyEvents = await collectEvents(stream(registration.getModel(), context));
+
+		expect(single.content).toEqual([{ type: "text", text: "single" }]);
+		expect(emptyEvents.map((event) => event.type)).toEqual(["start", "text_start", "text_delta", "text_end", "done"]);
 	});
 
 	it("supports multiple models with per-model reasoning and model-aware factories", async () => {
@@ -191,6 +207,56 @@ describe("faux provider", () => {
 			expect(events[0].error.stopReason).toBe("error");
 			expect(events[0].error.errorMessage).toBe("boom");
 		}
+	});
+
+	it("stringifies non-error factory failures", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([
+			() => {
+				throw "string boom";
+			},
+		]);
+
+		const events = await collectEvents(
+			stream(registration.getModel(), { messages: [{ role: "user", content: "hi", timestamp: Date.now() }] }),
+		);
+
+		expect(events[0].type).toBe("error");
+		if (events[0].type === "error") {
+			expect(events[0].error.errorMessage).toBe("string boom");
+		}
+	});
+
+	it("fills missing response metadata and calls response hooks", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([
+			{
+				role: "assistant",
+				content: [fauxText("raw")],
+				api: "other",
+				provider: "other",
+				model: "other",
+				stopReason: "stop",
+			} as AssistantMessage,
+		]);
+		const responseStatuses: number[] = [];
+
+		const response = await complete(
+			registration.getModel(),
+			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
+			{
+				onResponse: (metadata) => {
+					responseStatuses.push(metadata.status);
+				},
+			},
+		);
+
+		expect(response.content).toEqual([{ type: "text", text: "raw" }]);
+		expect(response.timestamp).toEqual(expect.any(Number));
+		expect(response.usage.totalTokens).toBeGreaterThan(0);
+		expect(responseStatuses).toEqual([200]);
 	});
 
 	it("estimates prompt and output tokens from serialized context", async () => {
@@ -583,6 +649,46 @@ describe("faux provider", () => {
 		expect(events).toContain("toolcall_delta");
 		expect(events).toContain("error");
 		expect(events).not.toContain("toolcall_end");
+	});
+
+	it("supports aborting between content blocks", async () => {
+		const registration = registerFauxProvider({ tokensPerSecond: 0 });
+		registrations.push(registration);
+		registration.setResponses([fauxAssistantMessage([fauxText("first"), fauxText("second")])]);
+
+		let abortChecks = 0;
+		const signal = {
+			get aborted() {
+				abortChecks++;
+				return abortChecks > 3;
+			},
+		} as AbortSignal;
+		const events: string[] = [];
+		const s = stream(
+			registration.getModel(),
+			{ messages: [{ role: "user", content: "hi", timestamp: Date.now() }] },
+			{ signal },
+		);
+		for await (const event of s) {
+			events.push(event.type);
+		}
+
+		expect(events).toEqual(["start", "text_start", "text_delta", "text_end", "error"]);
+	});
+
+	it("exposes the simple stream wrapper through the API registry", async () => {
+		const registration = registerFauxProvider();
+		registrations.push(registration);
+		registration.setResponses([fauxAssistantMessage("simple")]);
+
+		const provider = getApiProvider(registration.api);
+		const events = await collectEvents(
+			provider!.streamSimple(registration.getModel(), {
+				messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
+			}),
+		);
+
+		expect(events.at(-1)?.type).toBe("done");
 	});
 
 	it("unregisters the provider", async () => {

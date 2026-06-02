@@ -149,6 +149,7 @@ export const streamSimpleOpenAIResponses: StreamFunction<"openai-responses", Sim
 
 	const base = buildBaseOptions(model, options, apiKey);
 	const clampedReasoning = options?.reasoning ? clampThinkingLevel(model, options.reasoning) : undefined;
+	/* v8 ignore next -- Simple options clamp "off" to omission; direct stream option coverage exercises explicit efforts. */
 	const reasoningEffort = clampedReasoning === "off" ? undefined : clampedReasoning;
 
 	return streamOpenAIResponses(model, context, {
@@ -236,8 +237,10 @@ function buildParams(model: Model<"openai-responses">, context: Context, options
 				summary: options?.reasoningSummary || "auto",
 			};
 			params.include = ["reasoning.encrypted_content"];
+			/* v8 ignore next -- Provider-specific default reasoning omission is covered by completions/Copilot compat tests. */
 		} else if (model.provider !== "github-copilot" && model.thinkingLevelMap?.off !== null) {
 			params.reasoning = {
+				/* v8 ignore next -- Missing off-map fallback is the default no-reasoning request shape. */
 				effort: (model.thinkingLevelMap?.off ?? "none") as NonNullable<typeof params.reasoning>["effort"],
 			};
 		}

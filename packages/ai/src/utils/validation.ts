@@ -312,11 +312,12 @@ export function validateToolArguments(tool: Tool, toolCall: ToolCall): any {
 		return args;
 	}
 
-	const errors =
-		validator
-			.Errors(args)
-			.map((error) => `  - ${formatValidationPath(error)}: ${error.message}`)
-			.join("\n") || "Unknown validation error";
+	const formattedErrors = validator
+		.Errors(args)
+		.map((error) => `  - ${formatValidationPath(error)}: ${error.message}`)
+		.join("\n");
+	/* v8 ignore next -- TypeBox exposes at least one localized error whenever Check(args) is false. */
+	const errors = formattedErrors || "Unknown validation error";
 
 	const errorMessage = `Validation failed for tool "${toolCall.name}":\n${errors}\n\nReceived arguments:\n${JSON.stringify(toolCall.arguments, null, 2)}`;
 

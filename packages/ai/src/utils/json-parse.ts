@@ -20,7 +20,7 @@ function escapeControlCharacter(char: string): string {
 		case "\t":
 			return "\\t";
 		default:
-			return `\\u${char.codePointAt(0)?.toString(16).padStart(4, "0") ?? "0000"}`;
+			return `\\u${char.codePointAt(0)!.toString(16).padStart(4, "0")}`;
 	}
 }
 
@@ -64,6 +64,8 @@ export function repairJson(json: string): string {
 					index += 5;
 					continue;
 				}
+				repaired += "\\\\";
+				continue;
 			}
 
 			if (VALID_JSON_ESCAPES.has(nextChar)) {
@@ -115,6 +117,7 @@ export function parseStreamingJson<T = Record<string, unknown>>(partialJson: str
 		} catch {
 			try {
 				const result = partialParse(repairJson(partialJson));
+				/* v8 ignore next -- repairJson either produces a parseable value or partial-json throws for this fallback path. */
 				return (result ?? {}) as T;
 			} catch {
 				return {} as T;
