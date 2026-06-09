@@ -35,11 +35,13 @@ export default defineConfig({
 				"src/components/AgentInterface.ts",
 				"src/components/MessageEditor.ts",
 				"src/components/Messages.ts",
-				// Sandboxed iframe + the three runtime providers it talks to.
+				// Sandboxed iframe + two of the runtime providers it talks to.
+				// RuntimeMessageRouter stays in scope at 100%: its window.postMessage
+				// and chrome.runtime.onUserScriptMessage routing is driveable in
+				// happy-dom — see test/runtime-message-router.e2e.test.ts.
 				"src/components/SandboxedIframe.ts",
 				"src/components/sandbox/ArtifactsRuntimeProvider.ts",
 				"src/components/sandbox/AttachmentsRuntimeProvider.ts",
-				"src/components/sandbox/RuntimeMessageRouter.ts",
 				// SandboxRuntimeProvider is an interface declaration only (no executable code).
 				"src/components/sandbox/SandboxRuntimeProvider.ts",
 				// Provider/model settings dialogs.
