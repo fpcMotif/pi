@@ -59,7 +59,7 @@ if ($noEnv) {
 
 $tsxBin = Join-Path $scriptDir "node_modules/.bin/tsx.cmd"
 if (-not (Test-Path -LiteralPath $tsxBin)) {
-	throw "tsx not found at $tsxBin. Run npm install from the repo root first."
+	throw "tsx not found at $tsxBin. Run bun install from the repo root first."
 }
 
 $cliPath = Join-Path $scriptDir "packages/coding-agent/src/cli.ts"

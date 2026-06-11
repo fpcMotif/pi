@@ -26,7 +26,7 @@ export const isBunRuntime = !!process.versions.bun;
 // Install Method Detection
 // =============================================================================
 
-export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "unknown";
+export type InstallMethod = "bun-binary" | "bun" | "yarn" | "unknown";
 
 interface SelfUpdateCommandStep {
 	command: string;
@@ -65,23 +65,20 @@ export function detectInstallMethod(): InstallMethod {
 
 	const resolvedPath = `${__dirname}\0${process.execPath || ""}`.toLowerCase().replace(/\\/g, "/");
 
-	if (resolvedPath.includes("/pnpm/") || resolvedPath.includes("/.pnpm/")) {
-		return "pnpm";
-	}
 	if (resolvedPath.includes("/yarn/") || resolvedPath.includes("/.yarn/")) {
 		return "yarn";
 	}
 	if (isBunRuntime || resolvedPath.includes("/install/global/node_modules/") || isPackageInBunGlobalRoot()) {
 		return "bun";
 	}
-	if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/")) {
-		return "npm";
+	if (resolvedPath.includes("/bun/") || resolvedPath.includes("/node_modules/")) {
+		return "bun";
 	}
 
 	return "unknown";
 }
 
-function getInferredNpmInstall(): { root: string; prefix: string } | undefined {
+function getInferredBunInstall(): { root: string; prefix: string } | undefined {
 	const packageDir = getPackageDir();
 	const path = process.platform === "win32" || packageDir.includes("\\") ? win32 : { basename, dirname };
 	const parent = path.dirname(packageDir);
@@ -94,9 +91,9 @@ function getInferredNpmInstall(): { root: string; prefix: string } | undefined {
 	if (!root) return undefined;
 	const rootParent = path.dirname(root);
 	if (path.basename(rootParent) === "lib") return { root, prefix: path.dirname(rootParent) };
-	// Windows global npm prefixes use `<prefix>\\node_modules`, which is
+	// Windows global bun prefixes use `<prefix>\\node_modules`, which is
 	// indistinguishable from local project installs by path shape alone. Do not
-	// infer unsupported Windows custom prefixes without `npm root -g` evidence.
+	// infer unsupported Windows custom prefixes without `bun root -g` evidence.
 	return undefined;
 }
 
@@ -104,18 +101,11 @@ function getSelfUpdateCommandForMethod(
 	method: InstallMethod,
 	installedPackageName: string,
 	updatePackageName = installedPackageName,
-	npmCommand?: string[],
+	bunCommand?: string[],
 ): SelfUpdateCommand | undefined {
 	switch (method) {
 		case "bun-binary":
 			return undefined;
-		case "pnpm":
-			return makeSelfUpdateCommand(
-				makeSelfUpdateCommandStep("pnpm", ["install", "-g", updatePackageName]),
-				updatePackageName === installedPackageName
-					? undefined
-					: makeSelfUpdateCommandStep("pnpm", ["remove", "-g", installedPackageName]),
-			);
 		case "yarn":
 			return makeSelfUpdateCommand(
 				makeSelfUpdateCommandStep("yarn", ["global", "add", updatePackageName]),
@@ -123,17 +113,10 @@ function getSelfUpdateCommandForMethod(
 					? undefined
 					: makeSelfUpdateCommandStep("yarn", ["global", "remove", installedPackageName]),
 			);
-		case "bun":
-			return makeSelfUpdateCommand(
-				makeSelfUpdateCommandStep("bun", ["install", "-g", updatePackageName]),
-				updatePackageName === installedPackageName
-					? undefined
-					: makeSelfUpdateCommandStep("bun", ["uninstall", "-g", installedPackageName]),
-			);
-		case "npm": {
-			const [command = "npm", ...npmArgs] = npmCommand ?? [];
-			const inferred = npmCommand?.length ? undefined : getInferredNpmInstall();
-			const prefixArgs = [...npmArgs, ...(inferred ? ["--prefix", inferred.prefix] : [])];
+		case "bun": {
+			const [command = "bun", ...bunArgs] = bunCommand ?? [];
+			const inferred = bunCommand?.length ? undefined : getInferredBunInstall();
+			const prefixArgs = [...bunArgs, ...(inferred ? ["--prefix", inferred.prefix] : [])];
 			const installStep = makeSelfUpdateCommandStep(command, [...prefixArgs, "install", "-g", updatePackageName]);
 			const uninstallStep =
 				updatePackageName === installedPackageName
@@ -182,30 +165,24 @@ function isPackageInBunGlobalRoot(): boolean {
 	return !!packageDir && getBunGlobalPackageRoots().some((root) => isPathUnderRoot(packageDir, root));
 }
 
-function getGlobalPackageRoots(method: InstallMethod, _packageName: string, npmCommand?: string[]): string[] {
+function getGlobalPackageRoots(method: InstallMethod, _packageName: string, bunCommand?: string[]): string[] {
 	switch (method) {
-		case "npm": {
-			const configured = !!npmCommand?.length;
-			const [command = "npm", ...npmArgs] = npmCommand ?? [];
+		case "bun": {
+			const configured = !!bunCommand?.length;
+			const [command = "bun", ...bunArgs] = bunCommand ?? [];
 			if (configured && command === "bun") {
-				return getBunGlobalPackageRoots(command, npmArgs, true);
+				return getBunGlobalPackageRoots(command, bunArgs, true);
 			}
-			const root = readCommandOutput(command, [...npmArgs, "root", "-g"], {
+			const root = readCommandOutput(command, [...bunArgs, "root", "-g"], {
 				requireSuccess: configured,
 			});
-			const inferred = configured ? undefined : getInferredNpmInstall();
+			const inferred = configured ? undefined : getInferredBunInstall();
 			return [root, inferred?.root].filter((x): x is string => !!x);
-		}
-		case "pnpm": {
-			const root = readCommandOutput("pnpm", ["root", "-g"]);
-			return root ? [root, dirname(root)] : [];
 		}
 		case "yarn": {
 			const dir = readCommandOutput("yarn", ["global", "dir"]);
 			return dir ? [dir, join(dir, "node_modules")] : [];
 		}
-		case "bun":
-			return getBunGlobalPackageRoots();
 		case "bun-binary":
 		case "unknown":
 			return [];
@@ -247,22 +224,22 @@ function isPathUnderRoot(path: string, root: string): boolean {
 	);
 }
 
-function isManagedByGlobalPackageManager(method: InstallMethod, packageName: string, npmCommand?: string[]): boolean {
+function isManagedByGlobalPackageManager(method: InstallMethod, packageName: string, bunCommand?: string[]): boolean {
 	const packageDir = normalizeExistingPathForComparison(getPackageDir());
 	return (
 		!!packageDir &&
-		getGlobalPackageRoots(method, packageName, npmCommand).some((root) => isPathUnderRoot(packageDir, root))
+		getGlobalPackageRoots(method, packageName, bunCommand).some((root) => isPathUnderRoot(packageDir, root))
 	);
 }
 
 export function getSelfUpdateCommand(
 	packageName: string,
-	npmCommand?: string[],
+	bunCommand?: string[],
 	updatePackageName = packageName,
 ): SelfUpdateCommand | undefined {
 	const method = detectInstallMethod();
-	const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
-	if (!command || !isManagedByGlobalPackageManager(method, packageName, npmCommand) || !isSelfUpdatePathWritable()) {
+	const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, bunCommand);
+	if (!command || !isManagedByGlobalPackageManager(method, packageName, bunCommand) || !isSelfUpdatePathWritable()) {
 		return undefined;
 	}
 	return command;
@@ -270,16 +247,16 @@ export function getSelfUpdateCommand(
 
 export function getSelfUpdateUnavailableInstruction(
 	packageName: string,
-	npmCommand?: string[],
+	bunCommand?: string[],
 	updatePackageName = packageName,
 ): string {
 	const method = detectInstallMethod();
 	if (method === "bun-binary") {
 		return `Download from: https://github.com/earendil-works/pi-mono/releases/latest`;
 	}
-	const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
+	const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, bunCommand);
 	if (command) {
-		if (isManagedByGlobalPackageManager(method, packageName, npmCommand) && !isSelfUpdatePathWritable()) {
+		if (isManagedByGlobalPackageManager(method, packageName, bunCommand) && !isSelfUpdatePathWritable()) {
 			return `This installation is managed by a global ${method} install, but the install path is not writable. Update it yourself with: ${command.display}`;
 		}
 		return `This installation is not managed by a global ${method} install. Update it with the package manager, wrapper, or source checkout that provides it.`;

@@ -14,7 +14,7 @@
 ### Changed
 
 - **Carve out `@earendil-works/pi-models`** (ADR-0005, ADR-0006 phase 1). The model registry data (`models.generated.ts`, `image-models.generated.ts`) and synchronous utilities (`getModel`, `getProviders`, `getModels`, `calculateCost`, `getSupportedThinkingLevels`, `clampThinkingLevel`, `modelsAreEqual`, `getImageModel`, `getImageProviders`, `getImageModels`) now live in `@earendil-works/pi-models` — a new browser-safe package with zero Effect or provider runtime dependencies. The registry-side types (`Model`, `ImagesModel`, `Api`, `ImagesApi`, `KnownProvider`, `ImagesProvider`, `Usage`, `ThinkingLevel`, `ThinkingLevelMap`, `ThinkingBudgets`, the `*Compat` interfaces, `OpenRouterRouting`) move with them. `@earendil-works/pi-ai` re-exports the moved surface so existing consumers see no API break.
-- Generator script `scripts/generate-image-models.ts` stays in `packages/ai/scripts/` for now but writes to `packages/models/src/`. It is no longer part of `npm run build` — invoke `npm run generate-image-models` explicitly when refreshing the registry.
+- Generator script `scripts/generate-image-models.ts` stays in `packages/ai/scripts/` for now but writes to `packages/models/src/`. It is no longer part of `bun run build` — invoke `bun run generate-image-models` explicitly when refreshing the registry.
 
 ### Added
 
@@ -632,7 +632,7 @@
 ### Fixed
 
 - Set OpenAI Responses API requests to `store: false` by default to avoid server-side history logging ([#1308](https://github.com/badlogic/pi-mono/issues/1308))
-- Re-exported TypeBox `Type`, `Static`, and `TSchema` from `@mariozechner/pi-ai` to match documentation and avoid duplicate TypeBox type identity issues in pnpm setups ([#1338](https://github.com/badlogic/pi-mono/issues/1338))
+- Re-exported TypeBox `Type`, `Static`, and `TSchema` from `@mariozechner/pi-ai` to match documentation and avoid duplicate TypeBox type identity issues in pbun setups ([#1338](https://github.com/badlogic/pi-mono/issues/1338))
 - Fixed Bedrock adaptive thinking handling for Claude Opus 4.6 with interleaved thinking beta responses ([#1323](https://github.com/badlogic/pi-mono/pull/1323) by [@markusylisiurunen](https://github.com/markusylisiurunen))
 - Fixed `AWS_BEDROCK_SKIP_AUTH` environment detection to avoid `process` access in non-Node.js environments
 

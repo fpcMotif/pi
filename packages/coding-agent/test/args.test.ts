@@ -490,3 +490,31 @@ describe("parseArgs - more edge cases", () => {
 		expect(result.mode).toBeUndefined();
 	});
 });
+
+describe("--effect / --events (ADR-0020)", () => {
+	test("--effect sets the flag", () => {
+		const result = parseArgs(["--effect", "-p", "hi"]);
+		expect(result.effect).toBe(true);
+		expect(result.print).toBe(true);
+		expect(result.messages).toEqual(["hi"]);
+	});
+
+	test("--events accepts v1 and v2", () => {
+		expect(parseArgs(["--events", "v1"]).events).toBe("v1");
+		expect(parseArgs(["--events", "v2"]).events).toBe("v2");
+	});
+
+	test("--events with an invalid value warns and leaves the field unset", () => {
+		const result = parseArgs(["--events", "v3"]);
+		expect(result.events).toBeUndefined();
+		expect(result.diagnostics).toEqual([
+			{ type: "warning", message: 'Invalid --events value "v3" (expected v1 or v2); ignoring' },
+		]);
+	});
+
+	test("PIN: --events as the final token falls through to unknownFlags", () => {
+		const result = parseArgs(["--events"]);
+		expect(result.events).toBeUndefined();
+		expect(result.unknownFlags.has("events")).toBe(true);
+	});
+});

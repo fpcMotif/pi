@@ -134,16 +134,16 @@ describe("package commands", () => {
 		}
 	});
 
-	it("uses global npmCommand and current package name for forced self updates without checking the api", async () => {
+	it("uses global bunCommand and current package name for forced self updates without checking the api", async () => {
 		const globalPrefix = join(tempDir, "global-prefix");
 		const projectPrefix = join(tempDir, "project-prefix");
 		const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@earendil-works", "pi-coding-agent");
-		const fakeNpmPath = join(tempDir, "fake-npm.cjs");
+		const fakeBunPath = join(tempDir, "fake-bun.cjs");
 		const recordPath = join(tempDir, "self-update.json");
 		mkdirSync(selfPackageDir, { recursive: true });
 		mkdirSync(join(projectDir, ".pi"), { recursive: true });
 		writeFileSync(
-			fakeNpmPath,
+			fakeBunPath,
 			`const fs=require("node:fs"),path=require("node:path"),args=process.argv.slice(2),prefix=args[args.indexOf("--prefix")+1];
 if(args.includes("root")) console.log(path.join(prefix,"lib","node_modules"));
 else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
@@ -151,11 +151,11 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
 		);
 		writeFileSync(
 			join(agentDir, "settings.json"),
-			JSON.stringify({ npmCommand: [originalExecPath, fakeNpmPath, "--prefix", globalPrefix] }, null, 2),
+			JSON.stringify({ bunCommand: [originalExecPath, fakeBunPath, "--prefix", globalPrefix] }, null, 2),
 		);
 		writeFileSync(
 			join(projectDir, ".pi", "settings.json"),
-			JSON.stringify({ npmCommand: [originalExecPath, fakeNpmPath, "--prefix", projectPrefix] }, null, 2),
+			JSON.stringify({ bunCommand: [originalExecPath, fakeBunPath, "--prefix", projectPrefix] }, null, 2),
 		);
 		process.env.PI_PACKAGE_DIR = selfPackageDir;
 		Object.defineProperty(process, "execPath", {
@@ -187,11 +187,11 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
 	it("uses the current package name when the update check omits packageName", async () => {
 		const globalPrefix = join(tempDir, "global-prefix");
 		const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
-		const fakeNpmPath = join(tempDir, "fake-npm.cjs");
+		const fakeBunPath = join(tempDir, "fake-bun.cjs");
 		const recordPath = join(tempDir, "self-update.json");
 		mkdirSync(selfPackageDir, { recursive: true });
 		writeFileSync(
-			fakeNpmPath,
+			fakeBunPath,
 			`const fs=require("node:fs"),path=require("node:path"),args=process.argv.slice(2),prefix=args[args.indexOf("--prefix")+1];
 if(args.includes("root")) console.log(path.join(prefix,"lib","node_modules"));
 else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
@@ -199,7 +199,7 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
 		);
 		writeFileSync(
 			join(agentDir, "settings.json"),
-			JSON.stringify({ npmCommand: [originalExecPath, fakeNpmPath, "--prefix", globalPrefix] }, null, 2),
+			JSON.stringify({ bunCommand: [originalExecPath, fakeBunPath, "--prefix", globalPrefix] }, null, 2),
 		);
 		process.env.PI_PACKAGE_DIR = selfPackageDir;
 		Object.defineProperty(process, "execPath", {
@@ -229,11 +229,11 @@ else fs.writeFileSync(${JSON.stringify(recordPath)},JSON.stringify(args));
 	it("installs the active package name from the update check during self-update", async () => {
 		const globalPrefix = join(tempDir, "global-prefix");
 		const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
-		const fakeNpmPath = join(tempDir, "fake-npm.cjs");
+		const fakeBunPath = join(tempDir, "fake-bun.cjs");
 		const recordPath = join(tempDir, "self-update.json");
 		mkdirSync(selfPackageDir, { recursive: true });
 		writeFileSync(
-			fakeNpmPath,
+			fakeBunPath,
 			`const fs=require("node:fs"),path=require("node:path"),args=process.argv.slice(2),prefix=args[args.indexOf("--prefix")+1];
 if(args.includes("root")) console.log(path.join(prefix,"lib","node_modules"));
 else {
@@ -245,7 +245,7 @@ else {
 		);
 		writeFileSync(
 			join(agentDir, "settings.json"),
-			JSON.stringify({ npmCommand: [originalExecPath, fakeNpmPath, "--prefix", globalPrefix] }, null, 2),
+			JSON.stringify({ bunCommand: [originalExecPath, fakeBunPath, "--prefix", globalPrefix] }, null, 2),
 		);
 		process.env.PI_PACKAGE_DIR = selfPackageDir;
 		Object.defineProperty(process, "execPath", {
@@ -277,14 +277,14 @@ else {
 		}
 	});
 
-	it("fails self-update when renamed npm package installation fails", async () => {
+	it("fails self-update when renamed bun package installation fails", async () => {
 		const globalPrefix = join(tempDir, "global-prefix");
 		const selfPackageDir = join(globalPrefix, "lib", "node_modules", "@mariozechner", "pi-coding-agent");
-		const fakeNpmPath = join(tempDir, "fake-npm-fail.cjs");
+		const fakeBunPath = join(tempDir, "fake-bun-fail.cjs");
 		const recordPath = join(tempDir, "self-update-fail.json");
 		mkdirSync(selfPackageDir, { recursive: true });
 		writeFileSync(
-			fakeNpmPath,
+			fakeBunPath,
 			`const fs=require("node:fs"),path=require("node:path"),args=process.argv.slice(2),prefix=args[args.indexOf("--prefix")+1];
 if(args.includes("root")) {
 	console.log(path.join(prefix,"lib","node_modules"));
@@ -298,7 +298,7 @@ if(args.includes("install")) process.exit(23);
 		);
 		writeFileSync(
 			join(agentDir, "settings.json"),
-			JSON.stringify({ npmCommand: [originalExecPath, fakeNpmPath, "--prefix", globalPrefix] }, null, 2),
+			JSON.stringify({ bunCommand: [originalExecPath, fakeBunPath, "--prefix", globalPrefix] }, null, 2),
 		);
 		process.env.PI_PACKAGE_DIR = selfPackageDir;
 		Object.defineProperty(process, "execPath", {
@@ -333,9 +333,9 @@ if(args.includes("install")) process.exit(23);
 		}
 	});
 
-	it("suggests the configured source when update input omits the npm prefix", async () => {
+	it("suggests the configured source when update input omits the bun prefix", async () => {
 		const settingsPath = join(agentDir, "settings.json");
-		writeFileSync(settingsPath, JSON.stringify({ packages: ["npm:pi-formatter"] }, null, 2));
+		writeFileSync(settingsPath, JSON.stringify({ packages: ["bun:pi-formatter"] }, null, 2));
 
 		const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 		const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -345,12 +345,12 @@ if(args.includes("install")) process.exit(23);
 
 			const stderr = errorSpy.mock.calls.map(([message]) => String(message)).join("\n");
 			const stdout = logSpy.mock.calls.map(([message]) => String(message)).join("\n");
-			expect(stderr).toContain("Did you mean npm:pi-formatter?");
+			expect(stderr).toContain("Did you mean bun:pi-formatter?");
 			expect(stdout).not.toContain("Updated pi-formatter");
 			expect(process.exitCode).toBe(1);
 
 			const settings = JSON.parse(readFileSync(settingsPath, "utf-8")) as { packages?: string[] };
-			expect(settings.packages).toContain("npm:pi-formatter");
+			expect(settings.packages).toContain("bun:pi-formatter");
 		} finally {
 			errorSpy.mockRestore();
 			logSpy.mockRestore();

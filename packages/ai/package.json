@@ -36,14 +36,14 @@
 	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"generate-image-models": "npx tsx scripts/generate-image-models.ts",
+		"generate-image-models": "bunx tsx scripts/generate-image-models.ts",
 		"build": "tsgo -p tsconfig.build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"dev:tsc": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "vitest --run",
 		"test:coverage": "vitest --run --coverage --no-file-parallelism --maxWorkers=1 --minWorkers=1",
 		"test:coverage:100": "vitest --run --coverage --no-file-parallelism --maxWorkers=1 --minWorkers=1 --coverage.thresholds.lines=100 --coverage.thresholds.branches=100 --coverage.thresholds.functions=100 --coverage.thresholds.statements=100",
-		"prepublishOnly": "npm run clean && npm run build"
+		"prepublishOnly": "bun run clean && bun run build"
 	},
 	"dependencies": {
 		"@earendil-works/pi-models": "^0.74.0",

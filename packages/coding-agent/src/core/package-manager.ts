@@ -68,7 +68,7 @@ export type ProgressCallback = (event: ProgressEvent) => void;
 export interface PackageUpdate {
 	source: string;
 	displayName: string;
-	type: "npm" | "git";
+	type: "bun" | "git";
 	scope: Exclude<SourceScope, "temporary">;
 }
 
@@ -103,8 +103,8 @@ interface PackageManagerOptions {
 	settingsManager: SettingsManager;
 }
 
-type NpmSource = {
-	type: "npm";
+type BunSource = {
+	type: "bun";
 	spec: string;
 	name: string;
 	pinned: boolean;
@@ -115,7 +115,7 @@ type LocalSource = {
 	path: string;
 };
 
-type ParsedSource = NpmSource | GitSource | LocalSource;
+type ParsedSource = BunSource | GitSource | LocalSource;
 
 type InstalledSourceScope = Exclude<SourceScope, "temporary">;
 
@@ -124,8 +124,8 @@ interface ConfiguredUpdateSource {
 	scope: InstalledSourceScope;
 }
 
-interface NpmUpdateTarget extends ConfiguredUpdateSource {
-	parsed: NpmSource;
+interface BunUpdateTarget extends ConfiguredUpdateSource {
+	parsed: BunSource;
 }
 
 interface GitUpdateTarget extends ConfiguredUpdateSource {
@@ -719,8 +719,8 @@ export class DefaultPackageManager implements PackageManager {
 	private cwd: string;
 	private agentDir: string;
 	private settingsManager: SettingsManager;
-	private globalNpmRoot: string | undefined;
-	private globalNpmRootCommandKey: string | undefined;
+	private globalBunRoot: string | undefined;
+	private globalBunRootCommandKey: string | undefined;
 	private progressCallback: ProgressCallback | undefined;
 
 	constructor(options: PackageManagerOptions) {
@@ -772,8 +772,8 @@ export class DefaultPackageManager implements PackageManager {
 
 	getInstalledPath(source: string, scope: "user" | "project"): string | undefined {
 		const parsed = this.parseSource(source);
-		if (parsed.type === "npm") {
-			const path = this.getNpmInstallPath(parsed, scope);
+		if (parsed.type === "bun") {
+			const path = this.getBunInstallPath(parsed, scope);
 			return existsSync(path) ? path : undefined;
 		}
 		if (parsed.type === "git") {
@@ -906,8 +906,8 @@ export class DefaultPackageManager implements PackageManager {
 		const parsed = this.parseSource(source);
 		const scope: SourceScope = options?.local ? "project" : "user";
 		await this.withProgress("install", source, `Installing ${source}...`, async () => {
-			if (parsed.type === "npm") {
-				await this.installNpm(parsed, scope, false);
+			if (parsed.type === "bun") {
+				await this.installBun(parsed, scope, false);
 				return;
 			}
 			if (parsed.type === "git") {
@@ -934,8 +934,8 @@ export class DefaultPackageManager implements PackageManager {
 		const parsed = this.parseSource(source);
 		const scope: SourceScope = options?.local ? "project" : "user";
 		await this.withProgress("remove", source, `Removing ${source}...`, async () => {
-			if (parsed.type === "npm") {
-				await this.uninstallNpm(parsed, scope);
+			if (parsed.type === "bun") {
+				await this.uninstallBun(parsed, scope);
 				return;
 			}
 			if (parsed.type === "git") {
@@ -991,7 +991,7 @@ export class DefaultPackageManager implements PackageManager {
 			return;
 		}
 
-		const npmCandidates: NpmUpdateTarget[] = [];
+		const bunCandidates: BunUpdateTarget[] = [];
 		const gitCandidates: GitUpdateTarget[] = [];
 
 		for (const entry of sources) {
@@ -999,37 +999,37 @@ export class DefaultPackageManager implements PackageManager {
 			if (parsed.type === "local" || parsed.pinned) {
 				continue;
 			}
-			if (parsed.type === "npm") {
-				npmCandidates.push({ ...entry, parsed });
+			if (parsed.type === "bun") {
+				bunCandidates.push({ ...entry, parsed });
 				continue;
 			}
 			gitCandidates.push({ ...entry, parsed });
 		}
 
-		const npmCheckTasks = npmCandidates.map((entry) => async () => ({
+		const bunCheckTasks = bunCandidates.map((entry) => async () => ({
 			entry,
-			shouldUpdate: await this.shouldUpdateNpmSource(entry.parsed, entry.scope),
+			shouldUpdate: await this.shouldUpdateBunSource(entry.parsed, entry.scope),
 		}));
-		const npmCheckResults = await this.runWithConcurrency(npmCheckTasks, UPDATE_CHECK_CONCURRENCY);
-		const userNpmUpdates: NpmUpdateTarget[] = [];
-		const projectNpmUpdates: NpmUpdateTarget[] = [];
-		for (const result of npmCheckResults) {
+		const bunCheckResults = await this.runWithConcurrency(bunCheckTasks, UPDATE_CHECK_CONCURRENCY);
+		const userBunUpdates: BunUpdateTarget[] = [];
+		const projectBunUpdates: BunUpdateTarget[] = [];
+		for (const result of bunCheckResults) {
 			if (!result.shouldUpdate) {
 				continue;
 			}
 			if (result.entry.scope === "user") {
-				userNpmUpdates.push(result.entry);
+				userBunUpdates.push(result.entry);
 			} else {
-				projectNpmUpdates.push(result.entry);
+				projectBunUpdates.push(result.entry);
 			}
 		}
 
 		const tasks: Promise<void>[] = [];
-		if (userNpmUpdates.length > 0) {
-			tasks.push(this.updateNpmBatch(userNpmUpdates, "user"));
+		if (userBunUpdates.length > 0) {
+			tasks.push(this.updateBunBatch(userBunUpdates, "user"));
 		}
-		if (projectNpmUpdates.length > 0) {
-			tasks.push(this.updateNpmBatch(projectNpmUpdates, "project"));
+		if (projectBunUpdates.length > 0) {
+			tasks.push(this.updateBunBatch(projectBunUpdates, "project"));
 		}
 		if (gitCandidates.length > 0) {
 			const gitTasks = gitCandidates.map(
@@ -1044,15 +1044,15 @@ export class DefaultPackageManager implements PackageManager {
 		await Promise.all(tasks);
 	}
 
-	private async shouldUpdateNpmSource(source: NpmSource, scope: InstalledSourceScope): Promise<boolean> {
-		const installedPath = this.getNpmInstallPath(source, scope);
-		const installedVersion = existsSync(installedPath) ? this.getInstalledNpmVersion(installedPath) : undefined;
+	private async shouldUpdateBunSource(source: BunSource, scope: InstalledSourceScope): Promise<boolean> {
+		const installedPath = this.getBunInstallPath(source, scope);
+		const installedVersion = existsSync(installedPath) ? this.getInstalledBunVersion(installedPath) : undefined;
 		if (!installedVersion) {
 			return true;
 		}
 
 		try {
-			const latestVersion = await this.getLatestNpmVersion(source.name);
+			const latestVersion = await this.getLatestBunVersion(source.name);
 			return latestVersion !== installedVersion;
 		} catch {
 			// Preserve existing update behavior when version lookup fails.
@@ -1060,28 +1060,28 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private async updateNpmBatch(sources: NpmUpdateTarget[], scope: InstalledSourceScope): Promise<void> {
+	private async updateBunBatch(sources: BunUpdateTarget[], scope: InstalledSourceScope): Promise<void> {
 		if (sources.length === 0) {
 			return;
 		}
 
-		const sourceLabel = sources.length === 1 ? sources[0].source : `${scope} npm packages`;
-		const message = sources.length === 1 ? `Updating ${sources[0].source}...` : `Updating ${scope} npm packages...`;
+		const sourceLabel = sources.length === 1 ? sources[0].source : `${scope} bun packages`;
+		const message = sources.length === 1 ? `Updating ${sources[0].source}...` : `Updating ${scope} bun packages...`;
 		const specs = sources.map((entry) => `${entry.parsed.name}@latest`);
 
 		await this.withProgress("update", sourceLabel, message, async () => {
-			await this.installNpmBatch(specs, scope);
+			await this.installBunBatch(specs, scope);
 		});
 	}
 
-	private async installNpmBatch(specs: string[], scope: InstalledSourceScope): Promise<void> {
+	private async installBunBatch(specs: string[], scope: InstalledSourceScope): Promise<void> {
 		if (scope === "user") {
-			await this.runNpmCommand(["install", "-g", ...specs]);
+			await this.runBunCommand(["install", "-g", ...specs]);
 			return;
 		}
-		const installRoot = this.getNpmInstallRoot(scope, false);
-		this.ensureNpmProject(installRoot);
-		await this.runNpmCommand(["install", ...specs, "--prefix", installRoot]);
+		const installRoot = this.getBunInstallRoot(scope, false);
+		this.ensureBunProject(installRoot);
+		await this.runBunCommand(["install", ...specs, "--prefix", installRoot]);
 	}
 
 	async checkForAvailableUpdates(): Promise<PackageUpdate[]> {
@@ -1112,19 +1112,19 @@ export class DefaultPackageManager implements PackageManager {
 					return undefined;
 				}
 
-				if (parsed.type === "npm") {
-					const installedPath = this.getNpmInstallPath(parsed, entry.scope);
+				if (parsed.type === "bun") {
+					const installedPath = this.getBunInstallPath(parsed, entry.scope);
 					if (!existsSync(installedPath)) {
 						return undefined;
 					}
-					const hasUpdate = await this.npmHasAvailableUpdate(parsed, installedPath);
+					const hasUpdate = await this.bunHasAvailableUpdate(parsed, installedPath);
 					if (!hasUpdate) {
 						return undefined;
 					}
 					return {
 						source,
 						displayName: parsed.name,
-						type: "npm",
+						type: "bun",
 						scope: entry.scope,
 					};
 				}
@@ -1181,11 +1181,11 @@ export class DefaultPackageManager implements PackageManager {
 				return true;
 			};
 
-			if (parsed.type === "npm") {
-				const installedPath = this.getNpmInstallPath(parsed, scope);
+			if (parsed.type === "bun") {
+				const installedPath = this.getBunInstallPath(parsed, scope);
 				const needsInstall =
 					!existsSync(installedPath) ||
-					(parsed.pinned && !(await this.installedNpmMatchesPinnedVersion(parsed, installedPath)));
+					(parsed.pinned && !(await this.installedBunMatchesPinnedVersion(parsed, installedPath)));
 				if (needsInstall) {
 					const installed = await installMissing();
 					if (!installed) continue;
@@ -1241,8 +1241,8 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private async installParsedSource(parsed: ParsedSource, scope: SourceScope): Promise<void> {
-		if (parsed.type === "npm") {
-			await this.installNpm(parsed, scope, scope === "temporary");
+		if (parsed.type === "bun") {
+			await this.installBun(parsed, scope, scope === "temporary");
 			return;
 		}
 		if (parsed.type === "git") {
@@ -1257,8 +1257,8 @@ export class DefaultPackageManager implements PackageManager {
 
 	private getSourceMatchKeyForInput(source: string): string {
 		const parsed = this.parseSource(source);
-		if (parsed.type === "npm") {
-			return `npm:${parsed.name}`;
+		if (parsed.type === "bun") {
+			return `bun:${parsed.name}`;
 		}
 		if (parsed.type === "git") {
 			return `git:${parsed.host}/${parsed.path}`;
@@ -1268,8 +1268,8 @@ export class DefaultPackageManager implements PackageManager {
 
 	private getSourceMatchKeyForSettings(source: string, scope: SourceScope): string {
 		const parsed = this.parseSource(source);
-		if (parsed.type === "npm") {
-			return `npm:${parsed.name}`;
+		if (parsed.type === "bun") {
+			return `bun:${parsed.name}`;
 		}
 		if (parsed.type === "git") {
 			return `git:${parsed.host}/${parsed.path}`;
@@ -1293,7 +1293,7 @@ export class DefaultPackageManager implements PackageManager {
 		for (const pkg of configuredPackages) {
 			const sourceStr = this.getPackageSourceString(pkg);
 			const parsed = this.parseSource(sourceStr);
-			if (parsed.type === "npm") {
+			if (parsed.type === "bun") {
 				if (trimmedSource === parsed.name || trimmedSource === parsed.spec) {
 					suggestions.add(sourceStr);
 				}
@@ -1329,11 +1329,11 @@ export class DefaultPackageManager implements PackageManager {
 	}
 
 	private parseSource(source: string): ParsedSource {
-		if (source.startsWith("npm:")) {
-			const spec = source.slice("npm:".length).trim();
-			const { name, version } = this.parseNpmSpec(spec);
+		if (source.startsWith("bun:")) {
+			const spec = source.slice("bun:".length).trim();
+			const { name, version } = this.parseBunSpec(spec);
 			return {
-				type: "npm",
+				type: "bun",
 				spec,
 				name,
 				pinned: Boolean(version),
@@ -1353,13 +1353,13 @@ export class DefaultPackageManager implements PackageManager {
 		return { type: "local", path: source };
 	}
 
-	private async installedNpmMatchesPinnedVersion(source: NpmSource, installedPath: string): Promise<boolean> {
-		const installedVersion = this.getInstalledNpmVersion(installedPath);
+	private async installedBunMatchesPinnedVersion(source: BunSource, installedPath: string): Promise<boolean> {
+		const installedVersion = this.getInstalledBunVersion(installedPath);
 		if (!installedVersion) {
 			return false;
 		}
 
-		const { version: pinnedVersion } = this.parseNpmSpec(source.spec);
+		const { version: pinnedVersion } = this.parseBunSpec(source.spec);
 		if (!pinnedVersion) {
 			return true;
 		}
@@ -1367,25 +1367,25 @@ export class DefaultPackageManager implements PackageManager {
 		return installedVersion === pinnedVersion;
 	}
 
-	private async npmHasAvailableUpdate(source: NpmSource, installedPath: string): Promise<boolean> {
+	private async bunHasAvailableUpdate(source: BunSource, installedPath: string): Promise<boolean> {
 		if (isOfflineModeEnabled()) {
 			return false;
 		}
 
-		const installedVersion = this.getInstalledNpmVersion(installedPath);
+		const installedVersion = this.getInstalledBunVersion(installedPath);
 		if (!installedVersion) {
 			return false;
 		}
 
 		try {
-			const latestVersion = await this.getLatestNpmVersion(source.name);
+			const latestVersion = await this.getLatestBunVersion(source.name);
 			return latestVersion !== installedVersion;
 		} catch {
 			return false;
 		}
 	}
 
-	private getInstalledNpmVersion(installedPath: string): string | undefined {
+	private getInstalledBunVersion(installedPath: string): string | undefined {
 		const packageJsonPath = join(installedPath, "package.json");
 		if (!existsSync(packageJsonPath)) return undefined;
 		try {
@@ -1397,15 +1397,15 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private async getLatestNpmVersion(packageName: string): Promise<string> {
-		const npmCommand = this.getNpmCommand();
+	private async getLatestBunVersion(packageName: string): Promise<string> {
+		const bunCommand = this.getBunCommand();
 		const stdout = await this.runCommandCapture(
-			npmCommand.command,
-			[...npmCommand.args, "view", packageName, "version", "--json"],
+			bunCommand.command,
+			[...bunCommand.args, "view", packageName, "version", "--json"],
 			{ cwd: this.cwd, timeoutMs: NETWORK_TIMEOUT_MS },
 		);
 		const raw = stdout.trim();
-		if (!raw) throw new Error("Empty response from npm view");
+		if (!raw) throw new Error("Empty response from bun view");
 		return JSON.parse(raw);
 	}
 
@@ -1539,7 +1539,7 @@ export class DefaultPackageManager implements PackageManager {
 			return [];
 		}
 
-		const results: T[] = new Array(tasks.length);
+		const results: T[] = Array.from({ length: tasks.length });
 		let nextIndex = 0;
 		const workerCount = Math.max(1, Math.min(limit, tasks.length));
 
@@ -1566,8 +1566,8 @@ export class DefaultPackageManager implements PackageManager {
 	 */
 	private getPackageIdentity(source: string, scope?: SourceScope): string {
 		const parsed = this.parseSource(source);
-		if (parsed.type === "npm") {
-			return `npm:${parsed.name}`;
+		if (parsed.type === "bun") {
+			return `bun:${parsed.name}`;
 		}
 		if (parsed.type === "git") {
 			// Use host/path for identity to normalize SSH and HTTPS
@@ -1607,7 +1607,7 @@ export class DefaultPackageManager implements PackageManager {
 		return Array.from(seen.values());
 	}
 
-	private parseNpmSpec(spec: string): { name: string; version?: string } {
+	private parseBunSpec(spec: string): { name: string; version?: string } {
 		const match = spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@(.+))?$/);
 		if (!match) {
 			return { name: spec };
@@ -1617,56 +1617,56 @@ export class DefaultPackageManager implements PackageManager {
 		return { name, version };
 	}
 
-	private getNpmCommand(): { command: string; args: string[] } {
-		const configuredCommand = this.settingsManager.getNpmCommand();
+	private getBunCommand(): { command: string; args: string[] } {
+		const configuredCommand = this.settingsManager.getBunCommand();
 		if (!configuredCommand || configuredCommand.length === 0) {
-			return { command: "npm", args: [] };
+			return { command: "bun", args: [] };
 		}
 		const [command, ...args] = configuredCommand;
 		if (!command) {
-			throw new Error("Invalid npmCommand: first array entry must be a non-empty command");
+			throw new Error("Invalid bunCommand: first array entry must be a non-empty command");
 		}
 		return { command, args };
 	}
 
-	private async runNpmCommand(args: string[], options?: { cwd?: string }): Promise<void> {
-		const npmCommand = this.getNpmCommand();
-		await this.runCommand(npmCommand.command, [...npmCommand.args, ...args], options);
+	private async runBunCommand(args: string[], options?: { cwd?: string }): Promise<void> {
+		const bunCommand = this.getBunCommand();
+		await this.runCommand(bunCommand.command, [...bunCommand.args, ...args], options);
 	}
 
 	private getGitDependencyInstallArgs(): string[] {
-		const configuredCommand = this.settingsManager.getNpmCommand();
+		const configuredCommand = this.settingsManager.getBunCommand();
 		if (configuredCommand && configuredCommand.length > 0) {
 			return ["install"];
 		}
 		return ["install", "--omit=dev"];
 	}
 
-	private runNpmCommandSync(args: string[]): string {
-		const npmCommand = this.getNpmCommand();
-		return this.runCommandSync(npmCommand.command, [...npmCommand.args, ...args]);
+	private runBunCommandSync(args: string[]): string {
+		const bunCommand = this.getBunCommand();
+		return this.runCommandSync(bunCommand.command, [...bunCommand.args, ...args]);
 	}
 
-	private async installNpm(source: NpmSource, scope: SourceScope, temporary: boolean): Promise<void> {
+	private async installBun(source: BunSource, scope: SourceScope, temporary: boolean): Promise<void> {
 		if (scope === "user" && !temporary) {
-			await this.runNpmCommand(["install", "-g", source.spec]);
+			await this.runBunCommand(["install", "-g", source.spec]);
 			return;
 		}
-		const installRoot = this.getNpmInstallRoot(scope, temporary);
-		this.ensureNpmProject(installRoot);
-		await this.runNpmCommand(["install", source.spec, "--prefix", installRoot]);
+		const installRoot = this.getBunInstallRoot(scope, temporary);
+		this.ensureBunProject(installRoot);
+		await this.runBunCommand(["install", source.spec, "--prefix", installRoot]);
 	}
 
-	private async uninstallNpm(source: NpmSource, scope: SourceScope): Promise<void> {
+	private async uninstallBun(source: BunSource, scope: SourceScope): Promise<void> {
 		if (scope === "user") {
-			await this.runNpmCommand(["uninstall", "-g", source.name]);
+			await this.runBunCommand(["uninstall", "-g", source.name]);
 			return;
 		}
-		const installRoot = this.getNpmInstallRoot(scope, false);
+		const installRoot = this.getBunInstallRoot(scope, false);
 		if (!existsSync(installRoot)) {
 			return;
 		}
-		await this.runNpmCommand(["uninstall", source.name, "--prefix", installRoot]);
+		await this.runBunCommand(["uninstall", source.name, "--prefix", installRoot]);
 	}
 
 	private async installGit(source: GitSource, scope: SourceScope): Promise<void> {
@@ -1686,7 +1686,7 @@ export class DefaultPackageManager implements PackageManager {
 		}
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
-			await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
+			await this.runBunCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
 		}
 	}
 
@@ -1721,7 +1721,7 @@ export class DefaultPackageManager implements PackageManager {
 
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
-			await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
+			await this.runBunCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
 		}
 	}
 
@@ -1767,7 +1767,7 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private ensureNpmProject(installRoot: string): void {
+	private ensureBunProject(installRoot: string): void {
 		if (!existsSync(installRoot)) {
 			mkdirSync(installRoot, { recursive: true });
 		}
@@ -1789,41 +1789,41 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private getNpmInstallRoot(scope: SourceScope, temporary: boolean): string {
+	private getBunInstallRoot(scope: SourceScope, temporary: boolean): string {
 		if (temporary) {
-			return this.getTemporaryDir("npm");
+			return this.getTemporaryDir("bun");
 		}
 		if (scope === "project") {
-			return join(this.cwd, CONFIG_DIR_NAME, "npm");
+			return join(this.cwd, CONFIG_DIR_NAME, "bun");
 		}
-		return join(this.getGlobalNpmRoot(), "..");
+		return join(this.getGlobalBunRoot(), "..");
 	}
 
-	private getGlobalNpmRoot(): string {
-		const npmCommand = this.getNpmCommand();
-		const commandKey = [npmCommand.command, ...npmCommand.args].join("\0");
-		if (this.globalNpmRoot && this.globalNpmRootCommandKey === commandKey) {
-			return this.globalNpmRoot;
+	private getGlobalBunRoot(): string {
+		const bunCommand = this.getBunCommand();
+		const commandKey = [bunCommand.command, ...bunCommand.args].join("\0");
+		if (this.globalBunRoot && this.globalBunRootCommandKey === commandKey) {
+			return this.globalBunRoot;
 		}
-		const isBunPackageManager = npmCommand.command === "bun";
+		const isBunPackageManager = bunCommand.command === "bun";
 		if (isBunPackageManager) {
-			const binDir = this.runNpmCommandSync(["pm", "bin", "-g"]).trim();
-			this.globalNpmRoot = join(dirname(binDir), "install", "global", "node_modules");
+			const binDir = this.runBunCommandSync(["pm", "bin", "-g"]).trim();
+			this.globalBunRoot = join(dirname(binDir), "install", "global", "node_modules");
 		} else {
-			this.globalNpmRoot = this.runNpmCommandSync(["root", "-g"]).trim();
+			this.globalBunRoot = this.runBunCommandSync(["root", "-g"]).trim();
 		}
-		this.globalNpmRootCommandKey = commandKey;
-		return this.globalNpmRoot;
+		this.globalBunRootCommandKey = commandKey;
+		return this.globalBunRoot;
 	}
 
-	private getNpmInstallPath(source: NpmSource, scope: SourceScope): string {
+	private getBunInstallPath(source: BunSource, scope: SourceScope): string {
 		if (scope === "temporary") {
-			return join(this.getTemporaryDir("npm"), "node_modules", source.name);
+			return join(this.getTemporaryDir("bun"), "node_modules", source.name);
 		}
 		if (scope === "project") {
-			return join(this.cwd, CONFIG_DIR_NAME, "npm", "node_modules", source.name);
+			return join(this.cwd, CONFIG_DIR_NAME, "bun", "node_modules", source.name);
 		}
-		return join(this.getGlobalNpmRoot(), source.name);
+		return join(this.getGlobalBunRoot(), source.name);
 	}
 
 	private getGitInstallPath(source: GitSource, scope: SourceScope): string {

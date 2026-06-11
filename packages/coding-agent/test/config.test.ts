@@ -42,7 +42,7 @@ afterEach(() => {
 	}
 });
 
-function createNpmPrefixInstall(template = "pi-prefix-"): { prefix: string; packageDir: string } {
+function createBunPrefixInstall(template = "pi-prefix-"): { prefix: string; packageDir: string } {
 	const prefix = mkdtempSync(join(tmpdir(), template));
 	const root = join(prefix, "lib", "node_modules");
 	const scopeDir = join(root, "@earendil-works");
@@ -54,7 +54,7 @@ function createNpmPrefixInstall(template = "pi-prefix-"): { prefix: string; pack
 	return { prefix, packageDir };
 }
 
-function createConfiguredNpmPrefixInstall(template = "pi-prefix-"): { prefix: string; packageDir: string } {
+function createConfiguredBunPrefixInstall(template = "pi-prefix-"): { prefix: string; packageDir: string } {
 	const prefix = mkdtempSync(join(tmpdir(), template));
 	const root = process.platform === "win32" ? join(prefix, "node_modules") : join(prefix, "lib", "node_modules");
 	const scopeDir = join(root, "@earendil-works");
@@ -66,22 +66,22 @@ function createConfiguredNpmPrefixInstall(template = "pi-prefix-"): { prefix: st
 	return { prefix, packageDir };
 }
 
-function createPnpmGlobalInstall(): { root: string; packageDir: string } {
-	const temp = mkdtempSync(join(tmpdir(), "pi-pnpm-"));
+function createPbunGlobalInstall(): { root: string; packageDir: string } {
+	const temp = mkdtempSync(join(tmpdir(), "pi-pbun-"));
 	const binDir = join(temp, "bin");
-	const root = join(temp, "pnpm", "global", "5", "node_modules");
+	const root = join(temp, "pbun", "global", "5", "node_modules");
 	const packageDir = join(root, "@mariozechner", "pi-coding-agent");
 	mkdirSync(packageDir, { recursive: true });
 	mkdirSync(binDir, { recursive: true });
-	writeFileSync(join(binDir, process.platform === "win32" ? "pnpm.cmd" : "pnpm"), createFakePnpmScript(root));
-	chmodSync(join(binDir, process.platform === "win32" ? "pnpm.cmd" : "pnpm"), 0o755);
+	writeFileSync(join(binDir, process.platform === "win32" ? "pbun.cmd" : "pbun"), createFakePbunScript(root));
+	chmodSync(join(binDir, process.platform === "win32" ? "pbun.cmd" : "pbun"), 0o755);
 	tempDir = temp;
 	process.env.PATH = `${binDir}${delimiter}${originalPath ?? ""}`;
 	process.env.PI_PACKAGE_DIR = packageDir;
 	setExecPath(
 		join(
 			root,
-			".pnpm",
+			".pbun",
 			"@mariozechner+pi-coding-agent@0.0.0",
 			"node_modules",
 			"@mariozechner",
@@ -145,7 +145,7 @@ function createBunWindowsHomeGlobalInstall(): { packageDir: string } {
 	return { packageDir };
 }
 
-function createFakePnpmScript(root: string): string {
+function createFakePbunScript(root: string): string {
 	if (process.platform === "win32") {
 		return `@echo off\r\nif "%1"=="root" if "%2"=="-g" echo ${root}\r\n`;
 	}
@@ -170,14 +170,14 @@ function createFakeBunScript(bunBin: string): string {
 }
 
 describe("detectInstallMethod", () => {
-	test("detects pnpm from Windows .pnpm install paths", () => {
+	test("detects pbun from Windows .pbun install paths", () => {
 		setExecPath(
-			"C:\\Users\\Admin\\Documents\\pnpm-repository\\global\\5\\.pnpm\\@earendil-works+pi-coding-agent@0.67.68\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js",
+			"C:\\Users\\Admin\\Documents\\pbun-repository\\global\\5\\.pbun\\@earendil-works+pi-coding-agent@0.67.68\\node_modules\\@earendil-works\\pi-coding-agent\\dist\\cli.js",
 		);
 
-		expect(detectInstallMethod()).toBe("pnpm");
+		expect(detectInstallMethod()).toBe("pbun");
 		expect(getUpdateInstruction("@earendil-works/pi-coding-agent")).toBe(
-			"Run: pnpm install -g @earendil-works/pi-coding-agent",
+			"Run: pbun install -g @earendil-works/pi-coding-agent",
 		);
 	});
 
@@ -191,79 +191,79 @@ describe("detectInstallMethod", () => {
 		);
 	});
 
-	test("self-updates npm installs from custom prefixes", () => {
-		const { prefix } = createNpmPrefixInstall();
+	test("self-updates bun installs from custom prefixes", () => {
+		const { prefix } = createBunPrefixInstall();
 
 		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
 
-		expect(detectInstallMethod()).toBe("npm");
+		expect(detectInstallMethod()).toBe("bun");
 		expect(command).toEqual({
-			command: "npm",
+			command: "bun",
 			args: ["--prefix", prefix, "install", "-g", "@earendil-works/pi-coding-agent"],
-			display: `npm --prefix ${prefix} install -g @earendil-works/pi-coding-agent`,
+			display: `bun --prefix ${prefix} install -g @earendil-works/pi-coding-agent`,
 		});
 	});
 
 	test("self-updates renamed packages from the current install prefix", () => {
-		const { prefix } = createNpmPrefixInstall();
+		const { prefix } = createBunPrefixInstall();
 
 		const command = getSelfUpdateCommand("@mariozechner/pi-coding-agent", undefined, "@new-scope/pi");
 
 		expect(command).toEqual({
-			command: "npm",
+			command: "bun",
 			args: ["--prefix", prefix, "install", "-g", "@new-scope/pi"],
-			display: `npm --prefix ${prefix} uninstall -g @mariozechner/pi-coding-agent && npm --prefix ${prefix} install -g @new-scope/pi`,
+			display: `bun --prefix ${prefix} uninstall -g @mariozechner/pi-coding-agent && bun --prefix ${prefix} install -g @new-scope/pi`,
 			steps: [
 				{
-					command: "npm",
+					command: "bun",
 					args: ["--prefix", prefix, "uninstall", "-g", "@mariozechner/pi-coding-agent"],
-					display: `npm --prefix ${prefix} uninstall -g @mariozechner/pi-coding-agent`,
+					display: `bun --prefix ${prefix} uninstall -g @mariozechner/pi-coding-agent`,
 				},
 				{
-					command: "npm",
+					command: "bun",
 					args: ["--prefix", prefix, "install", "-g", "@new-scope/pi"],
-					display: `npm --prefix ${prefix} install -g @new-scope/pi`,
+					display: `bun --prefix ${prefix} install -g @new-scope/pi`,
 				},
 			],
 		});
 	});
 
-	test("self-update respects configured npmCommand", () => {
-		const { prefix } = createConfiguredNpmPrefixInstall();
+	test("self-update respects configured bunCommand", () => {
+		const { prefix } = createConfiguredBunPrefixInstall();
 
-		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent", ["npm", "--prefix", prefix]);
+		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent", ["bun", "--prefix", prefix]);
 
 		expect(command).toEqual({
-			command: "npm",
+			command: "bun",
 			args: ["--prefix", prefix, "install", "-g", "@earendil-works/pi-coding-agent"],
-			display: `npm --prefix ${prefix} install -g @earendil-works/pi-coding-agent`,
+			display: `bun --prefix ${prefix} install -g @earendil-works/pi-coding-agent`,
 		});
 	});
 
-	test("self-update treats empty npmCommand as unset", () => {
-		const { prefix } = createNpmPrefixInstall();
+	test("self-update treats empty bunCommand as unset", () => {
+		const { prefix } = createBunPrefixInstall();
 
 		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent", []);
 
 		expect(command?.args).toEqual(["--prefix", prefix, "install", "-g", "@earendil-works/pi-coding-agent"]);
 	});
 
-	test("quotes npm self-update display paths", () => {
-		const { prefix } = createNpmPrefixInstall("pi prefix ");
+	test("quotes bun self-update display paths", () => {
+		const { prefix } = createBunPrefixInstall("pi prefix ");
 
 		const command = getSelfUpdateCommand("@earendil-works/pi-coding-agent");
 
-		expect(command?.display).toBe(`npm --prefix "${prefix}" install -g @earendil-works/pi-coding-agent`);
+		expect(command?.display).toBe(`bun --prefix "${prefix}" install -g @earendil-works/pi-coding-agent`);
 	});
 
-	test("does not infer Windows npm custom prefixes from package paths", () => {
-		const packageDir = "C:\\Users\\Admin\\npm prefix\\node_modules\\@earendil-works\\pi-coding-agent";
+	test("does not infer Windows bun custom prefixes from package paths", () => {
+		const packageDir = "C:\\Users\\Admin\\bun prefix\\node_modules\\@earendil-works\\pi-coding-agent";
 		process.env.PI_PACKAGE_DIR = packageDir;
 		setExecPath(`${packageDir}\\dist\\cli.js`);
 
-		expect(detectInstallMethod()).toBe("npm");
+		expect(detectInstallMethod()).toBe("bun");
 		expect(getUpdateInstruction("@earendil-works/pi-coding-agent")).toBe(
-			"Run: npm install -g @earendil-works/pi-coding-agent",
+			"Run: bun install -g @earendil-works/pi-coding-agent",
 		);
 	});
 
@@ -293,26 +293,26 @@ describe("detectInstallMethod", () => {
 		});
 	});
 
-	test("self-updates renamed pnpm global installs by removing the old package first", () => {
-		createPnpmGlobalInstall();
+	test("self-updates renamed pbun global installs by removing the old package first", () => {
+		createPbunGlobalInstall();
 
 		const command = getSelfUpdateCommand("@mariozechner/pi-coding-agent", undefined, "@new-scope/pi");
 
-		expect(detectInstallMethod()).toBe("pnpm");
+		expect(detectInstallMethod()).toBe("pbun");
 		expect(command).toEqual({
-			command: "pnpm",
+			command: "pbun",
 			args: ["install", "-g", "@new-scope/pi"],
-			display: "pnpm remove -g @mariozechner/pi-coding-agent && pnpm install -g @new-scope/pi",
+			display: "pbun remove -g @mariozechner/pi-coding-agent && pbun install -g @new-scope/pi",
 			steps: [
 				{
-					command: "pnpm",
+					command: "pbun",
 					args: ["remove", "-g", "@mariozechner/pi-coding-agent"],
-					display: "pnpm remove -g @mariozechner/pi-coding-agent",
+					display: "pbun remove -g @mariozechner/pi-coding-agent",
 				},
 				{
-					command: "pnpm",
+					command: "pbun",
 					args: ["install", "-g", "@new-scope/pi"],
-					display: "pnpm install -g @new-scope/pi",
+					display: "pbun install -g @new-scope/pi",
 				},
 			],
 		});
@@ -369,9 +369,9 @@ describe("detectInstallMethod", () => {
 	});
 
 	test.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
-		"does not self-update when npm install path is not writable",
+		"does not self-update when bun install path is not writable",
 		() => {
-			const { packageDir } = createNpmPrefixInstall();
+			const { packageDir } = createBunPrefixInstall();
 			chmodSync(packageDir, 0o500);
 
 			expect(getSelfUpdateCommand("@earendil-works/pi-coding-agent")).toBeUndefined();

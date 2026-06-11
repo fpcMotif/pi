@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bunx tsx
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
@@ -157,8 +157,8 @@ const html = `<!doctype html>
 <head>
 	<meta charset="utf-8">
 	<title>Pi Tool Stats</title>
-	<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-	<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js"></script>
+	<script src="https://cdn.jsdelivr.net/bun/@tailwindcss/browser@4"></script>
+	<script src="https://cdn.jsdelivr.net/bun/chart.js@4.4.9/dist/chart.umd.min.js"></script>
 </head>
 <body class="bg-zinc-950 text-zinc-100 p-6">
 	<main class="max-w-7xl mx-auto space-y-6">

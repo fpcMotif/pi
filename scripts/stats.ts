@@ -1,4 +1,4 @@
-#!/usr/bin/env npx tsx
+#!/usr/bin/env bunx tsx
 
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";

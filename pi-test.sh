@@ -56,7 +56,7 @@ fi
 
 TSX_BIN="$SCRIPT_DIR/node_modules/.bin/tsx"
 if [[ ! -x "$TSX_BIN" ]]; then
-  echo "tsx not found at $TSX_BIN. Run npm install from the repo root first." >&2
+  echo "tsx not found at $TSX_BIN. Run bun install from the repo root first." >&2
   exit 1
 fi
 

@@ -45,6 +45,25 @@ export class RuntimeMessageRouter {
 		| ((message: any, sender: any, sendResponse: (response: any) => void) => boolean)
 		| null = null;
 
+	private async routeMessage(context: SandboxContext, message: any, respond: (response: any) => void): Promise<void> {
+		for (const provider of context.providers) {
+			if (!provider.handleMessage) continue;
+			try {
+				await provider.handleMessage(message, respond);
+			} catch (error) {
+				console.error("[RuntimeMessageRouter] provider.handleMessage threw:", error);
+			}
+		}
+
+		for (const consumer of context.consumers) {
+			try {
+				await consumer.handleMessage(message);
+			} catch (error) {
+				console.error("[RuntimeMessageRouter] consumer.handleMessage threw:", error);
+			}
+		}
+	}
+
 	/**
 	 * Register a new sandbox with its runtime providers.
 	 * Call this BEFORE creating the iframe (for sandbox contexts) or executing user script.
@@ -124,7 +143,8 @@ export class RuntimeMessageRouter {
 		// Setup sandbox iframe listener
 		if (!this.messageListener) {
 			this.messageListener = async (e: MessageEvent) => {
-				const { sandboxId, messageId } = e.data;
+				const message = e.data;
+				const { sandboxId, messageId } = message;
 				if (!sandboxId) return;
 
 				const context = this.sandboxes.get(sandboxId);
@@ -145,27 +165,7 @@ export class RuntimeMessageRouter {
 					);
 				};
 
-				// 1. Try provider handlers first (for bidirectional comm)
-				for (const provider of context.providers) {
-					if (provider.handleMessage) {
-						try {
-							await provider.handleMessage(e.data, respond);
-						} catch (error) {
-							console.error("[RuntimeMessageRouter] provider.handleMessage threw:", error);
-						}
-						// Don't stop - let consumers also handle the message
-					}
-				}
-
-				// 2. Broadcast to consumers (one-way messages or lifecycle events)
-				for (const consumer of context.consumers) {
-					try {
-						await consumer.handleMessage(e.data);
-					} catch (error) {
-						console.error("[RuntimeMessageRouter] consumer.handleMessage threw:", error);
-					}
-					// Don't stop - let all consumers see the message
-				}
+				await this.routeMessage(context, message, respond);
 			};
 
 			window.addEventListener("message", this.messageListener);
@@ -193,29 +193,7 @@ export class RuntimeMessageRouter {
 				};
 
 				// Route to providers (async)
-				(async () => {
-					// 1. Try provider handlers first (for bidirectional comm)
-					for (const provider of context.providers) {
-						if (provider.handleMessage) {
-							try {
-								await provider.handleMessage(message, respond);
-							} catch (error) {
-								console.error("[RuntimeMessageRouter] provider.handleMessage threw:", error);
-							}
-							// Don't stop - let consumers also handle the message
-						}
-					}
-
-					// 2. Broadcast to consumers (one-way messages or lifecycle events)
-					for (const consumer of context.consumers) {
-						try {
-							await consumer.handleMessage(message);
-						} catch (error) {
-							console.error("[RuntimeMessageRouter] consumer.handleMessage threw:", error);
-						}
-						// Don't stop - let all consumers see the message
-					}
-				})();
+				void this.routeMessage(context, message, respond);
 
 				return true; // Indicates async response
 			};
