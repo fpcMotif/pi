@@ -25,7 +25,8 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.4.0
+          # Keep in sync with ci.yml: lockfileVersion 2 needs bun 1.4 canary.
+          bun-version: canary
 
       - name: Install system dependencies
         run: |
