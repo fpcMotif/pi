@@ -16,6 +16,7 @@ import { Tool, Toolkit } from "effect/unstable/ai";
 import { mkdirSync, writeFileSync } from "node:fs";
 import nodePath from "node:path";
 
+import { FsError, tryFs } from "./fs-effect.js";
 import { resolvePath } from "./path-resolution.js";
 
 /**
@@ -25,11 +26,11 @@ import { resolvePath } from "./path-resolution.js";
 export class WriteOperations extends Context.Service<
 	WriteOperations,
 	{
-		readonly mkdirRecursive: (absoluteDir: string) => Effect.Effect<void, NodeJS.ErrnoException>;
+		readonly mkdirRecursive: (absoluteDir: string) => Effect.Effect<void, FsError>;
 		readonly writeTextFile: (
 			absolutePath: string,
 			content: string,
-		) => Effect.Effect<void, NodeJS.ErrnoException>;
+		) => Effect.Effect<void, FsError>;
 	}
 >()("pi-coding-agent/WriteOperations") {}
 
@@ -37,17 +38,10 @@ export const WriteOperationsLive: Layer.Layer<WriteOperations> = Layer.succeed(
 	WriteOperations,
 	WriteOperations.of({
 		mkdirRecursive: (dir) =>
-			Effect.try({
-				try: () => {
-					mkdirSync(dir, { recursive: true });
-				},
-				catch: (e) => e as NodeJS.ErrnoException,
+			tryFs(() => {
+				mkdirSync(dir, { recursive: true });
 			}),
-		writeTextFile: (p, content) =>
-			Effect.try({
-				try: () => writeFileSync(p, content, "utf-8"),
-				catch: (e) => e as NodeJS.ErrnoException,
-			}),
+		writeTextFile: (p, content) => tryFs(() => writeFileSync(p, content, "utf-8")),
 	}),
 );
 

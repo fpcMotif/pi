@@ -15,6 +15,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { existsSync, readFileSync, statSync } from "node:fs";
 
+import { FsError, tryFs } from "./fs-effect.js";
 import { resolvePath } from "./path-resolution.js";
 
 /**
@@ -31,8 +32,8 @@ export class ReadOperations extends Context.Service<
 	ReadOperations,
 	{
 		readonly exists: (absolutePath: string) => Effect.Effect<boolean>;
-		readonly isFile: (absolutePath: string) => Effect.Effect<boolean, NodeJS.ErrnoException>;
-		readonly readTextFile: (absolutePath: string) => Effect.Effect<string, NodeJS.ErrnoException>;
+		readonly isFile: (absolutePath: string) => Effect.Effect<boolean, FsError>;
+		readonly readTextFile: (absolutePath: string) => Effect.Effect<string, FsError>;
 	}
 >()("pi-coding-agent/ReadOperations") {}
 
@@ -41,16 +42,8 @@ export const ReadOperationsLive: Layer.Layer<ReadOperations> = Layer.succeed(
 	ReadOperations,
 	ReadOperations.of({
 		exists: (p) => Effect.sync(() => existsSync(p)),
-		isFile: (p) =>
-			Effect.try({
-				try: () => statSync(p).isFile(),
-				catch: (e) => e as NodeJS.ErrnoException,
-			}),
-		readTextFile: (p) =>
-			Effect.try({
-				try: () => readFileSync(p, "utf-8"),
-				catch: (e) => e as NodeJS.ErrnoException,
-			}),
+		isFile: (p) => tryFs(() => statSync(p).isFile()),
+		readTextFile: (p) => tryFs(() => readFileSync(p, "utf-8")),
 	}),
 );
 
@@ -58,8 +51,9 @@ const DEFAULT_LIMIT = 2000;
 
 const ReadParameters = Schema.Struct({
 	path: Schema.String,
-	offset: Schema.optional(Schema.Number),
-	limit: Schema.optional(Schema.Number),
+	// 1-indexed start line, so 0 is not a legal offset.
+	offset: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))),
+	limit: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))),
 });
 
 const ReadResult = Schema.Struct({
@@ -102,7 +96,7 @@ const sliceLines = (
 ): { content: string; totalLines: number; truncated: boolean; offsetApplied: number; limitApplied: number } => {
 	const lines = content.split("\n");
 	const totalLines = lines.length;
-	const offsetApplied = Math.max(1, rawOffset ?? 1);
+	const offsetApplied = rawOffset ?? 1;
 	const limitApplied = rawLimit ?? DEFAULT_LIMIT;
 	const startIdx = Math.min(offsetApplied - 1, totalLines);
 	const endIdx = Math.min(startIdx + limitApplied, totalLines);
@@ -131,8 +125,8 @@ export const readHandler = (cwd: string) =>
 
 		const isFile = yield* ops.isFile(target).pipe(
 			Effect.mapError(
-				() =>
-					new ReadError({ path: target, reason: "read-failed", description: `Failed to stat: ${target}` }),
+				(e) =>
+					new ReadError({ path: target, reason: "read-failed", description: `Failed to stat ${target}: ${e.message}` }),
 			),
 		);
 		if (!isFile) {
@@ -145,11 +139,11 @@ export const readHandler = (cwd: string) =>
 
 		const raw = yield* ops.readTextFile(target).pipe(
 			Effect.mapError(
-				() =>
+				(e) =>
 					new ReadError({
 						path: target,
 						reason: "read-failed",
-						description: `Failed to read file: ${target}`,
+						description: `Failed to read file ${target}: ${e.message}`,
 					}),
 			),
 		);

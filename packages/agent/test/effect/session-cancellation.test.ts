@@ -5,10 +5,13 @@
  *
  * Effect's runtime guarantees that any well-typed Effect program is
  * interruption-safe: when a fiber is interrupted, every `acquireRelease`,
- * `Scope` finalizer, and `Stream` cleanup runs. Our `Session.send` doesn't
- * use any uninterruptible primitives (`SubscriptionRef.update`, `Ref.update`,
- * `Stream.flatMap`/`tap`/`mapError`/`concat` — all interruption-safe), so
- * interruption safety **as a property** is inherited from the framework.
+ * `Scope` finalizer, and `Stream` cleanup runs. `Session.send` additionally
+ * shields its commit+persist sections (input-variant commit and compaction
+ * commit) with `Effect.uninterruptible` / `Effect.uninterruptibleMask`
+ * (PI-EFX-04) so an interrupt cannot split an in-memory state commit from
+ * its durable write — the slow compaction summary call stays interruptible
+ * via `restore`. Interruption safety **as a property** is still inherited
+ * from the framework.
  *
  * What we DO need to verify ourselves is that the per-turn state mutations
  * land in a consistent order regardless of whether the upstream stream
@@ -34,11 +37,12 @@
  * guarantee.)
  */
 import { it } from "@effect/vitest";
-import { Duration, Effect, Exit, Stream, SubscriptionRef } from "effect";
+import { Duration, Effect, Exit, Fiber, Stream, SubscriptionRef } from "effect";
 import { AiError } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
 
 import { Session } from "../../effect/session.js";
+import { advancePastRetryDelays } from "../../test-support/advance-past-retry-delays.js";
 import { stubLanguageModelStreamScripted } from "../../test-support/stub-language-model-stream-scripted.js";
 
 const failingLanguageModel = stubLanguageModelStreamScripted([
@@ -57,7 +61,12 @@ describe("Session.send state consistency under abnormal termination", () => {
 		Effect.gen(function* () {
 			const session = yield* Session.empty;
 
-			const exit = yield* Effect.exit(Stream.runDrain(session.send("hello")));
+			// The retryable failure schedules a backoff sleep before the second
+			// attempt (which dies on the script's end path), so drive the
+			// TestClock past it (PI-EFX-06).
+			const fiber = yield* Effect.forkChild(Effect.exit(Stream.runDrain(session.send("hello"))));
+			yield* advancePastRetryDelays(1);
+			const exit = yield* Fiber.join(fiber);
 			expect(Exit.isFailure(exit)).toBe(true);
 
 			// Pre-upstream side effects landed: turnCount = 1, one user message in history.

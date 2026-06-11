@@ -106,12 +106,15 @@
  * - The inner stream is wrapped with `Stream.retry(makeRetrySchedule(maxLlmRetries))`,
  *   where `maxLlmRetries = options.maxLlmRetries ?? DEFAULT_MAX_LLM_RETRIES` -- a
  *   per-session override that defaults to `DEFAULT_MAX_LLM_RETRIES` and where `0`
- *   disables retries entirely. The factory builds
- *   `Schedule.recurs(maxLlmRetries).pipe(Schedule.while(({ input }) => input.aiError.isRetryable))`.
+ *   disables retries entirely. The factory builds an exponential jittered
+ *   backoff (250ms base, 80–120% jitter) intersected with
+ *   `Schedule.recurs(maxLlmRetries)` and gated by a
+ *   `Schedule.while(({ input }) => input.aiError.isRetryable)` predicate
+ *   (PI-EFX-06).
  * - Net effect: on a retryable failure (`RateLimitError`, `OverloadedError`,
- *   `TransportError`, …) the inner stream re-opens with fresh accRef/usageRef
- *   and a fresh upstream; up to `maxLlmRetries` re-attempts (default
- *   `DEFAULT_MAX_LLM_RETRIES`, `0` disables). On a non-retryable failure
+ *   `TransportError`, …) the inner stream re-opens — after the backoff delay —
+ *   with fresh accRef/usageRef and a fresh upstream; up to `maxLlmRetries`
+ *   re-attempts (default `DEFAULT_MAX_LLM_RETRIES`, `0` disables). On a non-retryable failure
  *   (`AuthenticationError`, `ContentPolicyError`, `InvalidRequestError`, …)
  *   the predicate is false → schedule halts → error propagates after the
  *   first attempt. After the retry cap is exhausted, the last error
@@ -144,20 +147,18 @@
  *
  * Deferred to follow-on slices (each becomes its own tracer bullet):
  *
- * - Backoff on retry (currently no delay between attempts; production wants
- *   exponential / `retryAfter`-respecting backoff).
- * - Configurable retry policy on `Session.empty` (currently hardcoded to
- *   `DEFAULT_MAX_LLM_RETRIES = 3` and `while-isRetryable`).
+ * - `retryAfter`-respecting backoff (PI-EFX-06 landed exponential jittered
+ *   backoff; provider-supplied `retryAfter` hints are still ignored).
  *
  * (Skill-block parsing is NOT a loop concern — it is a host (`pi-coding-agent`)
  * responsibility; the loop consumes already-expanded prompts. See the ADR-0009
  * amendment, 2026-05-14.)
  */
-import { Effect, Option, Ref, Stream, SubscriptionRef, type Types } from "effect";
+import { Effect, Option, Ref, Semaphore, Stream, SubscriptionRef, type Types } from "effect";
 import { LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
 
 import type { AgentError } from "./agent-error.js";
-import type { AgentEvent, CompactionApplied } from "./agent-event.js";
+import type { AgentEvent } from "./agent-event.js";
 import {
 	type Input,
 	normalize as normalizeInput,
@@ -183,6 +184,12 @@ import { SessionStore } from "./stores/session-store.js";
  * `WeatherHandlers` Layer at the use site), NOT in this signature's R-type —
  * keeping the public surface stable regardless of which toolkit shape is
  * passed.
+ *
+ * Concurrent `send` calls on one session are serialized: a per-session
+ * permit is acquired at first stream pull and held for the full stream
+ * lifetime, so a second `send`'s stream blocks until the first stream
+ * finishes (success, failure, or interruption). A queued send remains
+ * interruptible while waiting for the permit.
  */
 export interface Session {
 	readonly state: SubscriptionRef.SubscriptionRef<SessionState>;
@@ -230,6 +237,7 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 		const keepRecentTokens = options.keepRecentTokens ?? KEEP_RECENT_TOKENS;
 		const maxLlmRetries = options.maxLlmRetries ?? DEFAULT_MAX_LLM_RETRIES;
 		const state = yield* SubscriptionRef.make(options.initialState);
+		const sendLock = yield* Semaphore.make(1);
 		return {
 			state,
 			send<Tools extends Record<string, Tool.Any> = {}>(
@@ -243,6 +251,18 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 				const resolvedConcurrency: Types.Concurrency = concurrency ?? 1;
 				return Stream.unwrap(
 					Effect.gen(function* () {
+						// Serialize sends per session (PI-EFX-07): the whole turn
+						// transaction — input commit, persist, compaction, attempt
+						// stream, final history append — runs under one permit.
+						// `Stream.unwrap` scopes this acquisition to the returned
+						// stream, so the permit releases when the stream completes,
+						// fails, or is interrupted. `interruptible: true` keeps a
+						// QUEUED send cancellable while it waits (mirrors
+						// `Semaphore.withPermits`' restore-around-take shape).
+						yield* Effect.acquireRelease(sendLock.take(1), () => sendLock.release(1), {
+							interruptible: true,
+						});
+
 						const normalized = normalizeInput(input);
 
 						// Observer hooks — read once per send. `Hooks` is a `Context.Reference`
@@ -284,54 +304,57 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 								? yield* promptFromAcceptedEnvelope(normalized)
 								: Prompt.empty;
 
-						yield* SubscriptionRef.update(state, (s) => {
-							const nextHistory = ((): Prompt.Prompt => {
-								switch (normalized._tag) {
-									case "NewPrompt":
-										return Prompt.concat(s.history, normalized.prompt);
-									case "AcceptedPromptEnvelope": {
-										const withEnvelope = Prompt.concat(s.history, acceptedEnvelopePrompt);
-										return normalized.systemPromptOverride === undefined
-											? withEnvelope
-											: Prompt.setSystem(withEnvelope, normalized.systemPromptOverride);
-									}
-									case "Retry":
-										return rollbackToLastUserMessage(s.history);
-									default:
-										return s.history;
-								}
-							})();
-							return SessionState.advance(s, nextHistory);
-						});
-						const postInput = yield* SubscriptionRef.get(state);
+						// Commit + persist are one uninterruptible section (PI-EFX-04): an
+						// interrupt between the in-memory commit and the disk write could
+						// otherwise leave a durable session that reloads without the turn it
+						// already accepted. `updateAndGet` makes the snapshot atomic with the
+						// commit (no separate get that a concurrent send could race).
+						const postInput = yield* Effect.uninterruptible(
+							Effect.gen(function* () {
+								const next = yield* SubscriptionRef.updateAndGet(state, (s) => {
+									const nextHistory = ((): Prompt.Prompt => {
+										switch (normalized._tag) {
+											case "NewPrompt":
+												return Prompt.concat(s.history, normalized.prompt);
+											case "AcceptedPromptEnvelope": {
+												const withEnvelope = Prompt.concat(s.history, acceptedEnvelopePrompt);
+												return normalized.systemPromptOverride === undefined
+													? withEnvelope
+													: Prompt.setSystem(withEnvelope, normalized.systemPromptOverride);
+											}
+											case "Retry":
+												return rollbackToLastUserMessage(s.history);
+											default:
+												return s.history;
+										}
+									})();
+									return SessionState.advance(s, nextHistory);
+								});
 
-						// Persist the accepted user turn BEFORE compaction opens its summary
-						// call (PR #10 393b515c). A compaction-summary failure (rate limit /
-						// network / model error) must NOT lose the just-accepted user turn:
-						// durable sessions reload `postInput` instead of the partial turn.
-						// For `Session.empty` / `Session.make` this is a no-op.
-						yield* options.persist(postInput);
+								// Persist the accepted user turn BEFORE compaction opens its summary
+								// call (PR #10 393b515c). A compaction-summary failure (rate limit /
+								// network / model error) must NOT lose the just-accepted user turn:
+								// durable sessions reload `postInput` instead of the partial turn.
+								// For `Session.empty` / `Session.make` this is a no-op.
+								yield* options.persist(next);
+								return next;
+							}),
+						);
 
 						// 1. COMPACTION CHECK — runs AFTER the input-variant update on the
-						//    post-input history. See `compaction-step.ts`. The returned
-						//    `CompactionApplied` event is prepended to the stream below so
-						//    consumers observe it as the first element.
-						const compactionEvent = yield* runCompactionStep(state, postInput, {
+						//    post-input history. See `compaction-step.ts`. The returned event
+						//    is prepended to the stream below so consumers observe it as the
+						//    first element; the returned state is the true post-commit
+						//    snapshot (from `updateAndGet`), so no re-get is needed. The
+						//    step's commit+persist runs uninterruptibly while the slow
+						//    summary call stays interruptible (PI-EFX-04).
+						const compaction = yield* runCompactionStep(state, postInput, {
 							compactionThreshold,
 							keepRecentTokens,
+							persist: options.persist,
 						});
 
-						const snapshot = yield* SubscriptionRef.get(state);
-
-						// 1a. Re-persist the post-compaction snapshot ONLY when compaction
-						//     actually fired and changed state. The pre-compaction
-						//     `postInput` snapshot was already persisted above, so disk
-						//     writes stay proportional to the work done and compaction
-						//     failures keep the durable accepted-turn state intact
-						//     (PR #10 393b515c). No-op for `Session.empty` / `Session.make`.
-						if (compactionEvent !== undefined) {
-							yield* options.persist(snapshot);
-						}
+						const snapshot = compaction?.state ?? postInput;
 
 						// 1b. Per-send attempt counter. Lives in the outer Effect.gen so the
 						//     Stream.retry re-runs of the inner Effect.gen below all share it —
@@ -351,10 +374,11 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						});
 
 						// 3. Wrap the per-attempt stream with a retry schedule + an outer
-						//    telemetry span. Bounded recurs + while-isRetryable predicate stops
-						//    early on AuthenticationError / InvalidRequestError / etc., and caps
-						//    the loop at `maxLlmRetries` (default `DEFAULT_MAX_LLM_RETRIES`, configurable
-						//    via `SessionConfig.maxLlmRetries`). The outer span wraps the whole
+						//    telemetry span. Exponential jittered backoff + bounded recurs +
+						//    while-isRetryable predicate stops early on AuthenticationError /
+						//    InvalidRequestError / etc., and caps the loop at `maxLlmRetries`
+						//    (default `DEFAULT_MAX_LLM_RETRIES`, configurable via
+						//    `SessionConfig.maxLlmRetries`). The outer span wraps the whole
 						//    send (including all retries) so consumers see a parent span with N
 						//    attempt-span children.
 						const mainStream = attemptStream.pipe(
@@ -370,9 +394,9 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						// Prepend the `CompactionApplied` event when compaction fired at the
 						// top of this send, so consumers observe it as the first element.
 						const fullStream =
-							compactionEvent === undefined
+							compaction === undefined
 								? mainStream
-								: Stream.concat(Stream.succeed<AgentEvent>(compactionEvent), mainStream);
+								: Stream.concat(Stream.succeed<AgentEvent>(compaction.event), mainStream);
 
 						// Observer hooks (ADR-0009): invoke `onAgentEvent` for every event the
 						// consumer sees, in stream order; fire `onShutdown(exit)` once when
@@ -380,7 +404,21 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						// covers all three and threads the typed `Exit` to the hook). The
 						// `Hooks` reference defaults to no-ops, so this is inert unless a host
 						// / extension / test provides one.
-						return fullStream.pipe(
+						// On SUCCESSFUL completion, persist the final snapshot — the
+						// accumulator appended the assistant turn (and token totals) to
+						// `state` only after the upstream finished, so without this the
+						// durable record never contains the reply (ADR-0020 review).
+						// Concat-drain (not Stream.onExit, whose finalizers must be
+						// infallible) so it runs only after a successful event stream,
+						// BEFORE the shutdown hook, and a failed durable write surfaces
+						// as a typed stream failure. Failure/interruption exits never
+						// reach it: the accepted turn was already persisted, and a
+						// partial-turn snapshot must not overwrite it (ADR-0018).
+						const persistFinal = Stream.fromEffect(
+							SubscriptionRef.get(state).pipe(Effect.flatMap((snapshot) => options.persist(snapshot))),
+						).pipe(Stream.drain);
+
+						return Stream.concat(fullStream, persistFinal).pipe(
 							Stream.tap((event) => hooks.onAgentEvent(event)),
 							Stream.onExit((exit) => hooks.onShutdown(exit)),
 						);
