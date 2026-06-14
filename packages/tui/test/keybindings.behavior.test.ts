@@ -289,10 +289,11 @@ describe("dispatch throughput", () => {
 		// count is deterministic given the fixed event/binding sets, so pin it so a
 		// mutation that silently stops scanning bindings cannot pass the timer alone.
 		expect(matchCount).toBe(2334);
-		// ~2000 * 32 bindings = 64k full match scans. Local runs land ~18ms; an
-		// interactive input loop must stay snappy. Ceiling is ~5x headroom over the
-		// observed cost — tight enough to catch an order-of-magnitude regression,
-		// loose enough to survive a loaded CI runner.
-		expect(elapsedMs).toBeLessThan(100);
+		// ~2000 * 32 bindings = 64k full match scans: ~18ms on an idle desktop, but
+		// a loaded CI runner has been observed at ~140ms. The ceiling only guards
+		// against an order-of-magnitude / O(n^2) regression (seconds at this size),
+		// not an aspirational latency target — so it sits well above loaded-CI noise,
+		// matching the input-loop guard in tui-input.behavior.test.ts.
+		expect(elapsedMs).toBeLessThan(1000);
 	});
 });
