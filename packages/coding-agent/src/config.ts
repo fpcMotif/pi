@@ -26,7 +26,7 @@ export const isBunRuntime = !!process.versions.bun;
 // Install Method Detection
 // =============================================================================
 
-export type InstallMethod = "bun-binary" | "bun" | "yarn" | "unknown";
+export type InstallMethod = "bun-binary" | "bun" | "pbun" | "yarn" | "unknown";
 
 interface SelfUpdateCommandStep {
 	command: string;
@@ -65,6 +65,9 @@ export function detectInstallMethod(): InstallMethod {
 
 	const resolvedPath = `${__dirname}\0${process.execPath || ""}`.toLowerCase().replace(/\\/g, "/");
 
+	if (resolvedPath.includes("/pbun/") || resolvedPath.includes("/.pbun/")) {
+		return "pbun";
+	}
 	if (resolvedPath.includes("/yarn/") || resolvedPath.includes("/.yarn/")) {
 		return "yarn";
 	}
@@ -113,6 +116,14 @@ function getSelfUpdateCommandForMethod(
 					? undefined
 					: makeSelfUpdateCommandStep("yarn", ["global", "remove", installedPackageName]),
 			);
+		case "pbun":
+			// pbun mirrors bun's global CLI but uses `remove` (not `uninstall`).
+			return makeSelfUpdateCommand(
+				makeSelfUpdateCommandStep("pbun", ["install", "-g", updatePackageName]),
+				updatePackageName === installedPackageName
+					? undefined
+					: makeSelfUpdateCommandStep("pbun", ["remove", "-g", installedPackageName]),
+			);
 		case "bun": {
 			const [command = "bun", ...bunArgs] = bunCommand ?? [];
 			const inferred = bunCommand?.length ? undefined : getInferredBunInstall();
@@ -148,8 +159,17 @@ function readCommandOutput(
 }
 
 function getBunGlobalPackageRoots(command = "bun", args: string[] = [], requireSuccess = false): string[] {
-	const bunBin = readCommandOutput(command, [...args, "pm", "bin", "-g"], { requireSuccess });
 	const roots = [join(homedir(), ".bun", "install", "global", "node_modules")];
+	// A configured `--prefix <dir>` pins the global root directly. bun has no
+	// global `--prefix` flag before a subcommand, so `bun --prefix <dir> pm bin -g`
+	// fails outright — derive the root from the prefix instead of shelling out.
+	const prefixIndex = args.indexOf("--prefix");
+	const prefix = prefixIndex >= 0 ? args[prefixIndex + 1] : undefined;
+	if (prefix) {
+		roots.push(join(prefix, "lib", "node_modules"), join(prefix, "node_modules"));
+		return Array.from(new Set(roots));
+	}
+	const bunBin = readCommandOutput(command, [...args, "pm", "bin", "-g"], { requireSuccess });
 	if (bunBin) {
 		const bunHome = dirname(bunBin);
 		roots.push(join(bunHome, "install", "global", "node_modules"));
@@ -170,14 +190,16 @@ function getGlobalPackageRoots(method: InstallMethod, _packageName: string, bunC
 		case "bun": {
 			const configured = !!bunCommand?.length;
 			const [command = "bun", ...bunArgs] = bunCommand ?? [];
-			if (configured && command === "bun") {
-				return getBunGlobalPackageRoots(command, bunArgs, true);
-			}
-			const root = readCommandOutput(command, [...bunArgs, "root", "-g"], {
-				requireSuccess: configured,
-			});
+			// Global roots come from `bun pm bin -g` (or a configured `--prefix`,
+			// handled inside getBunGlobalPackageRoots). When not configured, the
+			// prefix inferred from the package path is an additional candidate.
 			const inferred = configured ? undefined : getInferredBunInstall();
-			return [root, inferred?.root].filter((x): x is string => !!x);
+			const roots = getBunGlobalPackageRoots(command, bunArgs, configured);
+			return inferred ? [...roots, inferred.root] : roots;
+		}
+		case "pbun": {
+			const root = readCommandOutput("pbun", ["root", "-g"]);
+			return root ? [root] : [];
 		}
 		case "yarn": {
 			const dir = readCommandOutput("yarn", ["global", "dir"]);
