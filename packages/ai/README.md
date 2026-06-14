@@ -79,7 +79,7 @@ Unified LLM API with automatic model discovery, provider configuration, token an
 ## Installation
 
 ```bash
-npm install @earendil-works/pi-ai
+bun install @earendil-works/pi-ai
 ```
 
 TypeBox exports are re-exported from `@earendil-works/pi-ai`: `Type`, `Static`, and `TSchema`.
@@ -1202,9 +1202,9 @@ Official docs: [Application Default Credentials](https://cloud.google.com/docs/a
 The quickest way to authenticate:
 
 ```bash
-npx @earendil-works/pi-ai login              # interactive provider selection
-npx @earendil-works/pi-ai login anthropic    # login to specific provider
-npx @earendil-works/pi-ai list               # list available providers
+bunx @earendil-works/pi-ai login              # interactive provider selection
+bunx @earendil-works/pi-ai login anthropic    # login to specific provider
+bunx @earendil-works/pi-ai list               # list available providers
 ```
 
 Credentials are saved to `auth.json` in the current directory.

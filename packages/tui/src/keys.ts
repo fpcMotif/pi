@@ -1322,6 +1322,17 @@ export function parseKey(data: string): string | undefined {
 		}
 	}
 
+	// Raw non-ASCII printable codepoint (e.g. CJK '世', accented Latin 'é', or an
+	// astral emoji surrogate pair). StdinBuffer forwards each of these as a single
+	// whole codepoint, so a non-Kitty terminal would otherwise lose the keystroke.
+	// Accept any single codepoint outside the C0/C1 control ranges; the equality
+	// check confirms `data` is exactly one codepoint (covering astral pairs whose
+	// `length` is 2).
+	const codepoint = data.codePointAt(0);
+	if (codepoint !== undefined && codepoint > 0xa0 && String.fromCodePoint(codepoint) === data) {
+		return data;
+	}
+
 	return undefined;
 }
 

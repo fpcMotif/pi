@@ -27,7 +27,7 @@
 
 ### New Features
 
-- **Self-update support for the npm scope migration**: `pi update --self` now supports the upcoming package rename from `@mariozechner/pi-coding-agent` to `@earendil-works/pi-coding-agent`. After the new package is published, existing global installs can update through the normal self-update flow; pi will uninstall the old global package and install the package name returned by the version check endpoint.
+- **Self-update support for the bun scope migration**: `pi update --self` now supports the upcoming package rename from `@mariozechner/pi-coding-agent` to `@earendil-works/pi-coding-agent`. After the new package is published, existing global installs can update through the normal self-update flow; pi will uninstall the old global package and install the package name returned by the version check endpoint.
 - **Interactive OAuth login selection**: OAuth providers can now present multiple login choices in `/login`, enabling provider-specific interactive authentication flows. See [Providers](docs/providers.md).
 - **JSONC-style `models.json` parsing**: `models.json` now allows comments and trailing commas, making custom provider and model configuration easier to maintain. See [Providers](docs/providers.md) and [Custom Providers](docs/custom-provider.md).
 
@@ -155,7 +155,7 @@
 - Fixed the coding-agent README See Also link to point at `@mariozechner/pi-agent-core` ([#4023](https://github.com/badlogic/pi-mono/issues/4023)).
 - Fixed `grep` and `find` tool argument injection for flag-like search patterns ([#4018](https://github.com/badlogic/pi-mono/issues/4018)).
 - Fixed PowerShell shell command output on Windows by only spawning detached processes on Unix ([#4013](https://github.com/badlogic/pi-mono/pull/4013) by [@picasso250](https://github.com/picasso250)).
-- Fixed Bun package manager `node_modules` discovery when `npmCommand` is configured to use Bun ([#3998](https://github.com/badlogic/pi-mono/pull/3998) by [@thirtythreeforty](https://github.com/thirtythreeforty)).
+- Fixed Bun package manager `node_modules` discovery when `bunCommand` is configured to use Bun ([#3998](https://github.com/badlogic/pi-mono/pull/3998) by [@thirtythreeforty](https://github.com/thirtythreeforty)).
 - Fixed edit and edit-preview access failures to report filesystem errors correctly ([#3955](https://github.com/badlogic/pi-mono/pull/3955) by [@rwachtler](https://github.com/rwachtler)).
 - Fixed `ProcessTerminal` sizing to use `COLUMNS` and `LINES` before falling back to 80x24 ([#4004](https://github.com/badlogic/pi-mono/issues/4004)).
 - Updated `@anthropic-ai/sdk` to clear GHSA-p7fg-763f-g4gf audit findings ([#3992](https://github.com/badlogic/pi-mono/issues/3992)).
@@ -311,7 +311,7 @@
 - Fixed `SettingsManager.inMemory()` initial settings being lost after reloads triggered by SDK resource loading ([#3616](https://github.com/badlogic/pi-mono/issues/3616))
 - Fixed `models.json` provider compatibility to accept `compat.supportsLongCacheRetention`, allowing proxies to opt out of long-retention cache fields when needed while long retention is enabled by default when requested ([#3543](https://github.com/badlogic/pi-mono/issues/3543))
 - Fixed `--thinking xhigh` for `openai-codex` `gpt-5.5` so it is no longer downgraded to `high`.
-- Fixed git package installs with custom `npmCommand` values such as `pnpm` by avoiding npm-specific production flags in that compatibility path ([#3604](https://github.com/badlogic/pi-mono/issues/3604))
+- Fixed git package installs with custom `bunCommand` values such as `pbun` by avoiding bun-specific production flags in that compatibility path ([#3604](https://github.com/badlogic/pi-mono/issues/3604))
 - Fixed first user messages rendering without spacing after existing notices such as compaction summaries or status messages ([#3613](https://github.com/badlogic/pi-mono/issues/3613))
 - Fixed the handoff extension example to use the replacement-session context after creating a new session, avoiding stale `ctx` errors when it installs the generated prompt ([#3606](https://github.com/badlogic/pi-mono/issues/3606))
 - Fixed session replacement and `/quit` teardown ordering to run host-owned extension UI cleanup synchronously after `session_shutdown` handlers complete but before invalidating the old extension context, preventing stale extension UI from rendering against a disposed session ([#3597](https://github.com/badlogic/pi-mono/pull/3597) by [@vegarsti](https://github.com/vegarsti))
@@ -319,7 +319,7 @@
 - Fixed auto-retry to treat Bedrock/Smithy HTTP/2 transport failures like `http2 request did not get a response` as transient errors, so the agent retries automatically instead of waiting for a manual nudge ([#3594](https://github.com/badlogic/pi-mono/issues/3594))
 - Fixed the CLI/SDK tool-selection split so `--no-builtin-tools` and `createAgentSession({ noTools: "builtin" })` disable only built-in default tools while keeping extension/custom tools enabled, instead of falling through to the same "disable everything" path as `--no-tools` ([#3592](https://github.com/badlogic/pi-mono/issues/3592))
 - Fixed remaining hardcoded `pi` / `.pi` branding to route through `APP_NAME` and `CONFIG_DIR_NAME` extension points, so SDK rebrands get consistent naming in `/quit` description, `process.title`, and the project-local extensions directory ([#3583](https://github.com/badlogic/pi-mono/pull/3583) by [@jlaneve](https://github.com/jlaneve))
-- Fixed `pi-coding-agent` shipping `uuid@11`, which triggered `npm audit` moderate vulnerability reports for downstream installs; the package now depends on `uuid@14` ([#3577](https://github.com/badlogic/pi-mono/issues/3577))
+- Fixed `pi-coding-agent` shipping `uuid@11`, which triggered `bun audit` moderate vulnerability reports for downstream installs; the package now depends on `uuid@14` ([#3577](https://github.com/badlogic/pi-mono/issues/3577))
 - Fixed `openai-completions` streamed tool-call assembly to coalesce deltas by stable tool index when OpenAI-compatible gateways mutate tool call IDs mid-stream, preventing malformed Kimi K2.6/OpenCode tool streams from splitting one call into multiple bogus tool calls ([#3576](https://github.com/badlogic/pi-mono/issues/3576))
 - Fixed `ctx.ui.setWorkingMessage()` to persist across loader recreation, matching the behavior of `ctx.ui.setWorkingIndicator()` ([#3566](https://github.com/badlogic/pi-mono/issues/3566))
 - Fixed coding-agent `fs.watch` error handling for theme and git-footer watchers to retry after transient watcher failures such as `EMFILE`, avoiding startup crashes in large repos ([#3564](https://github.com/badlogic/pi-mono/issues/3564))
@@ -410,15 +410,15 @@
 
 ### Changed
 
-- Changed `pi update` to batch npm package updates per scope and run git package updates with bounded parallelism, reducing multi-package update time while preserving skip behavior for pinned and already-current packages ([#2980](https://github.com/badlogic/pi-mono/issues/2980))
+- Changed `pi update` to batch bun package updates per scope and run git package updates with bounded parallelism, reducing multi-package update time while preserving skip behavior for pinned and already-current packages ([#2980](https://github.com/badlogic/pi-mono/issues/2980))
 - Changed Bedrock session requests to omit `maxTokens` when model token limits are unknown and to omit `temperature` when unset, letting Bedrock use provider defaults and avoid unnecessary TPM quota reservation ([#3400](https://github.com/badlogic/pi-mono/pull/3400) by [@wirjo](https://github.com/wirjo))
 
 ### Fixed
 
-- Fixed `AgentSession` system-prompt option initialization to avoid constructing an invalid empty `BuildSystemPromptOptions`, so `npm run check` passes after `cwd` became mandatory.
+- Fixed `AgentSession` system-prompt option initialization to avoid constructing an invalid empty `BuildSystemPromptOptions`, so `bun run check` passes after `cwd` became mandatory.
 - Fixed shell-path resolution to stop consulting ambient `process.cwd()` state during bash execution, so session/project-specific `shellPath` settings now follow the active coding-agent session cwd instead of the launcher cwd ([#3452](https://github.com/badlogic/pi-mono/issues/3452))
 - Fixed `ctx.ui.setWorkingIndicator()` custom frames to render verbatim instead of forcing the theme accent color, so extensions now own working-indicator coloring when they customize it ([#3467](https://github.com/badlogic/pi-mono/issues/3467))
-- Fixed `pi update` reinstalling npm packages that are already at the latest published version by checking the installed package version before running `npm install <pkg>@latest` ([#3000](https://github.com/badlogic/pi-mono/issues/3000))
+- Fixed `pi update` reinstalling bun packages that are already at the latest published version by checking the installed package version before running `bun install <pkg>@latest` ([#3000](https://github.com/badlogic/pi-mono/issues/3000))
 - Fixed `@` autocomplete plain queries to stop matching against the full cwd/base path, so path fragments in worktree names no longer crowd out intended results such as `@plan` ([#2778](https://github.com/badlogic/pi-mono/issues/2778))
 - Fixed built-in tool wrapping to use the same extension-runner context path as extension tools, so built-in tools receive execution context and `read` can warn when the current model does not support images ([#3429](https://github.com/badlogic/pi-mono/issues/3429))
 - Fixed `openai-completions` assistant replay to preserve `compat.requiresThinkingAsText` text-part serialization, avoiding same-model follow-up crashes when previous assistant messages mix thinking and text ([#3387](https://github.com/badlogic/pi-mono/issues/3387))
@@ -426,8 +426,8 @@
 - Fixed OpenAI-compatible Chat Completions sessions to optionally send aligned `session_id`, `x-client-request-id`, and `x-session-affinity` headers from `sessionId` via `compat.sendSessionAffinityHeaders`, improving cache-affinity routing for backends such as Fireworks ([#3430](https://github.com/badlogic/pi-mono/issues/3430))
 - Fixed threaded `/resume` session relationships and current-session detection to canonicalize symlinked session paths during selector comparisons, so shared session directories no longer break parent-child matching or active-session delete protection ([#3364](https://github.com/badlogic/pi-mono/issues/3364))
 - Fixed `/session`, Sessions docs, and CLI help to consistently document that session reuse supports both file paths and session IDs, and that `/session` shows the current session ID ([#3390](https://github.com/badlogic/pi-mono/issues/3390))
-- Fixed Windows pnpm global install detection to recognize `\\.pnpm\\` store paths, so update notices now suggest `pnpm install -g @mariozechner/pi-coding-agent` instead of falling back to npm ([#3378](https://github.com/badlogic/pi-mono/issues/3378))
-- Fixed missing `@sinclair/typebox` runtime dependency in `@mariozechner/pi-coding-agent`, so strict pnpm installs no longer fail with `ERR_MODULE_NOT_FOUND` when starting `pi` ([#3434](https://github.com/badlogic/pi-mono/issues/3434))
+- Fixed Windows pbun global install detection to recognize `\\.pbun\\` store paths, so update notices now suggest `pbun install -g @mariozechner/pi-coding-agent` instead of falling back to bun ([#3378](https://github.com/badlogic/pi-mono/issues/3378))
+- Fixed missing `@sinclair/typebox` runtime dependency in `@mariozechner/pi-coding-agent`, so strict pbun installs no longer fail with `ERR_MODULE_NOT_FOUND` when starting `pi` ([#3434](https://github.com/badlogic/pi-mono/issues/3434))
 - Fixed xterm uppercase typing in the interactive editor by decoding printable `modifyOtherKeys` input and normalizing shifted letter matching, so `Shift+letter` no longer disappears in `pi` ([#3436](https://github.com/badlogic/pi-mono/issues/3436))
 - Fixed `/compact` to reuse the session thinking level for compaction summaries instead of forcing `high`, avoiding invalid reasoning-effort errors on `github-copilot/claude-opus-4.7` sessions configured for `medium` thinking ([#3438](https://github.com/badlogic/pi-mono/issues/3438))
 - Fixed shared/exported plain-text tool output to preserve indentation instead of collapsing leading whitespace in the web share page ([#3440](https://github.com/badlogic/pi-mono/issues/3440))
@@ -462,7 +462,7 @@
 - Fixed system prompt dates to use a stable `YYYY-MM-DD` format instead of locale-dependent output, keeping prompts deterministic across runtimes and locales ([#2814](https://github.com/badlogic/pi-mono/issues/2814))
 - Fixed auto-retry transient error detection to treat `Network connection lost.` as retryable, so dropped provider connections retry instead of terminating the agent ([#3317](https://github.com/badlogic/pi-mono/issues/3317))
 - Fixed compact interactive extension startup summaries to disambiguate package extensions and repeated local `index.ts` entries by using package-aware labels and the minimal parent path needed to make local entries unique ([#3308](https://github.com/badlogic/pi-mono/issues/3308))
-- Fixed git package dependency installation to use production installs (`npm install --omit=dev`) during both install and update flows, so extension runtime dependencies must come from `dependencies` and not `devDependencies` ([#3009](https://github.com/badlogic/pi-mono/issues/3009))
+- Fixed git package dependency installation to use production installs (`bun install --omit=dev`) during both install and update flows, so extension runtime dependencies must come from `dependencies` and not `devDependencies` ([#3009](https://github.com/badlogic/pi-mono/issues/3009))
 - Fixed `tool_result` / `afterToolCall` extension handling for error results by forwarding `details` and `isError` overrides through `AgentSession` instead of dropping them when `isError` was already true ([#3051](https://github.com/badlogic/pi-mono/issues/3051))
 - Fixed missing root exports for `RpcClient` and RPC protocol types from `@mariozechner/pi-coding-agent`, so ESM consumers can import them from the main package entrypoint ([#3275](https://github.com/badlogic/pi-mono/issues/3275))
 - Fixed OpenAI Codex service-tier cost accounting to trust the explicitly requested tier when the API echoes the default tier in responses, keeping session cost displays aligned with the selected tier ([#3307](https://github.com/badlogic/pi-mono/pull/3307) by [@markusylisiurunen](https://github.com/markusylisiurunen))
@@ -589,7 +589,7 @@ Interactive mode now sends a lightweight anonymous install/update telemetry ping
 
 Why this exists:
 - Pi needs a reliable per-version usage signal to understand whether releases are being adopted and to help justify funding continued development.
-- npm download counts are not a reliable proxy for actual Pi usage.
+- bun download counts are not a reliable proxy for actual Pi usage.
 
 How it works:
 - It only runs in interactive mode.
@@ -633,7 +633,7 @@ How to disable it:
 - Fixed `Container.render()` stack overflow on long sessions by replacing `Array.push(...spread)` with a loop-based push, preventing `RangeError: Maximum call stack size exceeded` when child output exceeds the V8 call stack argument limit ([#2651](https://github.com/badlogic/pi-mono/issues/2651))
 - Fixed editor sticky-column tracking around paste markers so vertical cursor navigation restores the column from before the cursor entered a paste marker instead of jumping inside or past pasted content ([#3092](https://github.com/badlogic/pi-mono/pull/3092) by [@Perlence](https://github.com/Perlence))
 - Fixed queued messages typed during `/tree` branch summarization to flush automatically after navigation completes, so they no longer remain stuck in the steering queue ([#3091](https://github.com/badlogic/pi-mono/pull/3091) by [@Perlence](https://github.com/Perlence))
-- Fixed npm package update check to work with packages on non-default registries by using `npm view` instead of hardcoded `registry.npmjs.org` fetch ([#3164](https://github.com/badlogic/pi-mono/pull/3164) by [@aliou](https://github.com/aliou))
+- Fixed bun package update check to work with packages on non-default registries by using `bun view` instead of hardcoded `registry.bunjs.org` fetch ([#3164](https://github.com/badlogic/pi-mono/pull/3164) by [@aliou](https://github.com/aliou))
 
 ## [0.67.0] - 2026-04-13
 
@@ -958,7 +958,7 @@ Examples:
 - Fixed `createAgentSession({ agentDir })` to derive the default persisted session path from the provided `agentDir`, keeping session storage aligned with settings, auth, models, and resource loading ([#2457](https://github.com/badlogic/pi-mono/issues/2457))
 - Fixed shared keybinding resolution to stop user overrides from evicting unrelated default shortcuts such as selector confirm and editor cursor keys ([#2455](https://github.com/badlogic/pi-mono/issues/2455))
 - Fixed Termux software keyboard height changes from forcing full-screen redraws and replaying TUI history on every toggle ([#2467](https://github.com/badlogic/pi-mono/issues/2467))
-- Fixed project-local npm package updates to install npm `latest` instead of reusing stale saved dependency ranges, and added `Did you mean ...?` suggestions when `pi update <source>` omits the configured npm or git source prefix ([#2459](https://github.com/badlogic/pi-mono/issues/2459))
+- Fixed project-local bun package updates to install bun `latest` instead of reusing stale saved dependency ranges, and added `Did you mean ...?` suggestions when `pi update <source>` omits the configured bun or git source prefix ([#2459](https://github.com/badlogic/pi-mono/issues/2459))
 
 ## [0.61.0] - 2026-03-20
 
@@ -1006,11 +1006,11 @@ Examples:
 
 - Fork existing sessions directly from the CLI with `--fork <path|id>`, which copies a source session into a new session in the current project. See [README.md](README.md).
 - Extensions and SDK callers can reuse pi's built-in local bash backend via `createLocalBashOperations()` for `user_bash` interception and custom bash integrations. See [docs/extensions.md#user_bash](docs/extensions.md#user_bash).
-- Startup no longer updates unpinned npm and git packages automatically. Use `pi update` explicitly, while interactive mode checks for updates in the background and notifies you when newer packages are available. See [README.md](README.md).
+- Startup no longer updates unpinned bun and git packages automatically. Use `pi update` explicitly, while interactive mode checks for updates in the background and notifies you when newer packages are available. See [README.md](README.md).
 
 ### Breaking Changes
 
-- Changed package startup behavior so installed unpinned packages are no longer checked or updated during startup. Use `pi update` to apply npm/git package updates, while interactive mode now checks for available package updates in the background and notifies you when updates are available ([#1963](https://github.com/badlogic/pi-mono/issues/1963))
+- Changed package startup behavior so installed unpinned packages are no longer checked or updated during startup. Use `pi update` to apply bun/git package updates, while interactive mode now checks for available package updates in the background and notifies you when updates are available ([#1963](https://github.com/badlogic/pi-mono/issues/1963))
 
 ### Added
 
@@ -1100,7 +1100,7 @@ Examples:
 - Fixed editor paste to preserve literal content instead of normalizing newlines, preventing content corruption for text with embedded escape sequences ([#2064](https://github.com/badlogic/pi-mono/issues/2064))
 - Fixed skill discovery recursing past skill root directories when nested SKILL.md files exist ([#2075](https://github.com/badlogic/pi-mono/issues/2075))
 - Fixed tab completion to preserve `./` prefix when completing relative paths ([#2087](https://github.com/badlogic/pi-mono/issues/2087))
-- Fixed npm package installs and lookups being tied to the active repository Node version by adding `npmCommand` as an argv-style settings override for package manager operations ([#2072](https://github.com/badlogic/pi-mono/issues/2072))
+- Fixed bun package installs and lookups being tied to the active repository Node version by adding `bunCommand` as an argv-style settings override for package manager operations ([#2072](https://github.com/badlogic/pi-mono/issues/2072))
 - Fixed `ctx.ui.getEditorText()` in the extension API returning paste markers (e.g., `[paste #1 +24 lines]`) instead of the actual pasted content ([#2084](https://github.com/badlogic/pi-mono/issues/2084))
 - Fixed startup crash when downloading `fd`/`ripgrep` on first run by using `pipeline()` instead of `finished(readable.pipe(writable))` so stream errors from timeouts are caught properly, and increased the download timeout from 10s to 120s ([#2066](https://github.com/badlogic/pi-mono/issues/2066))
 
@@ -1698,7 +1698,7 @@ Examples:
 ### Fixed
 
 - Fixed default thinking level persistence so settings-derived defaults are saved and restored correctly
-- Fixed Windows package installs by resolving `npm.cmd` when `npm` is not directly executable ([#1220](https://github.com/badlogic/pi-mono/issues/1220))
+- Fixed Windows package installs by resolving `bun.cmd` when `bun` is not directly executable ([#1220](https://github.com/badlogic/pi-mono/issues/1220))
 - Fixed xhigh thinking level support check to accept gpt-5.2 model IDs ([#1209](https://github.com/badlogic/pi-mono/issues/1209))
 
 ## [0.51.2] - 2026-02-03
@@ -1753,7 +1753,7 @@ Examples:
 - **Android/Termux support**: Pi now runs on Android via Termux. Install with:
   ```bash
   pkg install nodejs termux-api git
-  npm install -g @mariozechner/pi-coding-agent
+  bun install -g @mariozechner/pi-coding-agent
   mkdir -p ~/.pi/agent
   echo "You are running on Android in Termux." > ~/.pi/agent/AGENTS.md
   ```
@@ -1780,7 +1780,7 @@ Examples:
 
 ### Fixed
 
-- Fixed `pi update` not updating npm/git packages when called without arguments ([#1151](https://github.com/badlogic/pi-mono/issues/1151))
+- Fixed `pi update` not updating bun/git packages when called without arguments ([#1151](https://github.com/badlogic/pi-mono/issues/1151))
 - Fixed `models.json` validation requiring fields documented as optional. Model definitions now only require `id`; all other fields (`name`, `reasoning`, `input`, `cost`, `contextWindow`, `maxTokens`) have sensible defaults. ([#1146](https://github.com/badlogic/pi-mono/issues/1146))
 - Fixed models resolving relative paths in skill files from cwd instead of skill directory by adding explicit guidance to skills preamble ([#1136](https://github.com/badlogic/pi-mono/issues/1136))
 - Fixed tree selector losing focus state when navigating entries ([#1142](https://github.com/badlogic/pi-mono/pull/1142) by [@Perlence](https://github.com/Perlence))
@@ -1957,7 +1957,7 @@ There are multiple SDK breaking changes since v0.49.3. For the quickest migratio
 ### Breaking Changes
 
 - Header values in `models.json` now resolve environment variables (if a header value matches an env var name, the env var value is used). This may change behavior if a literal header value accidentally matches an env var name. ([#909](https://github.com/badlogic/pi-mono/issues/909))
-- External packages (npm/git) are now configured via `packages` array in settings.json instead of `extensions`. Existing npm:/git: entries in `extensions` are auto-migrated. ([#645](https://github.com/badlogic/pi-mono/issues/645))
+- External packages (bun/git) are now configured via `packages` array in settings.json instead of `extensions`. Existing bun:/git: entries in `extensions` are auto-migrated. ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - Resource loading now uses `ResourceLoader` only and settings.json uses arrays for extensions, skills, prompts, and themes ([#645](https://github.com/badlogic/pi-mono/issues/645))
 - Removed `discoverAuthStorage` and `discoverModels` from the SDK. `AuthStorage` and `ModelRegistry` now default to `~/.pi/agent` paths unless you pass an `agentDir` ([#645](https://github.com/badlogic/pi-mono/issues/645))
 
@@ -2009,8 +2009,8 @@ There are multiple SDK breaking changes since v0.49.3. For the quickest migratio
 - Fixed bash output hint lines to truncate to terminal width
 - Fixed custom editors to honor the `paddingX` setting ([#936](https://github.com/badlogic/pi-mono/pull/936) by [@Perlence](https://github.com/Perlence))
 - Fixed system prompt tool list to show only built-in tools
-- Fixed package manager to check npm package versions before using cached copies
-- Fixed package manager to run `npm install` after cloning git repositories with a package.json
+- Fixed package manager to check bun package versions before using cached copies
+- Fixed package manager to run `bun install` after cloning git repositories with a package.json
 - Fixed extension provider registrations to apply before model resolution
 - Fixed editor multi-line insertion handling and lastAction tracking ([#945](https://github.com/badlogic/pi-mono/pull/945) by [@Perlence](https://github.com/Perlence))
 - Fixed editor word wrapping to reserve a cursor column ([#934](https://github.com/badlogic/pi-mono/pull/934) by [@Perlence](https://github.com/Perlence))
@@ -2195,7 +2195,7 @@ There are multiple SDK breaking changes since v0.49.3. For the quickest migratio
 ### Fixed
 
 - Scoped models (`--models` or `enabledModels`) now remember the last selected model across sessions instead of always starting with the first model in the scope ([#736](https://github.com/badlogic/pi-mono/pull/736) by [@ogulcancelik](https://github.com/ogulcancelik))
-- Show `bun install` instead of `npm install` in update notification when running under Bun ([#714](https://github.com/badlogic/pi-mono/pull/714) by [@dannote](https://github.com/dannote))
+- Show `bun install` instead of `bun install` in update notification when running under Bun ([#714](https://github.com/badlogic/pi-mono/pull/714) by [@dannote](https://github.com/dannote))
 - `/skill` prompts now include the skill path ([#711](https://github.com/badlogic/pi-mono/pull/711) by [@jblwilliams](https://github.com/jblwilliams))
 - Use configurable `expandTools` keybinding instead of hardcoded Ctrl+O ([#717](https://github.com/badlogic/pi-mono/pull/717) by [@dannote](https://github.com/dannote))
 - Compaction turn prefix summaries now merge correctly ([#738](https://github.com/badlogic/pi-mono/pull/738) by [@vsabavat](https://github.com/vsabavat))
@@ -2438,7 +2438,7 @@ There are multiple SDK breaking changes since v0.49.3. For the quickest migratio
 ### Fixed
 
 - String `systemPrompt` in `createAgentSession()` now works as a full replacement instead of having context files and skills appended, matching documented behavior ([#543](https://github.com/badlogic/pi-mono/issues/543))
-- Update notification for bun binary installs now shows release download URL instead of npm command ([#567](https://github.com/badlogic/pi-mono/pull/567) by [@ferologics](https://github.com/ferologics))
+- Update notification for bun binary installs now shows release download URL instead of bun command ([#567](https://github.com/badlogic/pi-mono/pull/567) by [@ferologics](https://github.com/ferologics))
 - ESC key now works during "Working..." state after auto-retry ([#568](https://github.com/badlogic/pi-mono/pull/568) by [@tmustier](https://github.com/tmustier))
 - Abort messages now show correct retry attempt count (e.g., "Aborted after 2 retry attempts") ([#568](https://github.com/badlogic/pi-mono/pull/568) by [@tmustier](https://github.com/tmustier))
 - Fixed Antigravity provider returning 429 errors despite available quota ([#571](https://github.com/badlogic/pi-mono/pull/571) by [@ben-vargas](https://github.com/ben-vargas))
@@ -2631,7 +2631,7 @@ Hooks and custom tools are now unified as **extensions**. Both were TypeScript m
 }
 ```
 
-No recursion beyond one level. Complex packages must use the `package.json` manifest. Dependencies are resolved via jiti, and extensions can be published to and installed from npm.
+No recursion beyond one level. Complex packages must use the `package.json` manifest. Dependencies are resolved via jiti, and extensions can be published to and installed from bun.
 
 **Type renames:**
 
@@ -2827,7 +2827,7 @@ pi --extension ./safety.ts -e ./todo.ts
 - New example hook: `plan-mode.ts` - Claude Code-style read-only exploration mode:
   - Toggle via `/plan` command, `Shift+P` shortcut, or `--plan` CLI flag
   - Read-only tools: `read`, `bash`, `grep`, `find`, `ls` (no `edit`/`write`)
-  - Bash commands restricted to non-destructive operations (blocks `rm`, `mv`, `git commit`, `npm install`, etc.)
+  - Bash commands restricted to non-destructive operations (blocks `rm`, `mv`, `git commit`, `bun install`, etc.)
   - Interactive prompt after each response: execute plan, stay in plan mode, or refine
   - Todo list widget showing progress with checkboxes and strikethrough for completed items
   - Each todo has a unique ID; agent marks items done by outputting `[DONE:id]`
@@ -3376,7 +3376,7 @@ Total color count increased from 46 to 50. See [docs/themes.md](docs/themes.md) 
 
 ### Fixed
 
-- **Skill discovery performance**: Skip `node_modules` directories when recursively scanning for skills. Fixes ~60ms startup delay when skill directories contain npm dependencies.
+- **Skill discovery performance**: Skip `node_modules` directories when recursively scanning for skills. Fixes ~60ms startup delay when skill directories contain bun dependencies.
 
 ### Added
 
@@ -3628,7 +3628,7 @@ Total color count increased from 46 to 50. See [docs/themes.md](docs/themes.md) 
 
 - **Custom tools**: Extend pi with custom tools written in TypeScript. Tools can provide custom TUI rendering, interact with users via `pi.ui` (select, confirm, input, notify), and maintain state across sessions via `onSession` callback. See [docs/custom-tools.md](docs/custom-tools.md) and [examples/custom-tools/](examples/custom-tools/). ([#190](https://github.com/badlogic/pi-mono/issues/190))
 
-- **Hook and tool examples**: Added `examples/hooks/` and `examples/custom-tools/` with working examples. Examples are now bundled in npm and binary releases.
+- **Hook and tool examples**: Added `examples/hooks/` and `examples/custom-tools/` with working examples. Examples are now bundled in bun and binary releases.
 
 ### Breaking Changes
 
@@ -3776,7 +3776,7 @@ _Dedicated to Peter's shoulder ([@steipete](https://twitter.com/steipete))_
 
 - **Hook UI primitives**: `ctx.ui.select()`, `ctx.ui.confirm()`, `ctx.ui.input()`, `ctx.ui.notify()` for interactive prompts from hooks.
 
-- **Hooks documentation**: Full API reference at `docs/hooks.md`, shipped with npm package.
+- **Hooks documentation**: Full API reference at `docs/hooks.md`, shipped with bun package.
 
 ## [0.17.0] - 2025-12-09
 

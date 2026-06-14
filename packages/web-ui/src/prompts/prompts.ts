@@ -21,7 +21,7 @@ Execute JavaScript code in a sandboxed browser environment with full Web APIs.
 ## Environment
 - ES2023+ JavaScript (async/await, optional chaining, nullish coalescing, etc.)
 - All browser APIs: DOM, Canvas, WebGL, Fetch, Web Workers, WebSockets, Crypto, etc.
-- Import any npm package: await import('https://esm.run/package-name')
+- Import any bun package: await import('https://esm.run/package-name')
 
 ## Common Libraries
 - XLSX: const XLSX = await import('https://esm.run/xlsx');

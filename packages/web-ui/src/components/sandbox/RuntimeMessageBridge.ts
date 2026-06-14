@@ -10,7 +10,7 @@ export interface RuntimeMessageBridgeOptions {
 	sandboxId: string;
 }
 
-// biome-ignore lint/complexity/noStaticOnlyClass: fine
+// oxlint-ignore lint/complexity/noStaticOnlyClass: fine
 export class RuntimeMessageBridge {
 	/**
 	 * Generate sendRuntimeMessage() function as injectable string.

@@ -2,11 +2,11 @@
 @import "@mariozechner/mini-lit/styles/themes/default.css";
 
 /* Tell Tailwind to scan mini-lit components */
-/* biome-ignore lint/suspicious/noUnknownAtRules: Tailwind 4 source directive */
+/* oxlint-ignore lint/suspicious/noUnknownAtRules: Tailwind 4 source directive */
 @source "../../../node_modules/@mariozechner/mini-lit/dist";
 
 /* Import Tailwind */
-/* biome-ignore lint/correctness/noInvalidPositionAtImportRule: fuck you */
+/* oxlint-ignore lint/correctness/noInvalidPositionAtImportRule: fuck you */
 @import "tailwindcss";
 
 body {

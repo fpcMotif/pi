@@ -53,6 +53,18 @@ export async function executeShellWithCapture(
 		}
 	};
 
+	// End the temp-file stream and wait for the OS flush to complete. Without
+	// awaiting 'finish', a consumer that reads fullOutputPath the moment this
+	// promise resolves can hit ENOENT or a partially-written file.
+	const finalizeTempFile = (): Promise<void> => {
+		if (!tempFileStream) return Promise.resolve();
+		const stream = tempFileStream;
+		return new Promise<void>((resolveFinish, rejectFinish) => {
+			stream.on("error", rejectFinish);
+			stream.end(resolveFinish);
+		});
+	};
+
 	const onChunk = (chunk: string) => {
 		totalBytes += Buffer.byteLength(chunk, "utf-8");
 		const text = sanitizeBinaryOutput(chunk).replace(/\r/g, "");
@@ -82,7 +94,7 @@ export async function executeShellWithCapture(
 		if (truncationResult.truncated) {
 			ensureTempFile();
 		}
-		tempFileStream?.end();
+		await finalizeTempFile();
 		const cancelled = options?.signal?.aborted ?? false;
 		return {
 			output: truncationResult.truncated ? truncationResult.content : fullOutput,
@@ -98,7 +110,7 @@ export async function executeShellWithCapture(
 			if (truncationResult.truncated) {
 				ensureTempFile();
 			}
-			tempFileStream?.end();
+			await finalizeTempFile();
 			return {
 				output: truncationResult.truncated ? truncationResult.content : fullOutput,
 				exitCode: undefined,
@@ -107,7 +119,7 @@ export async function executeShellWithCapture(
 				fullOutputPath: tempFilePath,
 			};
 		}
-		tempFileStream?.end();
+		await finalizeTempFile();
 		throw err;
 	}
 }

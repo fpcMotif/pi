@@ -82,8 +82,8 @@ describe("isLocalPath", () => {
 		expect(isLocalPath("./foo")).toBe(true);
 	});
 
-	it("returns false for npm: protocol", () => {
-		expect(isLocalPath("npm:package")).toBe(false);
+	it("returns false for bun: protocol", () => {
+		expect(isLocalPath("bun:package")).toBe(false);
 	});
 
 	it("returns false for git: protocol", () => {

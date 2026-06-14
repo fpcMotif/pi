@@ -351,21 +351,21 @@ describe("InteractiveMode.showLoadedResources", () => {
 				}),
 			},
 			{
-				path: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.ts",
-				sourceInfo: createSourceInfo("/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.ts", {
-					source: "npm:pi-markdown-preview",
+				path: "/tmp/project/.pi/bun/node_modules/pi-markdown-preview/extensions/index.ts",
+				sourceInfo: createSourceInfo("/tmp/project/.pi/bun/node_modules/pi-markdown-preview/extensions/index.ts", {
+					source: "bun:pi-markdown-preview",
 					scope: "project",
 					origin: "package",
-					baseDir: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview",
+					baseDir: "/tmp/project/.pi/bun/node_modules/pi-markdown-preview",
 				}),
 			},
 			{
-				path: "/tmp/project/.pi/npm/node_modules/@scope/pi-scoped/extensions/index.ts",
-				sourceInfo: createSourceInfo("/tmp/project/.pi/npm/node_modules/@scope/pi-scoped/extensions/index.ts", {
-					source: "npm:@scope/pi-scoped",
+				path: "/tmp/project/.pi/bun/node_modules/@scope/pi-scoped/extensions/index.ts",
+				sourceInfo: createSourceInfo("/tmp/project/.pi/bun/node_modules/@scope/pi-scoped/extensions/index.ts", {
+					source: "bun:@scope/pi-scoped",
 					scope: "project",
 					origin: "package",
-					baseDir: "/tmp/project/.pi/npm/node_modules/@scope/pi-scoped",
+					baseDir: "/tmp/project/.pi/bun/node_modules/@scope/pi-scoped",
 				}),
 			},
 			{
@@ -731,12 +731,12 @@ describe("InteractiveMode.showLoadedResources", () => {
 	test("package extensions still strip index.ts correctly (regression guard)", () => {
 		const extensions: ExtensionFixture[] = [
 			{
-				path: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.ts",
-				sourceInfo: createSourceInfo("/tmp/project/.pi/npm/node_modules/pi-markdown-preview/extensions/index.ts", {
-					source: "npm:pi-markdown-preview",
+				path: "/tmp/project/.pi/bun/node_modules/pi-markdown-preview/extensions/index.ts",
+				sourceInfo: createSourceInfo("/tmp/project/.pi/bun/node_modules/pi-markdown-preview/extensions/index.ts", {
+					source: "bun:pi-markdown-preview",
 					scope: "project",
 					origin: "package",
-					baseDir: "/tmp/project/.pi/npm/node_modules/pi-markdown-preview",
+					baseDir: "/tmp/project/.pi/bun/node_modules/pi-markdown-preview",
 				}),
 			},
 		];
@@ -768,21 +768,22 @@ describe("InteractiveMode.showLoadedResources", () => {
 		});
 
 		expect(normalizeRenderedOutput(fakeThis.chatContainer)).toMatchInlineSnapshot(`
-"[Extensions]
-  project
-    /tmp/project/.pi/extensions/answer.ts
-    /tmp/project/.pi/extensions/local-index
-    git:github.com/HazAT/pi-interactive-subagents
-      extensions
-      extensions/subagents
-    npm:@scope/pi-scoped
-      extensions
-    npm:pi-markdown-preview
-      extensions
-  user
-    /tmp/agent/extensions/user-index
-  path
-    /tmp/temp/cli-extension.ts"`);
+			"[Extensions]
+			  project
+			    /tmp/project/.pi/extensions/answer.ts
+			    /tmp/project/.pi/extensions/local-index
+			    bun:@scope/pi-scoped
+			      extensions
+			    bun:pi-markdown-preview
+			      extensions
+			    git:github.com/HazAT/pi-interactive-subagents
+			      extensions
+			      extensions/subagents
+			  user
+			    /tmp/agent/extensions/user-index
+			  path
+			    /tmp/temp/cli-extension.ts"
+		`);
 	});
 
 	test("shows context paths relative to cwd while preserving full external paths", () => {

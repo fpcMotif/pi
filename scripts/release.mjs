@@ -8,10 +8,10 @@
  *
  * Steps:
  * 1. Check for uncommitted changes
- * 2. Bump version via npm run version:xxx or set an explicit version
+ * 2. Bump version via bun run version:xxx or set an explicit version
  * 3. Update CHANGELOG.md files: [Unreleased] -> [version] - date
  * 4. Commit and tag
- * 5. Publish to npm
+ * 5. Publish to bun
  * 6. Add new [Unreleased] section to changelogs
  * 7. Commit
  */
@@ -33,7 +33,7 @@ function run(cmd, options = {}) {
 	console.log(`$ ${cmd}`);
 	try {
 		return execSync(cmd, { encoding: "utf-8", stdio: options.silent ? "pipe" : "inherit", ...options });
-	} catch (e) {
+	} catch {
 		if (!options.ignoreError) {
 			console.error(`Command failed: ${cmd}`);
 			process.exit(1);
@@ -80,7 +80,7 @@ function bumpOrSetVersion(target) {
 
 	if (BUMP_TYPES.has(target)) {
 		console.log(`Bumping version (${target})...`);
-		run(`npm run version:${target}`);
+		run(`bun run version:${target}`);
 		return getVersion();
 	}
 
@@ -91,7 +91,7 @@ function bumpOrSetVersion(target) {
 
 	console.log(`Setting explicit version (${target})...`);
 	run(
-		`npm version ${target} -ws --no-git-tag-version && node scripts/sync-versions.js && npx shx rm -rf node_modules packages/*/node_modules package-lock.json && npm install`,
+		`bun pm version ${target} --no-git-tag-version && node scripts/sync-versions.js && bunx shx rm -rf node_modules packages/*/node_modules bun.lock && bun install`,
 	);
 	return getVersion();
 }
@@ -172,8 +172,8 @@ run(`git tag v${version}`);
 console.log();
 
 // 5. Publish
-console.log("Publishing to npm...");
-run("npm run publish");
+console.log("Publishing with Bun...");
+run("bun run publish");
 console.log();
 
 // 6. Add new [Unreleased] sections

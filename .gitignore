@@ -22,7 +22,7 @@ packages/*/dist-firefox/
 *~
 
 # Package specific
-.npm/
+.bun/
 coverage/
 coverage-fp/
 **/coverage-fp/
@@ -48,6 +48,9 @@ collect.sh
 # External reference repos (effect-ts ecosystem)
 effect-main/
 effect-smol-main/
+effect-delta-main/
+effect-solutions-main/
+opencode-dev/
 language-service-main/
 tsgo-main/
 

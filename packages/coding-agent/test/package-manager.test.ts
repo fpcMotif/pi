@@ -612,7 +612,7 @@ Content`,
 			// Local paths don't trigger install progress, but we can verify the callback is set
 			await packageManager.resolveExtensionSources([extPath]);
 
-			// For now just verify no errors - npm/git would trigger actual events
+			// For now just verify no errors - bun/git would trigger actual events
 			expect(events.length).toBe(0);
 		});
 	});
@@ -622,16 +622,16 @@ Content`,
 			vi.spyOn(process, "platform", "get").mockReturnValue("win32");
 
 			expect(shouldUseWindowsShell("git")).toBe(false);
-			expect(shouldUseWindowsShell("npm")).toBe(true);
-			expect(shouldUseWindowsShell("pnpm")).toBe(true);
-			expect(shouldUseWindowsShell("C:/Program Files/nodejs/npm.cmd")).toBe(true);
+			expect(shouldUseWindowsShell("bun")).toBe(true);
+			expect(shouldUseWindowsShell("pbun")).toBe(true);
+			expect(shouldUseWindowsShell("C:/Program Files/nodejs/bun.cmd")).toBe(true);
 		});
 	});
 
-	describe("npmCommand", () => {
-		it("should use npmCommand argv for npm installs", async () => {
+	describe("bunCommand", () => {
+		it("should use bunCommand argv for bun installs", async () => {
 			settingsManager = SettingsManager.inMemory({
-				npmCommand: ["mise", "exec", "node@20", "--", "npm"],
+				bunCommand: ["mise", "exec", "node@20", "--", "bun"],
 			});
 			packageManager = new DefaultPackageManager({
 				cwd: tempDir,
@@ -641,11 +641,11 @@ Content`,
 
 			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
 
-			await packageManager.install("npm:@scope/pkg");
+			await packageManager.install("bun:@scope/pkg");
 
 			expect(runCommandSpy).toHaveBeenCalledWith(
 				"mise",
-				["exec", "node@20", "--", "npm", "install", "-g", "@scope/pkg"],
+				["exec", "node@20", "--", "bun", "install", "-g", "@scope/pkg"],
 				undefined,
 			);
 		});
@@ -665,12 +665,12 @@ Content`,
 
 			await packageManager.install(source);
 
-			expect(runCommandSpy).toHaveBeenCalledWith("npm", ["install", "--omit=dev"], { cwd: targetDir });
+			expect(runCommandSpy).toHaveBeenCalledWith("bun", ["install", "--omit=dev"], { cwd: targetDir });
 		});
 
-		it("should use plain install for git package dependencies when npmCommand is configured", async () => {
+		it("should use plain install for git package dependencies when bunCommand is configured", async () => {
 			settingsManager = SettingsManager.inMemory({
-				npmCommand: ["pnpm"],
+				bunCommand: ["pbun"],
 			});
 			packageManager = new DefaultPackageManager({
 				cwd: tempDir,
@@ -692,7 +692,7 @@ Content`,
 
 			await packageManager.install(source);
 
-			expect(runCommandSpy).toHaveBeenCalledWith("pnpm", ["install"], { cwd: targetDir });
+			expect(runCommandSpy).toHaveBeenCalledWith("pbun", ["install"], { cwd: targetDir });
 		});
 
 		it("should update git package dependencies with --omit=dev", async () => {
@@ -719,12 +719,12 @@ Content`,
 
 			await packageManager.update(source);
 
-			expect(runCommandSpy).toHaveBeenCalledWith("npm", ["install", "--omit=dev"], { cwd: targetDir });
+			expect(runCommandSpy).toHaveBeenCalledWith("bun", ["install", "--omit=dev"], { cwd: targetDir });
 		});
 
-		it("should use plain install through npmCommand argv when updating git package dependencies", async () => {
+		it("should use plain install through bunCommand argv when updating git package dependencies", async () => {
 			settingsManager = SettingsManager.inMemory({
-				npmCommand: ["mise", "exec", "node@20", "--", "pnpm"],
+				bunCommand: ["mise", "exec", "node@20", "--", "pbun"],
 			});
 			packageManager = new DefaultPackageManager({
 				cwd: tempDir,
@@ -755,14 +755,14 @@ Content`,
 
 			await packageManager.update(source);
 
-			expect(runCommandSpy).toHaveBeenCalledWith("mise", ["exec", "node@20", "--", "pnpm", "install"], {
+			expect(runCommandSpy).toHaveBeenCalledWith("mise", ["exec", "node@20", "--", "pbun", "install"], {
 				cwd: targetDir,
 			});
 		});
 
-		it("should use npmCommand argv for npm root lookup and invalidate cached root when npmCommand changes", () => {
+		it("should use bunCommand argv for bun root lookup and invalidate cached root when bunCommand changes", () => {
 			settingsManager = SettingsManager.inMemory({
-				npmCommand: ["mise", "exec", "node@20", "--", "npm"],
+				bunCommand: ["mise", "exec", "node@20", "--", "bun"],
 			});
 			packageManager = new DefaultPackageManager({
 				cwd: tempDir,
@@ -790,13 +790,13 @@ Content`,
 					throw new Error(`unexpected args ${args.join(" ")}`);
 				});
 
-			expect(packageManager.getInstalledPath("npm:@scope/pkg", "user")).toBe(join(root20, "@scope", "pkg"));
-			expect(runCommandSyncSpy).toHaveBeenNthCalledWith(1, "mise", ["exec", "node@20", "--", "npm", "root", "-g"]);
+			expect(packageManager.getInstalledPath("bun:@scope/pkg", "user")).toBe(join(root20, "@scope", "pkg"));
+			expect(runCommandSyncSpy).toHaveBeenNthCalledWith(1, "mise", ["exec", "node@20", "--", "bun", "root", "-g"]);
 
-			settingsManager.setNpmCommand(["mise", "exec", "node@22", "--", "npm"]);
+			settingsManager.setBunCommand(["mise", "exec", "node@22", "--", "bun"]);
 
-			expect(packageManager.getInstalledPath("npm:@scope/pkg", "user")).toBeUndefined();
-			expect(runCommandSyncSpy).toHaveBeenNthCalledWith(2, "mise", ["exec", "node@22", "--", "npm", "root", "-g"]);
+			expect(packageManager.getInstalledPath("bun:@scope/pkg", "user")).toBeUndefined();
+			expect(runCommandSyncSpy).toHaveBeenNthCalledWith(2, "mise", ["exec", "node@22", "--", "bun", "root", "-g"]);
 		});
 	});
 
@@ -807,7 +807,7 @@ Content`,
 
 			// Use public install method which emits progress events
 			try {
-				await packageManager.install("npm:nonexistent-package@1.0.0");
+				await packageManager.install("bun:nonexistent-package@1.0.0");
 			} catch {
 				// Expected to fail - package doesn't exist
 			}
@@ -844,8 +844,8 @@ Content`,
 		});
 
 		it("should parse package source types from docs examples", () => {
-			expect((packageManager as any).parseSource("npm:@scope/pkg@1.2.3").type).toBe("npm");
-			expect((packageManager as any).parseSource("npm:pkg").type).toBe("npm");
+			expect((packageManager as any).parseSource("bun:@scope/pkg@1.2.3").type).toBe("bun");
+			expect((packageManager as any).parseSource("bun:pkg").type).toBe("bun");
 
 			expect((packageManager as any).parseSource("git:github.com/user/repo@v1").type).toBe("git");
 			expect((packageManager as any).parseSource("https://github.com/user/repo@v1").type).toBe("git");
@@ -1688,56 +1688,56 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 	});
 
 	describe("offline mode and network timeouts", () => {
-		it("should update project npm packages using @latest when newer version is available", async () => {
-			const installedPath = join(tempDir, ".pi", "npm", "node_modules", "example");
+		it("should update project bun packages using @latest when newer version is available", async () => {
+			const installedPath = join(tempDir, ".pi", "bun", "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
-			settingsManager.setProjectPackages(["npm:example"]);
+			settingsManager.setProjectPackages(["bun:example"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.2.3"');
 			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
 
-			await packageManager.update("npm:example");
+			await packageManager.update("bun:example");
 
 			expect(runCommandCaptureSpy).toHaveBeenCalledWith(
-				"npm",
+				"bun",
 				["view", "example", "version", "--json"],
 				expect.objectContaining({ cwd: tempDir, timeoutMs: expect.any(Number) }),
 			);
 			expect(runCommandSpy).toHaveBeenCalledWith(
-				"npm",
-				["install", "example@latest", "--prefix", join(tempDir, ".pi", "npm")],
+				"bun",
+				["install", "example@latest", "--prefix", join(tempDir, ".pi", "bun")],
 				undefined,
 			);
 		});
 
-		it("should skip project npm update when installed version matches latest", async () => {
-			const installedPath = join(tempDir, ".pi", "npm", "node_modules", "example");
+		it("should skip project bun update when installed version matches latest", async () => {
+			const installedPath = join(tempDir, ".pi", "bun", "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.2.3" }));
-			settingsManager.setProjectPackages(["npm:example"]);
+			settingsManager.setProjectPackages(["bun:example"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.2.3"');
 			const runCommandSpy = vi.spyOn(packageManager as any, "runCommand").mockResolvedValue(undefined);
 
-			await packageManager.update("npm:example");
+			await packageManager.update("bun:example");
 
 			expect(runCommandCaptureSpy).toHaveBeenCalledWith(
-				"npm",
+				"bun",
 				["view", "example", "version", "--json"],
 				expect.objectContaining({ cwd: tempDir, timeoutMs: expect.any(Number) }),
 			);
 			expect(runCommandSpy).not.toHaveBeenCalled();
 		});
 
-		it("should batch npm updates per scope and run git updates in parallel while skipping pinned and current packages", async () => {
-			vi.spyOn(packageManager as any, "getGlobalNpmRoot").mockReturnValue(join(agentDir, "node_modules"));
+		it("should batch bun updates per scope and run git updates in parallel while skipping pinned and current packages", async () => {
+			vi.spyOn(packageManager as any, "getGlobalBunRoot").mockReturnValue(join(agentDir, "node_modules"));
 
 			const userOldPath = join(agentDir, "node_modules", "user-old");
 			const userCurrentPath = join(agentDir, "node_modules", "user-current");
 			const userUnknownPath = join(agentDir, "node_modules", "user-unknown");
-			const projectOldPath = join(tempDir, ".pi", "npm", "node_modules", "project-old");
-			const projectCurrentPath = join(tempDir, ".pi", "npm", "node_modules", "project-current");
+			const projectOldPath = join(tempDir, ".pi", "bun", "node_modules", "project-old");
+			const projectCurrentPath = join(tempDir, ".pi", "bun", "node_modules", "project-current");
 			const installPaths = [userOldPath, userCurrentPath, userUnknownPath, projectOldPath, projectCurrentPath];
 			for (const installPath of installPaths) {
 				mkdirSync(installPath, { recursive: true });
@@ -1758,18 +1758,18 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			);
 
 			settingsManager.setPackages([
-				"npm:user-old",
-				"npm:user-current",
-				"npm:user-unknown",
-				"npm:user-pinned@1.0.0",
+				"bun:user-old",
+				"bun:user-current",
+				"bun:user-unknown",
+				"bun:user-pinned@1.0.0",
 				"git:github.com/example/user-repo-a",
 				"git:github.com/example/user-repo-b",
 				"git:github.com/example/user-repo-pinned@v1",
 			]);
 			settingsManager.setProjectPackages([
-				"npm:project-old",
-				"npm:project-current",
-				"npm:project-missing",
+				"bun:project-old",
+				"bun:project-current",
+				"bun:project-missing",
 				"git:github.com/example/project-repo-a",
 			]);
 
@@ -1794,19 +1794,19 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 					}
 				});
 
-			let activeNpmUpdates = 0;
-			let maxConcurrentNpmUpdates = 0;
+			let activeBunUpdates = 0;
+			let maxConcurrentBunUpdates = 0;
 			const runCommandSpy = vi
 				.spyOn(packageManager as any, "runCommand")
 				.mockImplementation(async (...callArgs: unknown[]) => {
 					const [command, args] = callArgs as [string, string[]];
-					if (command !== "npm") {
+					if (command !== "bun") {
 						throw new Error(`Unexpected runCommand call: ${command} ${args.join(" ")}`);
 					}
-					activeNpmUpdates += 1;
-					maxConcurrentNpmUpdates = Math.max(maxConcurrentNpmUpdates, activeNpmUpdates);
+					activeBunUpdates += 1;
+					maxConcurrentBunUpdates = Math.max(maxConcurrentBunUpdates, activeBunUpdates);
 					await new Promise((resolve) => setTimeout(resolve, 20));
-					activeNpmUpdates -= 1;
+					activeBunUpdates -= 1;
 				});
 
 			let activeGitUpdates = 0;
@@ -1824,26 +1824,26 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			expect(runCommandSpy).toHaveBeenCalledTimes(2);
 			expect(runCommandSpy).toHaveBeenNthCalledWith(
 				1,
-				"npm",
+				"bun",
 				["install", "-g", "user-old@latest", "user-unknown@latest"],
 				undefined,
 			);
 			expect(runCommandSpy).toHaveBeenNthCalledWith(
 				2,
-				"npm",
-				["install", "project-old@latest", "project-missing@latest", "--prefix", join(tempDir, ".pi", "npm")],
+				"bun",
+				["install", "project-old@latest", "project-missing@latest", "--prefix", join(tempDir, ".pi", "bun")],
 				undefined,
 			);
 			expect(updateGitSpy).toHaveBeenCalledTimes(3);
-			expect(maxConcurrentNpmUpdates).toBeGreaterThan(1);
+			expect(maxConcurrentBunUpdates).toBeGreaterThan(1);
 			expect(maxConcurrentGitUpdates).toBeGreaterThan(1);
 		});
 
-		it("should suggest npm source prefixes for update lookups", async () => {
-			settingsManager.setProjectPackages(["npm:example"]);
+		it("should suggest bun source prefixes for update lookups", async () => {
+			settingsManager.setProjectPackages(["bun:example"]);
 
 			await expect(packageManager.update("example")).rejects.toThrow(
-				"No matching package found for example. Did you mean npm:example?",
+				"No matching package found for example. Did you mean bun:example?",
 			);
 		});
 
@@ -1857,7 +1857,7 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 
 		it("should skip installing missing package sources when offline", async () => {
 			process.env.PI_OFFLINE = "1";
-			settingsManager.setProjectPackages(["npm:missing-package", "git:github.com/example/missing-repo"]);
+			settingsManager.setProjectPackages(["bun:missing-package", "git:github.com/example/missing-repo"]);
 
 			const installParsedSourceSpy = vi.spyOn(packageManager as any, "installParsedSource");
 
@@ -1883,12 +1883,12 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			expect(refreshTemporaryGitSourceSpy).not.toHaveBeenCalled();
 		});
 
-		it("should not run npm view during resolve for installed unpinned packages", async () => {
-			const installedPath = join(tempDir, ".pi", "npm", "node_modules", "example");
+		it("should not run bun view during resolve for installed unpinned packages", async () => {
+			const installedPath = join(tempDir, ".pi", "bun", "node_modules", "example");
 			mkdirSync(join(installedPath, "extensions"), { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
 			writeFileSync(join(installedPath, "extensions", "index.ts"), "export default function() {};");
-			settingsManager.setProjectPackages(["npm:example"]);
+			settingsManager.setProjectPackages(["bun:example"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture");
 
@@ -1897,11 +1897,11 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			expect(runCommandCaptureSpy).not.toHaveBeenCalled();
 		});
 
-		it("should reinstall pinned npm packages when installed version does not match", async () => {
-			const installedPath = join(tempDir, ".pi", "npm", "node_modules", "example");
+		it("should reinstall pinned bun packages when installed version does not match", async () => {
+			const installedPath = join(tempDir, ".pi", "bun", "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
-			settingsManager.setProjectPackages(["npm:example@2.0.0"]);
+			settingsManager.setProjectPackages(["bun:example@2.0.0"]);
 
 			const installParsedSourceSpy = vi
 				.spyOn(packageManager as any, "installParsedSource")
@@ -1920,34 +1920,34 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			expect(runCommandCaptureSpy).not.toHaveBeenCalled();
 		});
 
-		it("should report updates for installed unpinned npm packages", async () => {
-			const installedPath = join(tempDir, ".pi", "npm", "node_modules", "example");
+		it("should report updates for installed unpinned bun packages", async () => {
+			const installedPath = join(tempDir, ".pi", "bun", "node_modules", "example");
 			mkdirSync(installedPath, { recursive: true });
 			writeFileSync(join(installedPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
-			settingsManager.setProjectPackages(["npm:example"]);
+			settingsManager.setProjectPackages(["bun:example"]);
 
 			vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.2.3"');
 
 			const updates = await packageManager.checkForAvailableUpdates();
 			expect(updates).toEqual([
 				{
-					source: "npm:example",
+					source: "bun:example",
 					displayName: "example",
-					type: "npm",
+					type: "bun",
 					scope: "project",
 				},
 			]);
 		});
 
 		it("should skip pinned packages when checking for updates", async () => {
-			const installedNpmPath = join(tempDir, ".pi", "npm", "node_modules", "example");
-			mkdirSync(installedNpmPath, { recursive: true });
-			writeFileSync(join(installedNpmPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
+			const installedBunPath = join(tempDir, ".pi", "bun", "node_modules", "example");
+			mkdirSync(installedBunPath, { recursive: true });
+			writeFileSync(join(installedBunPath, "package.json"), JSON.stringify({ name: "example", version: "1.0.0" }));
 			const parsedGitSource = (packageManager as any).parseSource("git:github.com/example/repo@v1");
 			const installedGitPath = (packageManager as any).getGitInstallPath(parsedGitSource, "project") as string;
 			mkdirSync(installedGitPath, { recursive: true });
 
-			settingsManager.setProjectPackages(["npm:example@1.0.0", "git:github.com/example/repo@v1"]);
+			settingsManager.setProjectPackages(["bun:example@1.0.0", "git:github.com/example/repo@v1"]);
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture");
 			const gitUpdateSpy = vi.spyOn(packageManager as any, "gitHasAvailableUpdate");
@@ -1958,22 +1958,22 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 			expect(gitUpdateSpy).not.toHaveBeenCalled();
 		});
 
-		it("should use npm view to fetch latest version", async () => {
+		it("should use bun view to fetch latest version", async () => {
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.2.3"');
 
-			const latest = await (packageManager as any).getLatestNpmVersion("example");
+			const latest = await (packageManager as any).getLatestBunVersion("example");
 			expect(latest).toBe("1.2.3");
 			expect(runCommandCaptureSpy).toHaveBeenCalledTimes(1);
 			expect(runCommandCaptureSpy).toHaveBeenCalledWith(
-				"npm",
+				"bun",
 				["view", "example", "version", "--json"],
 				expect.objectContaining({ cwd: tempDir, timeoutMs: expect.any(Number) }),
 			);
 		});
 
-		it("should use npmCommand argv for npm update checks", async () => {
+		it("should use bunCommand argv for bun update checks", async () => {
 			settingsManager = SettingsManager.inMemory({
-				npmCommand: ["mise", "exec", "node@20", "--", "npm"],
+				bunCommand: ["mise", "exec", "node@20", "--", "bun"],
 			});
 			packageManager = new DefaultPackageManager({
 				cwd: tempDir,
@@ -1983,11 +1983,11 @@ export default function(api) { api.registerTool({ name: "test", description: "te
 
 			const runCommandCaptureSpy = vi.spyOn(packageManager as any, "runCommandCapture").mockResolvedValue('"1.2.3"');
 
-			const latest = await (packageManager as any).getLatestNpmVersion("@scope/pkg");
+			const latest = await (packageManager as any).getLatestBunVersion("@scope/pkg");
 			expect(latest).toBe("1.2.3");
 			expect(runCommandCaptureSpy).toHaveBeenCalledWith(
 				"mise",
-				["exec", "node@20", "--", "npm", "view", "@scope/pkg", "version", "--json"],
+				["exec", "node@20", "--", "bun", "view", "@scope/pkg", "version", "--json"],
 				expect.objectContaining({ cwd: tempDir }),
 			);
 		});

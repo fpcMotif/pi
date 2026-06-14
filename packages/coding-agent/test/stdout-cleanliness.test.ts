@@ -30,9 +30,9 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
 	mkdirSync(agentDir, { recursive: true });
 	mkdirSync(projectConfigDir, { recursive: true });
 
-	const fakeNpmPath = join(tempRoot, "fake-npm.mjs");
+	const fakeBunPath = join(tempRoot, "fake-bun.mjs");
 	writeFileSync(
-		fakeNpmPath,
+		fakeBunPath,
 		[
 			'console.log("changed 1 package in 471ms");',
 			'console.log("found 0 vulnerabilities");',
@@ -45,8 +45,8 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
 		join(projectConfigDir, "settings.json"),
 		JSON.stringify(
 			{
-				packages: ["npm:fake-package"],
-				npmCommand: [process.execPath, fakeNpmPath],
+				packages: ["bun:fake-package"],
+				bunCommand: [process.execPath, fakeBunPath],
 			},
 			null,
 			2,

@@ -31,7 +31,7 @@ main (9cb86b75, slices 12g/12h)
 Same goal, incompatible layouts. The two refactors **cannot both be merged** — one must be the base and the other's *unique value* grafted on top.
 
 ### Why #10 was RED (and why it doesn't matter)
-`#1` and `#10` fail CI on `npm ci` — a **stale `package-lock.json`**, not broken code. #9 carries the fix (`cfe7cce3 chore: refresh package-lock.json`). **Never pull #10's lockfile over #9's** or you reintroduce the red state.
+`#1` and `#10` fail CI on `bun install --frozen-lockfile` — a **stale `bun.lock`**, not broken code. #9 carries the fix (`cfe7cce3 chore: refresh bun.lock`). **Never pull #10's lockfile over #9's** or you reintroduce the red state.
 
 ---
 

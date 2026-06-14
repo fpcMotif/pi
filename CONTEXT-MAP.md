@@ -28,7 +28,7 @@ This map describes the post-rewrite target shape from ADR-0002 through ADR-0017.
 
 All macro-architecture decisions are recorded in ADR-0001 through ADR-0017 under `docs/adr/`. Remaining concerns are implementation-detail tier, not design-tree forks:
 
-- Print mode (`pi --print` / `pi json`) — port to Effect (no structural change expected; subcommand under ADR-0011).
+- Print mode (`pi --print` / `pi json`) — **decided in ADR-0020**: first production adapter for the Effect lane, behind an opt-in flag with a versioned event schema (`--events v1|v2`); migrates into the ADR-0011 subcommand when that executes.
 - OAuth flow internals — move into `pi-agent-core` per ADR-0005 (no structural break expected).
 - Autocomplete / slash commands — Effect-shaped Services consumed by interactive mode.
 - Compaction + branch-summarization — Effects within the agent loop; observable via `AgentEvent` per ADR-0009.

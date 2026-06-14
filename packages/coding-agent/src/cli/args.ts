@@ -43,6 +43,10 @@ export interface Args {
 	listModels?: string | true;
 	offline?: boolean;
 	verbose?: boolean;
+	/** Route print mode through the Effect lane (experimental, ADR-0020). */
+	effect?: boolean;
+	/** Print-mode event schema version: v1 = legacy shape, v2 = AgentEvent union (ADR-0020). */
+	events?: "v1" | "v2";
 	messages: string[];
 	fileArgs: string[];
 	/** Unknown flags (potentially extension flags) - map of flag name to value */
@@ -91,6 +95,21 @@ export function parseArgs(args: string[]): Args {
 		} else if (arg === "--append-system-prompt" && i + 1 < args.length) {
 			result.appendSystemPrompt = result.appendSystemPrompt ?? [];
 			result.appendSystemPrompt.push(args[++i]);
+		} else if (arg === "--effect") {
+			result.effect = true;
+		} else if (arg === "--events" && i + 1 < args.length) {
+			const events = args[++i];
+			if (events === "v1" || events === "v2") {
+				result.events = events;
+			} else {
+				// Warning, not error: legacy `--mode` ignores invalid values
+				// silently, and an error here would fail interactive runs that
+				// never read --events.
+				result.diagnostics.push({
+					type: "warning",
+					message: `Invalid --events value "${events}" (expected v1 or v2); ignoring`,
+				});
+			}
 		} else if (arg === "--no-session") {
 			result.noSession = true;
 		} else if (arg === "--session" && i + 1 < args.length) {
@@ -221,6 +240,9 @@ ${chalk.bold("Options:")}
   --append-system-prompt <text>  Append text or file contents to the system prompt (can be used multiple times)
   --mode <mode>                  Output mode: text (default), json, or rpc
   --print, -p                    Non-interactive mode: process prompt and exit
+  --effect                       Experimental: route print mode through the Effect lane (ADR-0020)
+  --events <v1|v2>               Print-mode JSON event schema (v1 = legacy, v2 = AgentEvent; --effect only;
+                                 explicit v2 required until the v1 mapper lands)
   --continue, -c                 Continue previous session
   --resume, -r                   Select a session to resume
   --session <path|id>            Use specific session file or partial UUID

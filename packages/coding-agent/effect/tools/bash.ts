@@ -19,17 +19,17 @@
  * typed `BashError` channel. This is the ADR-0010 "typed result" stance — the
  * legacy tool threw on non-zero exit and lost the structured exit code.
  *
- * Deferred (follow-on slices, mirroring how `read` deferred image handling):
- * throttled live-output streaming (`onUpdate`), the rolling-buffer + temp-file
- * `OutputAccumulator` for unbounded output, the `BashSpawnHook` env/cwd/command
- * transform Service, and full process-tree teardown on timeout/interrupt
- * (`BashOperationsLive` currently does a plain `child.kill()`).
+ * Process-group teardown (timeout / interrupt) and the rolling in-memory
+ * output cap now live in the shared `spawn-collect.ts` helper. Still deferred
+ * (follow-on slices, mirroring how `read` deferred image handling): throttled
+ * live-output streaming (`onUpdate`), the temp-file spill for output beyond
+ * the rolling cap, and the `BashSpawnHook` env/cwd/command transform Service.
  */
 import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 
+import { spawnCollect } from "./spawn-collect.js";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, truncateTail } from "./truncate.js";
 
 /** Resolved request handed to `BashOperations.exec` — command prefix already applied. */
@@ -84,65 +84,30 @@ const resolveShell = (): { shell: string; args: ReadonlyArray<string> } =>
 
 /** Run `request.command` in a local shell, collecting combined stdout+stderr. */
 const runShell = (request: BashExecRequest): Effect.Effect<BashExecOutcome, BashError> =>
-	Effect.callback<BashExecOutcome, BashError>((resume) => {
+	Effect.suspend(() => {
 		if (!existsSync(request.cwd)) {
-			resume(
-				Effect.fail(
-					new BashError({
-						reason: "cwd-not-found",
-						description: `Working directory does not exist: ${request.cwd}`,
-					}),
-				),
+			return Effect.fail(
+				new BashError({
+					reason: "cwd-not-found",
+					description: `Working directory does not exist: ${request.cwd}`,
+				}),
 			);
-			return;
 		}
-
 		const { shell, args } = resolveShell();
-		const child = spawn(shell, [...args, request.command], {
+		return spawnCollect({
+			command: shell,
+			args: [...args, request.command],
 			cwd: request.cwd,
 			env: process.env,
-			stdio: ["ignore", "pipe", "pipe"],
-		});
-
-		let output = "";
-		let timedOut = false;
-		let settled = false;
-		const onData = (chunk: Buffer) => {
-			output += chunk.toString();
-		};
-		child.stdout?.on("data", onData);
-		child.stderr?.on("data", onData);
-
-		let timeoutHandle: NodeJS.Timeout | undefined;
-		if (request.timeout !== undefined && request.timeout > 0) {
-			timeoutHandle = setTimeout(() => {
-				timedOut = true;
-				if (!child.killed) child.kill();
-			}, request.timeout * 1000);
-		}
-
-		child.on("error", (error: NodeJS.ErrnoException) => {
-			if (settled) return;
-			settled = true;
-			if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-			resume(
-				Effect.fail(
-					new BashError({ reason: "spawn-failed", description: `Failed to run shell command: ${error.message}` }),
-				),
-			);
-		});
-
-		child.on("close", (code) => {
-			if (settled) return;
-			settled = true;
-			if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-			resume(Effect.succeed({ exitCode: code, output, timedOut }));
-		});
-
-		return Effect.sync(() => {
-			if (timeoutHandle !== undefined) clearTimeout(timeoutHandle);
-			if (!child.killed) child.kill();
-		});
+			timeoutMs: request.timeout !== undefined && request.timeout > 0 ? request.timeout * 1000 : undefined,
+			mapSpawnError: (error) =>
+				new BashError({ reason: "spawn-failed", description: `Failed to run shell command: ${error.message}` }),
+		}).pipe(
+			// `outputHeadTruncated` is dropped on purpose: the rolling cap is 10x the
+			// display budget, so any output that lost its head already reports
+			// `truncated: true` via `truncateTail` — only `totalLines` undercounts.
+			Effect.map((outcome) => ({ exitCode: outcome.exitCode, output: outcome.output, timedOut: outcome.timedOut })),
+		);
 	});
 
 /** Default `BashOperations` Layer: runs a local shell on the current platform. */
@@ -153,7 +118,7 @@ export const BashOperationsLive: Layer.Layer<BashOperations> = Layer.succeed(
 
 const BashParameters = Schema.Struct({
 	command: Schema.String,
-	timeout: Schema.optional(Schema.Number),
+	timeout: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))),
 });
 
 const BashResult = Schema.Struct({

@@ -67,7 +67,7 @@ Options:
   -l, --local    Install project-locally (.pi/settings.json)
 
 Examples:
-  ${APP_NAME} install npm:@foo/bar
+  ${APP_NAME} install bun:@foo/bar
   ${APP_NAME} install git:github.com/user/repo
   ${APP_NAME} install git:git@github.com:user/repo
   ${APP_NAME} install https://github.com/user/repo
@@ -87,8 +87,8 @@ Options:
   -l, --local    Remove from project settings (.pi/settings.json)
 
 Examples:
-  ${APP_NAME} remove npm:@foo/bar
-  ${APP_NAME} uninstall npm:@foo/bar
+  ${APP_NAME} remove bun:@foo/bar
+  ${APP_NAME} uninstall bun:@foo/bar
 `);
 			return;
 
@@ -273,9 +273,9 @@ function updateTargetIncludesExtensions(target: UpdateTarget): boolean {
 	return target.type === "all" || target.type === "extensions";
 }
 
-function printSelfUpdateUnavailable(npmCommand?: string[], updatePackageName = PACKAGE_NAME): void {
+function printSelfUpdateUnavailable(bunCommand?: string[], updatePackageName = PACKAGE_NAME): void {
 	console.error(`error: ${APP_NAME} cannot self-update this installation.`);
-	console.error(getSelfUpdateUnavailableInstruction(PACKAGE_NAME, npmCommand, updatePackageName));
+	console.error(getSelfUpdateUnavailableInstruction(PACKAGE_NAME, bunCommand, updatePackageName));
 
 	const entrypoint = process.argv[1];
 	if (entrypoint) {
@@ -410,7 +410,7 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 	const agentDir = getAgentDir();
 	const settingsManager = SettingsManager.create(cwd, agentDir);
 	reportSettingsErrors(settingsManager, "package command");
-	const selfUpdateNpmCommand = settingsManager.getGlobalSettings().npmCommand;
+	const selfUpdateBunCommand = settingsManager.getGlobalSettings().bunCommand;
 
 	const packageManager = new DefaultPackageManager({ cwd, agentDir, settingsManager });
 
@@ -492,11 +492,11 @@ export async function handlePackageCommand(args: string[]): Promise<boolean> {
 					}
 					const selfUpdateCommand = getSelfUpdateCommand(
 						PACKAGE_NAME,
-						selfUpdateNpmCommand,
+						selfUpdateBunCommand,
 						selfUpdatePlan.packageName,
 					);
 					if (!selfUpdateCommand) {
-						printSelfUpdateUnavailable(selfUpdateNpmCommand, selfUpdatePlan.packageName);
+						printSelfUpdateUnavailable(selfUpdateBunCommand, selfUpdatePlan.packageName);
 						process.exitCode = 1;
 						return true;
 					}

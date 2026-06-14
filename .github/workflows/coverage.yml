@@ -21,7 +21,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          # Keep in sync with ci.yml: lockfileVersion 2 needs bun 1.4 canary.
+          bun-version: canary
 
       - name: Install system dependencies
         run: |
@@ -30,10 +35,10 @@ jobs:
           sudo ln -s $(which fdfind) /usr/local/bin/fd
 
       - name: Install dependencies
-        run: npm ci
+        run: bun install --frozen-lockfile
 
       - name: Build
-        run: npm run build
+        run: bun run build
 
       # ADR-0017: every workspace's test:coverage:100 enforces lines /
       # branches / functions / statements all = 100 via its package.json
@@ -41,7 +46,7 @@ jobs:
       # each workspace's coverage-summary.json and prints a unified report,
       # failing if any package is below 100%.
       - name: Coverage (monorepo-wide 100%)
-        run: npm run coverage:all:100
+        run: bun run coverage:all:100
 
       - name: Upload coverage reports
         if: always()

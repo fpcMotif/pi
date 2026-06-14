@@ -26,6 +26,7 @@ import { it } from "@effect/vitest";
 import { Cause, Effect, Layer } from "effect";
 import { describe, expect } from "vitest";
 
+import { FsError } from "../../../effect/tools/fs-effect.js";
 import { GrepError, GrepOperations, grepHandler, type RawGrepMatch } from "../../../effect/tools/grep.js";
 
 const CWD = nodePath.resolve("/test-fs/work");
@@ -44,11 +45,7 @@ interface StubGrep {
 	readonly searchFails?: boolean;
 }
 
-const errno = (msg: string): NodeJS.ErrnoException => {
-	const e = new Error(msg) as NodeJS.ErrnoException;
-	e.code = "ENOENT";
-	return e;
-};
+const errno = (msg: string): FsError => new FsError({ message: msg, code: "ENOENT" });
 
 const stubGrepOperations = (stub: StubGrep): Layer.Layer<GrepOperations> => {
 	const directories = new Set(stub.directories ?? []);

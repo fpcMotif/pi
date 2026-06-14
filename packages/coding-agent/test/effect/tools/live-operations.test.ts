@@ -3,7 +3,7 @@
 // The existing per-tool tracer-bullet tests use stub Layers and exercise
 // the handler logic; this file exercises the actual `node:fs`-backed
 // implementations against a real tmpdir, plus the readdir / read /
-// write error branches that map ErrnoException into the tool's typed
+// write error branches that map the typed FsError into the tool's typed
 // failure variant.
 
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -14,6 +14,7 @@ import { it } from "@effect/vitest";
 import { Cause, Effect, Layer } from "effect";
 import { afterAll, beforeAll, describe, expect } from "vitest";
 
+import { FsError } from "../../../effect/tools/fs-effect.js";
 import { Ls, LsError, LsOperations, LsOperationsLive, lsHandler } from "../../../effect/tools/ls.js";
 import { ReadError, ReadOperations, ReadOperationsLive, readHandler } from "../../../effect/tools/read.js";
 import { WriteError, WriteOperations, WriteOperationsLive, writeHandler } from "../../../effect/tools/write.js";
@@ -22,11 +23,9 @@ import { WriteError, WriteOperations, WriteOperationsLive, writeHandler } from "
 // operation — drive the `Effect.mapError(... new <Tool>Error("read-failed"
 // | "write-failed"))` branches that the Live tests can't reach
 // cross-platform without permission games.
-const errnoLike = (msg: string | undefined): NodeJS.ErrnoException => {
-	const e = new Error(msg ?? "") as NodeJS.ErrnoException;
+const errnoLike = (msg: string | undefined): FsError => {
+	const e = new FsError({ message: msg ?? "", code: "EACCES" });
 	if (msg === undefined) (e as { message?: unknown }).message = undefined;
-	e.code = "EACCES";
-	e.errno = -13;
 	return e;
 };
 
@@ -95,18 +94,21 @@ describe("LsOperationsLive — local-filesystem implementation", () => {
 		}).pipe(Effect.provide(LsOperationsLive)),
 	);
 
-	it.effect("isDirectory error path: statSync throws ENOENT → ErrnoException in error channel", () =>
+	it.effect("isDirectory error path: statSync throws ENOENT → FsError in error channel", () =>
 		Effect.gen(function* () {
 			const ops = yield* LsOperations;
 			const exit = yield* Effect.exit(ops.isDirectory(nodePath.join(workDir, "nothing-here")));
 			expect(exit._tag).toBe("Failure");
-			// Must reach the typed catch (ErrnoException) — not a defect.
+			// Must reach the typed catch (FsError) — not a defect.
 			const error = exit._tag === "Failure" ? Cause.findErrorOption(exit.cause) : undefined;
 			expect(error?._tag).toBe("Some");
+			const e = error?._tag === "Some" ? error.value : undefined;
+			expect(e).toBeInstanceOf(FsError);
+			expect((e as FsError).code).toBe("ENOENT");
 		}).pipe(Effect.provide(LsOperationsLive)),
 	);
 
-	it.effect("readdir error path: missing path → ErrnoException", () =>
+	it.effect("readdir error path: missing path → FsError", () =>
 		Effect.gen(function* () {
 			const ops = yield* LsOperations;
 			const exit = yield* Effect.exit(ops.readdir(nodePath.join(workDir, "absent-dir")));
@@ -163,7 +165,7 @@ describe("ReadOperationsLive — local-filesystem implementation", () => {
 		}).pipe(Effect.provide(ReadOperationsLive)),
 	);
 
-	it.effect("isFile error path: stat on missing path → ErrnoException", () =>
+	it.effect("isFile error path: stat on missing path → FsError", () =>
 		Effect.gen(function* () {
 			const ops = yield* ReadOperations;
 			const exit = yield* Effect.exit(ops.isFile(nodePath.join(workDir, "no-stat")));
@@ -171,7 +173,7 @@ describe("ReadOperationsLive — local-filesystem implementation", () => {
 		}).pipe(Effect.provide(ReadOperationsLive)),
 	);
 
-	it.effect("readTextFile error path: missing path → ErrnoException", () =>
+	it.effect("readTextFile error path: missing path → FsError", () =>
 		Effect.gen(function* () {
 			const ops = yield* ReadOperations;
 			const exit = yield* Effect.exit(ops.readTextFile(nodePath.join(workDir, "no-read")));
@@ -242,7 +244,7 @@ describe("WriteOperationsLive — local-filesystem implementation", () => {
 		}).pipe(Effect.provide(WriteOperationsLive)),
 	);
 
-	it.effect("mkdirRecursive error path: a path component is a file → ENOTDIR ErrnoException", () =>
+	it.effect("mkdirRecursive error path: a path component is a file → ENOTDIR FsError", () =>
 		Effect.gen(function* () {
 			const ops = yield* WriteOperations;
 			// hello.txt is a regular file; using it as a path component forces
@@ -262,7 +264,7 @@ describe("WriteOperationsLive — local-filesystem implementation", () => {
 		}).pipe(Effect.provide(WriteOperationsLive)),
 	);
 
-	it.effect("writeTextFile error path: invalid path → ErrnoException", () =>
+	it.effect("writeTextFile error path: invalid path → FsError", () =>
 		Effect.gen(function* () {
 			const ops = yield* WriteOperations;
 			// Writing under a non-existent parent dir without mkdir → fails.

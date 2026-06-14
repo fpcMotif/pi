@@ -405,7 +405,7 @@ export class InteractiveMode {
 			return scopePrefix;
 		}
 
-		if (source.startsWith("npm:")) {
+		if (source.startsWith("bun:")) {
 			return `${scopePrefix}:${source}`;
 		}
 
@@ -947,9 +947,9 @@ export class InteractiveMode {
 		}
 
 		const source = sourceInfo?.source ?? "";
-		const npmMatch = fullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
-		if (npmMatch && source.startsWith("npm:")) {
-			return npmMatch[2];
+		const bunMatch = fullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
+		if (bunMatch && source.startsWith("bun:")) {
+			return bunMatch[2];
 		}
 
 		const gitMatch = fullPath.match(/git\/[^/]+\/[^/]+\/(.*)/);
@@ -972,8 +972,8 @@ export class InteractiveMode {
 
 	private getCompactPackageSourceLabel(sourceInfo?: SourceInfo): string {
 		const source = sourceInfo?.source ?? "";
-		if (source.startsWith("npm:")) {
-			return source.slice("npm:".length) || source;
+		if (source.startsWith("bun:")) {
+			return source.slice("bun:".length) || source;
 		}
 
 		const gitSource = parseGitUrl(source);
@@ -1109,7 +1109,7 @@ export class InteractiveMode {
 
 	private isPackageSource(sourceInfo?: SourceInfo): boolean {
 		const source = sourceInfo?.source ?? "";
-		return source.startsWith("npm:") || source.startsWith("git:");
+		return source.startsWith("bun:") || source.startsWith("git:");
 	}
 
 	private buildScopeGroups(items: Array<{ path: string; sourceInfo?: SourceInfo }>): Array<{

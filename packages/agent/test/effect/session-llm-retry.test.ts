@@ -17,11 +17,12 @@
  *   they sit outside the retry boundary.
  */
 import { it } from "@effect/vitest";
-import { Effect, Stream, SubscriptionRef } from "effect";
+import { Effect, Fiber, Stream, SubscriptionRef } from "effect";
 import { AiError } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
 import { LlmError } from "../../effect/agent-error.js";
 import { Session } from "../../effect/session.js";
+import { advancePastRetryDelays } from "../../test-support/advance-past-retry-delays.js";
 import { stubLanguageModelStreamScripted } from "../../test-support/stub-language-model-stream-scripted.js";
 
 const rateLimit = AiError.make({
@@ -58,7 +59,11 @@ describe("Session.send retries on retryable AiError reasons, propagates non-retr
 	it.effect("two RateLimitError attempts then a successful attempt → events flow, turnCount bumps once", () =>
 		Effect.gen(function* () {
 			const session = yield* Session.empty;
-			const events = yield* Stream.runCollect(session.send("hello"));
+			// Fork the consumer and drive the TestClock past the two backoff
+			// delays (PI-EFX-06) so the retries can fire.
+			const fiber = yield* Effect.forkChild(Stream.runCollect(session.send("hello")));
+			yield* advancePastRetryDelays(2);
+			const events = yield* Fiber.join(fiber);
 
 			// Consumer sees ONLY the successful attempt's events. The two failed
 			// attempts never emitted any LlmPart because the stub fails at-open.
@@ -113,7 +118,9 @@ describe("Session.send retries on retryable AiError reasons, propagates non-retr
 	it.effect("retry cap exceeded (4 retryable failures) → last error propagates", () =>
 		Effect.gen(function* () {
 			const session = yield* Session.empty;
-			const err = yield* Effect.flip(Stream.runDrain(session.send("hello")));
+			const fiber = yield* Effect.forkChild(Effect.flip(Stream.runDrain(session.send("hello"))));
+			yield* advancePastRetryDelays(3);
+			const err = yield* Fiber.join(fiber);
 
 			const llmError = expectLlmError(err);
 			expect((llmError.aiError as { readonly reason: { readonly _tag: string } }).reason._tag).toBe(

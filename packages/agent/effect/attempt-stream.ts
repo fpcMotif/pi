@@ -1,5 +1,5 @@
 import { Effect, Ref, Stream, SubscriptionRef, type Types } from "effect";
-import { LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
+import { type AiError, LanguageModel, Prompt, type Tool } from "effect/unstable/ai";
 
 import { LlmError } from "./agent-error.js";
 import { type AgentEvent, Finish } from "./agent-event.js";
@@ -65,7 +65,7 @@ export const makeAttemptStream = <Tools extends Record<string, Tool.Any>>(params
 							prompt: snapshot.history,
 							toolkit,
 							concurrency,
-						} as never) as Stream.Stream<unknown, unknown, LanguageModel.LanguageModel>);
+						} as never) as Stream.Stream<unknown, AiError.AiError, LanguageModel.LanguageModel>);
 
 			return upstream.pipe(
 				Stream.flatMap((part) => Stream.fromIterable(liftPart(part))),
@@ -84,7 +84,7 @@ export const makeAttemptStream = <Tools extends Record<string, Tool.Any>>(params
 						: Effect.void,
 				),
 				// Map BEFORE the retry boundary so the schedule's predicate sees `LlmError`.
-				Stream.mapError((aiError): LlmError => new LlmError({ aiError })),
+				Stream.mapError((aiError: AiError.AiError) => new LlmError({ aiError })),
 				// After the upstream completes, append the assistant message (with
 				// text + tool-call + tool-result content in order), bump cumulative
 				// token totals on state, and emit Finish carrying this send's tokens.

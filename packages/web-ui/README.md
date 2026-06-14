@@ -17,7 +17,7 @@ Built with [mini-lit](https://github.com/badlogic/mini-lit) web components and T
 ## Installation
 
 ```bash
-npm install @earendil-works/pi-web-ui @earendil-works/pi-agent-core @earendil-works/pi-ai
+bun install @earendil-works/pi-web-ui @earendil-works/pi-agent-core @earendil-works/pi-ai
 ```
 
 ## Quick Start
