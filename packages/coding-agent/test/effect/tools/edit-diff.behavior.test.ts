@@ -153,6 +153,22 @@ describe("applyEditsToNormalizedContent — fuzzy (whitespace-insensitive) repla
 		);
 		expect(result.newContent).toBe("note: REPLACED");
 	});
+
+	it("matches a decomposed combining sequence against its precomposed query under NFKC folding", () => {
+		// Source carries a DECOMPOSED "é" (e + U+0301) plus smart quotes (which
+		// force the fuzzy path); the search uses a PRECOMPOSED "é" and ASCII quotes.
+		// The span-mapped fuzzy index must compose the base+mark cluster the same
+		// way the whole-string normalizeForFuzzyMatch does — per-code-point NFKC
+		// left the sequence split and missed the match (regression guard).
+		const decomposed = `caf${String.fromCharCode(0x65)}${String.fromCharCode(0x0301)}`; // "café", NFD
+		const content = `const label = ${SMART_LDQUO}${decomposed}${SMART_RDQUO};`;
+		const result = applyEditsToNormalizedContent(
+			content,
+			[{ oldText: `const label = "caf${String.fromCharCode(0xe9)}";`, newText: "const label = REPLACED;" }],
+			"f.ts",
+		);
+		expect(result.newContent).toBe("const label = REPLACED;");
+	});
 });
 
 describe("applyEditsToNormalizedContent — ambiguity and no-match reasons", () => {

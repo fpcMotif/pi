@@ -59,9 +59,13 @@ export async function executeShellWithCapture(
 	const finalizeTempFile = (): Promise<void> => {
 		if (!tempFileStream) return Promise.resolve();
 		const stream = tempFileStream;
-		return new Promise<void>((resolveFinish, rejectFinish) => {
-			stream.on("error", rejectFinish);
-			stream.end(resolveFinish);
+		return new Promise<void>((resolveFinish) => {
+			// The temp file only backs the optional fullOutputPath, so a flush
+			// error must not fail an otherwise-successful (or aborted) capture.
+			// Resolve either way and let the caller treat fullOutputPath as
+			// best-effort.
+			stream.on("error", () => resolveFinish());
+			stream.end(() => resolveFinish());
 		});
 	};
 

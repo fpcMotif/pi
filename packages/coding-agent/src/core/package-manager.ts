@@ -1081,7 +1081,7 @@ export class DefaultPackageManager implements PackageManager {
 		}
 		const installRoot = this.getBunInstallRoot(scope, false);
 		this.ensureBunProject(installRoot);
-		await this.runBunCommand(["install", ...specs, "--prefix", installRoot]);
+		await this.runBunCommand(["install", ...specs, "--cwd", installRoot]);
 	}
 
 	async checkForAvailableUpdates(): Promise<PackageUpdate[]> {
@@ -1401,11 +1401,11 @@ export class DefaultPackageManager implements PackageManager {
 		const bunCommand = this.getBunCommand();
 		const stdout = await this.runCommandCapture(
 			bunCommand.command,
-			[...bunCommand.args, "view", packageName, "version", "--json"],
+			[...bunCommand.args, "pm", "view", packageName, "version", "--json"],
 			{ cwd: this.cwd, timeoutMs: NETWORK_TIMEOUT_MS },
 		);
 		const raw = stdout.trim();
-		if (!raw) throw new Error("Empty response from bun view");
+		if (!raw) throw new Error("Empty response from bun pm view");
 		return JSON.parse(raw);
 	}
 
@@ -1654,7 +1654,7 @@ export class DefaultPackageManager implements PackageManager {
 		}
 		const installRoot = this.getBunInstallRoot(scope, temporary);
 		this.ensureBunProject(installRoot);
-		await this.runBunCommand(["install", source.spec, "--prefix", installRoot]);
+		await this.runBunCommand(["install", source.spec, "--cwd", installRoot]);
 	}
 
 	private async uninstallBun(source: BunSource, scope: SourceScope): Promise<void> {
@@ -1666,7 +1666,7 @@ export class DefaultPackageManager implements PackageManager {
 		if (!existsSync(installRoot)) {
 			return;
 		}
-		await this.runBunCommand(["uninstall", source.name, "--prefix", installRoot]);
+		await this.runBunCommand(["uninstall", source.name, "--cwd", installRoot]);
 	}
 
 	private async installGit(source: GitSource, scope: SourceScope): Promise<void> {

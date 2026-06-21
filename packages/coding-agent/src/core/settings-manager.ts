@@ -389,6 +389,12 @@ export class SettingsManager {
 			delete retrySettings.maxDelayMs;
 		}
 
+		// Migrate legacy npmCommand -> bunCommand (the package manager moved to bun).
+		if ("npmCommand" in settings && !("bunCommand" in settings)) {
+			settings.bunCommand = settings.npmCommand;
+			delete settings.npmCommand;
+		}
+
 		return settings as Settings;
 	}
 

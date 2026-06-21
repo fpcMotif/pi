@@ -159,6 +159,9 @@ export function stripBom(content: string): { readonly bom: string; readonly text
 	return content.startsWith(BOM) ? { bom: BOM, text: content.slice(1) } : { bom: "", text: content };
 }
 
+/** Unicode combining marks (Mn/Mc/Me) — the trailing half of a decomposed sequence. */
+const COMBINING_MARK = /\p{M}/u;
+
 /**
  * Build the fuzzy-normalized form of `content` while recording, for each output
  * character, the `[start, end)` half-open span in the ORIGINAL string it came
@@ -178,12 +181,26 @@ function buildFuzzyIndexMap(content: string): { readonly normalized: string; rea
 		// NFKC-expand the line, tracking each output char's original index.
 		const expanded: Array<{ readonly ch: string; readonly start: number; readonly end: number }> = [];
 		let col = 0;
-		for (const cp of line) {
-			const folded = cp.normalize("NFKC");
-			for (const ch of folded) {
-				expanded.push({ ch, start: origOffset + col, end: origOffset + col + cp.length });
+		const cps = Array.from(line);
+		for (let cpIdx = 0; cpIdx < cps.length; cpIdx++) {
+			// Group a base code point with any trailing combining marks before
+			// NFKC, so a decomposed sequence ("e" + U+0301) composes the same way
+			// the whole-string normalizeForFuzzyMatch does. Per-code-point NFKC
+			// can't compose across the base/mark boundary and would leave the
+			// fuzzy form mismatched. Each folded char maps back to the whole
+			// cluster's span in original coordinates.
+			let cluster = cps[cpIdx];
+			let clusterLen = cluster.length;
+			while (cpIdx + 1 < cps.length && COMBINING_MARK.test(cps[cpIdx + 1])) {
+				cluster += cps[cpIdx + 1];
+				clusterLen += cps[cpIdx + 1].length;
+				cpIdx++;
 			}
-			col += cp.length;
+			const folded = cluster.normalize("NFKC");
+			for (const ch of folded) {
+				expanded.push({ ch, start: origOffset + col, end: origOffset + col + clusterLen });
+			}
+			col += clusterLen;
 		}
 
 		// Drop trailing-whitespace chars (the trimEnd in normalizeForFuzzyMatch).
