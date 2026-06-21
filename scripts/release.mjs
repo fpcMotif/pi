@@ -91,7 +91,7 @@ function bumpOrSetVersion(target) {
 
 	console.log(`Setting explicit version (${target})...`);
 	run(
-		`bun pm version ${target} --no-git-tag-version && node scripts/sync-versions.js && bunx shx rm -rf node_modules packages/*/node_modules bun.lock && bun install`,
+		`node scripts/bump-versions.mjs ${target} && node scripts/sync-versions.js && bunx shx rm -rf node_modules packages/*/node_modules bun.lock && bun install`,
 	);
 	return getVersion();
 }
