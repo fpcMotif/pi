@@ -66,6 +66,10 @@ export const layerFileSystemKeyValueStore = (directory: string): Layer.Layer<Key
 						if (!isErrnoCode(error, "ENOENT")) throw error;
 					}
 				}),
+			// NOTE: clear/size are NOT prefix-aware — they operate on the whole
+			// backing directory. KeyValueStore.prefix(...) only re-wraps the
+			// key-addressed ops, so under a prefixed view these still wipe/count
+			// every namespace in `directory`. Call them only on the un-prefixed root.
 			clear: tryFs("clear", undefined, async () => {
 				await rm(directory, { recursive: true, force: true });
 			}),

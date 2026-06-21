@@ -6,10 +6,10 @@
  * layer composition behind it carry the tested logic.
  */
 import { randomUUID } from "node:crypto";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import type { ImageContent } from "@earendil-works/pi-ai";
 import type { Args } from "../../cli/args.js";
-import { getAgentDir } from "../../config.js";
+import { getAgentDir, getSessionsDir } from "../../config.js";
 import { AuthStorage } from "../../core/auth-storage.js";
 import { ModelRegistry } from "../../core/model-registry.js";
 import { resolveCliModel } from "../../core/model-resolver.js";
@@ -99,7 +99,7 @@ export async function runEffectPrintModeFromCli(input: EffectPrintCliInput): Pro
 	// The parallel namespace sits BESIDE the resolved legacy session dir, so
 	// --session-dir / env / settings overrides (and any sandbox built on
 	// them) carry over to flagged runs (ADR-0020 decision 7).
-	const effectSessionsDir = resolve(sessionDir ?? join(getAgentDir(), "sessions"), "..", "effect-sessions");
+	const effectSessionsDir = resolve(sessionDir ?? getSessionsDir(), "..", "effect-sessions");
 	const appLayer = buildEffectPrintLayer({
 		model: model.id,
 		apiKey,

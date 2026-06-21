@@ -95,7 +95,7 @@ export const printProgram = (
 					options.mode === "json"
 						? emitEventLine(event).pipe(
 								Effect.orDie,
-								Effect.flatMap((encoded) => Effect.sync(() => writeRawStdout(`${JSON.stringify(encoded)}\n`))),
+								Effect.map((encoded) => writeRawStdout(`${JSON.stringify(encoded)}\n`)),
 							)
 						: Effect.void,
 				),
@@ -131,7 +131,8 @@ export async function runEffectPrintMode(
 ): Promise<number> {
 	console.error(
 		"[--effect] experimental Effect-lane print mode: extensions are not loaded, " +
-			"built-in tools are not yet wired, and --mode json emits the v2 AgentEvent schema (ADR-0020).",
+			"built-in tools are not yet wired, custom per-model/provider request headers are not forwarded, " +
+			"and --mode json emits the v2 AgentEvent schema (ADR-0020).",
 	);
 	const runtime = ManagedRuntime.make(appLayer);
 

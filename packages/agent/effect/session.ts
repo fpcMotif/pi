@@ -415,7 +415,7 @@ export const makeSession = (options: MakeOptions & SessionConfig): Effect.Effect
 						// reach it: the accepted turn was already persisted, and a
 						// partial-turn snapshot must not overwrite it (ADR-0018).
 						const persistFinal = Stream.fromEffect(
-							SubscriptionRef.get(state).pipe(Effect.flatMap((snapshot) => options.persist(snapshot))),
+							SubscriptionRef.get(state).pipe(Effect.flatMap(options.persist)),
 						).pipe(Stream.drain);
 
 						return Stream.concat(fullStream, persistFinal).pipe(
