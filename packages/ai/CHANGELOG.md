@@ -14,7 +14,7 @@
 ### Changed
 
 - **Carve out `@earendil-works/pi-models`** (ADR-0005, ADR-0006 phase 1). The model registry data (`models.generated.ts`, `image-models.generated.ts`) and synchronous utilities (`getModel`, `getProviders`, `getModels`, `calculateCost`, `getSupportedThinkingLevels`, `clampThinkingLevel`, `modelsAreEqual`, `getImageModel`, `getImageProviders`, `getImageModels`) now live in `@earendil-works/pi-models` — a new browser-safe package with zero Effect or provider runtime dependencies. The registry-side types (`Model`, `ImagesModel`, `Api`, `ImagesApi`, `KnownProvider`, `ImagesProvider`, `Usage`, `ThinkingLevel`, `ThinkingLevelMap`, `ThinkingBudgets`, the `*Compat` interfaces, `OpenRouterRouting`) move with them. `@earendil-works/pi-ai` re-exports the moved surface so existing consumers see no API break.
-- Generator script `scripts/generate-image-models.ts` stays in `packages/ai/scripts/` for now but writes to `packages/models/src/`. It is no longer part of `npm run build` — invoke `npm run generate-image-models` explicitly when refreshing the registry.
+- Generator script `scripts/generate-image-models.ts` stays in `packages/ai/scripts/` for now but writes to `packages/models/src/`. It is no longer part of `bun run build` — invoke `bun run generate-image-models` explicitly when refreshing the registry.
 
 ### Added
 

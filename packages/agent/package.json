@@ -5,13 +5,23 @@
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"default": "./dist/index.js"
+		},
+		"./effect": {
+			"types": "./dist/effect/index.d.ts",
+			"default": "./dist/effect/index.js"
+		}
+	},
 	"files": [
 		"dist",
 		"README.md"
 	],
 	"scripts": {
 		"clean": "shx rm -rf dist",
-		"build": "tsgo -p tsconfig.build.json",
+		"build": "tsgo -p tsconfig.build.json && tsgo -p tsconfig.effect-build.json",
 		"dev": "tsgo -p tsconfig.build.json --watch --preserveWatchOutput",
 		"test": "vitest --run",
 		"test:coverage": "vitest --run --coverage --no-file-parallelism --maxWorkers=1 --minWorkers=1",
@@ -22,7 +32,7 @@
 		"lint:effect": "oxlint test-support test/effect",
 		"fmt:effect": "oxfmt test-support test/effect CONTEXT.md",
 		"fmt:effect:check": "oxfmt --check test-support test/effect CONTEXT.md",
-		"prepublishOnly": "npm run clean && npm run build"
+		"prepublishOnly": "bun run clean && bun run build"
 	},
 	"dependencies": {
 		"@earendil-works/pi-ai": "^0.74.0",

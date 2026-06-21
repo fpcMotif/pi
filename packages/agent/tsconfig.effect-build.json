@@ -1,0 +1,9 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./dist/effect",
+		"rootDir": "./effect"
+	},
+	"include": ["effect/**/*.ts"],
+	"exclude": ["node_modules", "dist", "**/*.d.ts"]
+}

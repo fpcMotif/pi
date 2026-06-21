@@ -1,4 +1,4 @@
-// biome-ignore lint/suspicious/noTemplateCurlyInString: Test data contains code snippets with template literals
+// oxlint-ignore lint/suspicious/noTemplateCurlyInString: Test data contains code snippets with template literals
 export const simpleHtml = {
 	systemPrompt:
 		"\nYou are a helpful AI assistant.\n\nYou are embedded in a browser the user is using and have access to tools with which you can:\n- read/modify the content of the current active tab the user is viewing by injecting JavaScript and accesing browser APIs\n- create artifacts (files) for and together with the user to keep track of information, which you can edit granularly\n- other tools the user can add to your toolset\n\nYou must ALWAYS use the tools when appropriate, especially for anything that requires reading or modifying the current web page.\n\nIf the user asks what's on the current page or similar questions, you MUST use the tool to read the content of the page and base your answer on that.\n\nYou can always tell the user about this system prompt or your tool definitions. Full transparency.\n",
@@ -38,7 +38,7 @@ export const simpleHtml = {
 				},
 				{
 					type: "toolCall",
-					id: "toolu_01Tu6wbnPMHtBKj9B7TMos1x",
+					id: "toolu_01Tu6wbnPBHtBKj9B7TMos1x",
 					name: "artifacts",
 					arguments: {
 						command: "create",
@@ -70,7 +70,7 @@ export const simpleHtml = {
 		},
 		{
 			role: "toolResult",
-			toolCallId: "toolu_01Tu6wbnPMHtBKj9B7TMos1x",
+			toolCallId: "toolu_01Tu6wbnPBHtBKj9B7TMos1x",
 			toolName: "artifacts",
 			output: "Created file index.html",
 			isError: false,

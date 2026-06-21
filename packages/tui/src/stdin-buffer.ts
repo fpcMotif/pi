@@ -222,9 +222,14 @@ function extractCompleteSequences(buffer: string): { sequences: string[]; remain
 				return { sequences, remainder: remaining };
 			}
 		} else {
-			// Not an escape sequence - take a single character
-			sequences.push(remaining[0]!);
-			pos++;
+			// Not an escape sequence - take a single Unicode codepoint. Astral
+			// characters (emoji, U+1F389, etc.) occupy two UTF-16 code units; slicing
+			// per code unit would split the surrogate pair into two lone halves, so we
+			// advance by the full codepoint width instead.
+			const codepoint = remaining.codePointAt(0)!;
+			const char = String.fromCodePoint(codepoint);
+			sequences.push(char);
+			pos += char.length;
 		}
 	}
 

@@ -17,6 +17,7 @@ import { it } from "@effect/vitest";
 import { Cause, Effect, Layer, Ref } from "effect";
 import { describe, expect } from "vitest";
 
+import { FsError } from "../../../effect/tools/fs-effect.js";
 import { WriteError, WriteOperations, writeHandler } from "../../../effect/tools/write.js";
 
 const CWD = nodePath.resolve("/test-fs/work");
@@ -46,15 +47,11 @@ const stubWriteOperations = (stateRef: Ref.Ref<StubState>, options: StubOptions 
 		WriteOperations.of({
 			mkdirRecursive: (dir) =>
 				mkdirFailures.has(dir)
-					? Effect.fail(
-							Object.assign(new Error("synthetic mkdir failure"), { code: "EACCES" }) as NodeJS.ErrnoException,
-						)
+					? Effect.fail(new FsError({ message: "synthetic mkdir failure", code: "EACCES" }))
 					: Ref.update(stateRef, (s) => ({ ...s, mkdirs: [...s.mkdirs, dir] })),
 			writeTextFile: (p, content) =>
 				writeFailures.has(p)
-					? Effect.fail(
-							Object.assign(new Error("synthetic write failure"), { code: "EIO" }) as NodeJS.ErrnoException,
-						)
+					? Effect.fail(new FsError({ message: "synthetic write failure", code: "EIO" }))
 					: Ref.update(stateRef, (s) => ({ ...s, writes: [...s.writes, { path: p, content }] })),
 		}),
 	);

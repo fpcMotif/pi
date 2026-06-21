@@ -17,6 +17,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
 import { existsSync, readdirSync, statSync } from "node:fs";
 
+import { FsError, tryFs } from "./fs-effect.js";
 import { resolvePath } from "./path-resolution.js";
 
 const DEFAULT_LIMIT = 500;
@@ -30,8 +31,8 @@ export class LsOperations extends Context.Service<
 	LsOperations,
 	{
 		readonly exists: (absolutePath: string) => Effect.Effect<boolean>;
-		readonly isDirectory: (absolutePath: string) => Effect.Effect<boolean, NodeJS.ErrnoException>;
-		readonly readdir: (absolutePath: string) => Effect.Effect<ReadonlyArray<string>, NodeJS.ErrnoException>;
+		readonly isDirectory: (absolutePath: string) => Effect.Effect<boolean, FsError>;
+		readonly readdir: (absolutePath: string) => Effect.Effect<ReadonlyArray<string>, FsError>;
 	}
 >()("pi-coding-agent/LsOperations") {}
 
@@ -40,22 +41,14 @@ export const LsOperationsLive: Layer.Layer<LsOperations> = Layer.succeed(
 	LsOperations,
 	LsOperations.of({
 		exists: (p) => Effect.sync(() => existsSync(p)),
-		isDirectory: (p) =>
-			Effect.try({
-				try: () => statSync(p).isDirectory(),
-				catch: (e) => e as NodeJS.ErrnoException,
-			}),
-		readdir: (p) =>
-			Effect.try({
-				try: () => readdirSync(p),
-				catch: (e) => e as NodeJS.ErrnoException,
-			}),
+		isDirectory: (p) => tryFs(() => statSync(p).isDirectory()),
+		readdir: (p) => tryFs(() => readdirSync(p)),
 	}),
 );
 
 const LsParameters = Schema.Struct({
 	path: Schema.optional(Schema.String),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))),
 });
 
 const LsResult = Schema.Struct({
@@ -86,18 +79,14 @@ export const Ls = Tool.make("Ls", {
 	dependencies: [LsOperations],
 });
 
-/**
- * `Toolkit.make(Ls)` bound to the local-filesystem `LsOperations.Live` Layer.
- * Use this as `Effect.provide(LsToolkitLayer)` when wiring a Session.
- */
 export const LsToolkit = Toolkit.make(Ls);
 
 /**
  * Build the `Ls` handler bound to a specific `cwd`. The handler reads via
  * `LsOperations` from context, so test Layers can stub the filesystem.
  */
-export const lsHandler = (cwd: string) => (params: typeof LsParameters.Type) =>
-	Effect.gen(function* () {
+export const lsHandler = (cwd: string) =>
+	Effect.fn("ls")(function* (params: typeof LsParameters.Type) {
 		const ops = yield* LsOperations;
 		const limit = params.limit ?? DEFAULT_LIMIT;
 		const target = resolvePath(cwd, params.path);
@@ -113,7 +102,7 @@ export const lsHandler = (cwd: string) => (params: typeof LsParameters.Type) =>
 
 		const isDir = yield* ops.isDirectory(target).pipe(
 			Effect.mapError(
-				() => new LsError({ path: target, reason: "read-failed", description: `Failed to stat: ${target}` }),
+				(e) => new LsError({ path: target, reason: "read-failed", description: `Failed to stat ${target}: ${e.message}` }),
 			),
 		);
 		if (!isDir) {
@@ -126,8 +115,12 @@ export const lsHandler = (cwd: string) => (params: typeof LsParameters.Type) =>
 
 		const allEntries = yield* ops.readdir(target).pipe(
 			Effect.mapError(
-				() =>
-					new LsError({ path: target, reason: "read-failed", description: `Failed to read directory: ${target}` }),
+				(e) =>
+					new LsError({
+						path: target,
+						reason: "read-failed",
+						description: `Failed to read directory ${target}: ${e.message}`,
+					}),
 			),
 		);
 		const sorted = [...allEntries].sort();

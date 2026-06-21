@@ -148,6 +148,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 	} catch (error: unknown) {
 		console.error(error instanceof Error ? error.message : String(error));
 		return 1;
+		/* v8 ignore next -- the finally exception-path range is unreachable: the catch above swallows every error and returns. */
 	} finally {
 		for (const cleanup of signalCleanupHandlers) {
 			cleanup();

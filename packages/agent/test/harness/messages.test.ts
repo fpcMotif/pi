@@ -40,7 +40,7 @@ describe("harness messages", () => {
 	it("formats bash execution messages for context", () => {
 		const base: BashExecutionMessage = {
 			role: "bashExecution",
-			command: "npm run check",
+			command: "bun run check",
 			output: "failed",
 			exitCode: 1,
 			cancelled: false,
@@ -49,7 +49,7 @@ describe("harness messages", () => {
 			timestamp: 1,
 		};
 
-		expect(bashExecutionToText(base)).toContain("Ran `npm run check`");
+		expect(bashExecutionToText(base)).toContain("Ran `bun run check`");
 		expect(bashExecutionToText(base)).toContain("```");
 		expect(bashExecutionToText(base)).toContain("Command exited with code 1");
 		expect(bashExecutionToText(base)).toContain("[Output truncated. Full output: /tmp/full.log]");

@@ -22,11 +22,12 @@
  *   (4 tries) still resolves.
  */
 import { it } from "@effect/vitest";
-import { Effect, Stream, SubscriptionRef } from "effect";
+import { Effect, Fiber, Stream, SubscriptionRef } from "effect";
 import { AiError } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
 import { LlmError } from "../../effect/agent-error.js";
 import { Session } from "../../effect/session.js";
+import { advancePastRetryDelays } from "../../test-support/advance-past-retry-delays.js";
 import { stubLanguageModelStreamScripted } from "../../test-support/stub-language-model-stream-scripted.js";
 
 const rateLimit = AiError.make({
@@ -57,7 +58,9 @@ describe("Session.make({ maxLlmRetries }) — configurable transient-error retry
 	it.effect("maxLlmRetries: 1 caps the loop at 2 tries (initial + 1 retry)", () =>
 		Effect.gen(function* () {
 			const session = yield* Session.make({ maxLlmRetries: 1 });
-			const err = yield* Effect.flip(Stream.runDrain(session.send("hello")));
+			const fiber = yield* Effect.forkChild(Effect.flip(Stream.runDrain(session.send("hello"))));
+			yield* advancePastRetryDelays(1);
+			const err = yield* Fiber.join(fiber);
 
 			const llmError = expectLlmError(err);
 			expect((llmError.aiError as { readonly reason: { readonly _tag: string } }).reason._tag).toBe(
@@ -92,7 +95,9 @@ describe("Session.make({ maxLlmRetries }) — configurable transient-error retry
 	it.effect("Session.empty keeps the default cap of 3 — three failures then a success resolves", () =>
 		Effect.gen(function* () {
 			const session = yield* Session.empty;
-			const events = yield* Stream.runCollect(session.send("hello"));
+			const fiber = yield* Effect.forkChild(Stream.runCollect(session.send("hello")));
+			yield* advancePastRetryDelays(3);
+			const events = yield* Fiber.join(fiber);
 
 			// The success step's script emits two parts (text-delta + finish), each
 			// lifted to one LlmPart, then the trailing pi Finish event.

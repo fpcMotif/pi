@@ -19,14 +19,14 @@
  * with `GrepError(ripgrep-unavailable)` instead.
  */
 import { Context, Effect, Layer, Schema } from "effect";
-import { spawn } from "node:child_process";
 import { readFileSync, statSync } from "node:fs";
 import nodePath from "node:path";
-import { createInterface } from "node:readline";
 
 import { Tool, Toolkit } from "effect/unstable/ai";
 
+import { FsError, tryFs } from "./fs-effect.js";
 import { resolvePath } from "./path-resolution.js";
+import { spawnCollect } from "./spawn-collect.js";
 import { DEFAULT_MAX_BYTES, formatSize, GREP_MAX_LINE_LENGTH, truncateHead, truncateLine } from "./truncate.js";
 
 const DEFAULT_LIMIT = 100;
@@ -60,9 +60,10 @@ export interface GrepSearchOutcome {
 
 /**
  * Every way grep can fail, as a closed `reason` union:
- * - `path-not-found` — the search path could not be stat-ed.
+ * - `path-not-found` — the search path does not exist (stat failed with ENOENT).
  * - `ripgrep-unavailable` — no `rg` binary on `PATH`.
- * - `ripgrep-failed` — ripgrep spawned but exited abnormally.
+ * - `ripgrep-failed` — ripgrep spawned but exited abnormally, or the search
+ *   path could not be stat-ed for a non-ENOENT reason.
  */
 export class GrepError extends Schema.TaggedErrorClass<GrepError>()("GrepError", {
 	reason: Schema.Literals(["path-not-found", "ripgrep-unavailable", "ripgrep-failed"]),
@@ -77,8 +78,8 @@ export class GrepError extends Schema.TaggedErrorClass<GrepError>()("GrepError",
 export class GrepOperations extends Context.Service<
 	GrepOperations,
 	{
-		readonly isDirectory: (absolutePath: string) => Effect.Effect<boolean, NodeJS.ErrnoException>;
-		readonly readFile: (absolutePath: string) => Effect.Effect<string, NodeJS.ErrnoException>;
+		readonly isDirectory: (absolutePath: string) => Effect.Effect<boolean, FsError>;
+		readonly readFile: (absolutePath: string) => Effect.Effect<string, FsError>;
 		readonly search: (request: GrepSearchRequest) => Effect.Effect<GrepSearchOutcome, GrepError>;
 	}
 >()("pi-coding-agent/GrepOperations") {}
@@ -96,88 +97,68 @@ const decodeRgMatch = Schema.decodeUnknownOption(RgMatchEvent);
 
 /** Run the local `rg` binary and collect up to `request.limit` matches. */
 const runRipgrep = (request: GrepSearchRequest): Effect.Effect<GrepSearchOutcome, GrepError> =>
-	Effect.callback<GrepSearchOutcome, GrepError>((resume) => {
+	Effect.suspend(() => {
 		const args = ["--json", "--line-number", "--color=never", "--hidden"];
 		if (request.ignoreCase) args.push("--ignore-case");
 		if (request.literal) args.push("--fixed-strings");
 		if (request.glob !== undefined) args.push("--glob", request.glob);
 		args.push("--", request.pattern, request.searchPath);
 
-		const child = spawn("rg", args, { stdio: ["ignore", "pipe", "pipe"] });
-		const rl = createInterface({ input: child.stdout });
 		const matches: Array<RawGrepMatch> = [];
-		let stderr = "";
 		let limitReached = false;
-		let killedDueToLimit = false;
-
-		child.stderr?.on("data", (chunk: Buffer) => {
-			stderr += chunk.toString();
-		});
-
-		rl.on("line", (line) => {
-			if (line.trim() === "" || matches.length >= request.limit) return;
-			const decoded = decodeRgMatch(JSON.parse(line));
-			if (decoded._tag === "None") return;
-			const { data } = decoded.value;
-			matches.push({
-				filePath: data.path.text,
-				lineNumber: data.line_number,
-				lineText: data.lines?.text,
-			});
-			if (matches.length >= request.limit) {
-				limitReached = true;
-				killedDueToLimit = true;
-				if (!child.killed) child.kill();
-			}
-		});
-
-		child.on("error", (error: NodeJS.ErrnoException) => {
-			rl.close();
-			resume(
-				Effect.fail(
-					new GrepError({
-						reason: error.code === "ENOENT" ? "ripgrep-unavailable" : "ripgrep-failed",
-						description: `Failed to run ripgrep: ${error.message}`,
-					}),
-				),
-			);
-		});
-
-		child.on("close", (code) => {
-			rl.close();
-			if (!killedDueToLimit && code !== 0 && code !== 1) {
-				resume(
-					Effect.fail(
+		return spawnCollect({
+			command: "rg",
+			args,
+			mapSpawnError: (error, unavailable) =>
+				new GrepError({
+					reason: unavailable ? "ripgrep-unavailable" : "ripgrep-failed",
+					description: `Failed to run ripgrep: ${error.message}`,
+				}),
+			onLine: (line) => {
+				if (line.trim() === "" || matches.length >= request.limit) return;
+				// readline flushes a partial buffered line when the child is killed
+				// (limit / interruption); swallow it like any other undecodable line.
+				let parsed: unknown;
+				try {
+					parsed = JSON.parse(line);
+				} catch {
+					return;
+				}
+				const decoded = decodeRgMatch(parsed);
+				if (decoded._tag === "None") return;
+				const { data } = decoded.value;
+				matches.push({
+					filePath: data.path.text,
+					lineNumber: data.line_number,
+					lineText: data.lines?.text,
+				});
+				if (matches.length >= request.limit) {
+					limitReached = true;
+					return "kill";
+				}
+			},
+		}).pipe(
+			Effect.flatMap((outcome) => {
+				if (!outcome.killedByCaller && outcome.exitCode !== 0 && outcome.exitCode !== 1) {
+					return Effect.fail(
 						new GrepError({
 							reason: "ripgrep-failed",
-							description: stderr.trim() === "" ? `ripgrep exited with code ${code}` : stderr.trim(),
+							description:
+								outcome.stderr.trim() === "" ? `ripgrep exited with code ${outcome.exitCode}` : outcome.stderr.trim(),
 						}),
-					),
-				);
-				return;
-			}
-			resume(Effect.succeed({ matches, limitReached }));
-		});
-
-		return Effect.sync(() => {
-			if (!child.killed) child.kill();
-		});
+					);
+				}
+				return Effect.succeed({ matches, limitReached });
+			}),
+		);
 	});
 
 /** Default `GrepOperations` Layer: local Node filesystem + the `rg` binary on `PATH`. */
 export const GrepOperationsLive: Layer.Layer<GrepOperations> = Layer.succeed(
 	GrepOperations,
 	GrepOperations.of({
-		isDirectory: (p) =>
-			Effect.try({
-				try: () => statSync(p).isDirectory(),
-				catch: (e) => e as NodeJS.ErrnoException,
-			}),
-		readFile: (p) =>
-			Effect.try({
-				try: () => readFileSync(p, "utf-8"),
-				catch: (e) => e as NodeJS.ErrnoException,
-			}),
+		isDirectory: (p) => tryFs(() => statSync(p).isDirectory()),
+		readFile: (p) => tryFs(() => readFileSync(p, "utf-8")),
 		search: runRipgrep,
 	}),
 );
@@ -188,8 +169,8 @@ const GrepParameters = Schema.Struct({
 	glob: Schema.optional(Schema.String),
 	ignoreCase: Schema.optional(Schema.Boolean),
 	literal: Schema.optional(Schema.Boolean),
-	context: Schema.optional(Schema.Number),
-	limit: Schema.optional(Schema.Number),
+	context: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))),
+	limit: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))),
 });
 
 const GrepResult = Schema.Struct({
@@ -249,12 +230,16 @@ export const grepHandler = (cwd: string) =>
 			.isDirectory(searchPath)
 			.pipe(
 				Effect.mapError(
-					() => new GrepError({ reason: "path-not-found", description: `Path not found: ${searchPath}` }),
+					(e) =>
+						new GrepError({
+							reason: e.code === "ENOENT" ? "path-not-found" : "ripgrep-failed",
+							description: e.message,
+						}),
 				),
 			);
 
-		const contextValue = params.context !== undefined && params.context > 0 ? params.context : 0;
-		const effectiveLimit = Math.max(1, params.limit ?? DEFAULT_LIMIT);
+		const contextValue = params.context ?? 0;
+		const effectiveLimit = params.limit ?? DEFAULT_LIMIT;
 
 		const { matches, limitReached } = yield* ops.search({
 			pattern: params.pattern,
@@ -295,6 +280,7 @@ export const grepHandler = (cwd: string) =>
 					}),
 				),
 			),
+			{ concurrency: 16 },
 		);
 
 		let linesTruncated = false;

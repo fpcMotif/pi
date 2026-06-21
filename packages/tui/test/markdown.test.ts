@@ -341,8 +341,8 @@ describe("Markdown component", () => {
 			const markdown = new Markdown(
 				`| Command | Description | Example |
 | --- | --- | --- |
-| npm install | Install all dependencies | npm install |
-| npm run build | Build the project | npm run build |`,
+| bun install | Install all dependencies | bun install |
+| bun run build | Build the project | bun run build |`,
 				0,
 				0,
 				defaultMarkdownTheme,
@@ -361,7 +361,7 @@ describe("Markdown component", () => {
 			const allText = plainLines.join(" ");
 			assert.ok(allText.includes("Command"), "Should contain 'Command'");
 			assert.ok(allText.includes("Description"), "Should contain 'Description'");
-			assert.ok(allText.includes("npm install"), "Should contain 'npm install'");
+			assert.ok(allText.includes("bun install"), "Should contain 'bun install'");
 			assert.ok(allText.includes("Install"), "Should contain 'Install'");
 		});
 

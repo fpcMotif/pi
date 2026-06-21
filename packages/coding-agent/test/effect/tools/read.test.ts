@@ -17,6 +17,7 @@ import { it } from "@effect/vitest";
 import { Cause, Effect, Layer } from "effect";
 import { describe, expect } from "vitest";
 
+import { FsError } from "../../../effect/tools/fs-effect.js";
 import { ReadError, ReadOperations, readHandler } from "../../../effect/tools/read.js";
 
 const CWD = nodePath.resolve("/test-fs/work");
@@ -42,7 +43,7 @@ const stubReadOperations = (fs: StubFs): Layer.Layer<ReadOperations> => {
 			isFile: (p) => Effect.sync(() => p in files || readFailures.has(p)),
 			readTextFile: (p) =>
 				readFailures.has(p)
-					? Effect.fail(Object.assign(new Error("synthetic"), { code: "EIO" }) as NodeJS.ErrnoException)
+					? Effect.fail(new FsError({ message: "synthetic", code: "EIO" }))
 					: Effect.sync(() => files[p] ?? ""),
 		}),
 	);

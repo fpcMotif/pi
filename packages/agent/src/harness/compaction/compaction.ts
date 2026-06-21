@@ -146,7 +146,7 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
  * Uses the native totalTokens field when available, falls back to computing from components.
  */
 export function calculateContextTokens(usage: Usage): number {
-	return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+	return usage.totalTokens ?? usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
 }
 
 /**
@@ -428,13 +428,29 @@ export function findCutPoint(
 
 		// Check if we've exceeded the budget
 		if (accumulatedTokens >= keepRecentTokens) {
-			// Find the closest valid cut point at or after this entry
+			// Prefer the closest valid cut point AT OR AFTER this entry.
+			let chosen = -1;
 			for (let c = 0; c < cutPoints.length; c++) {
 				if (cutPoints[c] >= i) {
-					cutIndex = cutPoints[c];
+					chosen = cutPoints[c];
 					break;
 				}
 			}
+			// If none exists at or after i (e.g. the budget tripped on a tool result
+			// that has no valid cut point following it), fall back to the LATEST valid
+			// cut point at or before i. This preserves as much recent context as the cut
+			// points allow, rather than collapsing all the way back to cutPoints[0].
+			if (chosen === -1) {
+				for (let c = cutPoints.length - 1; c >= 0; c--) {
+					if (cutPoints[c] <= i) {
+						chosen = cutPoints[c];
+						break;
+					}
+				}
+			}
+			// chosen is guaranteed >= 0 here: cutPoints is non-empty and cutPoints[0] >=
+			// startIndex <= i, so the backward scan always finds at least cutPoints[0].
+			cutIndex = chosen;
 			break;
 		}
 	}

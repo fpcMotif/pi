@@ -191,7 +191,7 @@ Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
 
 | Option | Description |
 |--------|-------------|
-| `-e`, `--extension <source>` | Load an extension from path, npm, or git; repeatable |
+| `-e`, `--extension <source>` | Load an extension from path, bun, or git; repeatable |
 | `--no-extensions` | Disable extension discovery |
 | `--skill <path>` | Load a skill; repeatable |
 | `--no-skills` | Disable skill discovery |

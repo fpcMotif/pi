@@ -7,13 +7,14 @@
 // Layer code path (per ADR-0017's e2e definition).
 
 import { it } from "@effect/vitest";
-import { Effect, Stream, SubscriptionRef, Tracer } from "effect";
+import { Effect, Fiber, Stream, SubscriptionRef, Tracer } from "effect";
 import { AiError } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
 
 import type { Finish, LlmPart, ToolCompleted, ToolDispatched } from "../../../effect/agent-event.js";
 import { Continue, NewPrompt, Retry } from "../../../effect/agent-input.js";
 import { Session } from "../../../effect/session.js";
+import { advancePastRetryDelays } from "../../../test-support/advance-past-retry-delays.js";
 import { recordingTracer } from "../../../test-support/recording-tracer.js";
 import { stubLanguageModelStream } from "../../../test-support/stub-language-model-stream.js";
 import { stubLanguageModelStreamScripted } from "../../../test-support/stub-language-model-stream-scripted.js";
@@ -114,7 +115,9 @@ describe("realistic e2e: retry sequence preserves once-per-send invariants", () 
 		() =>
 			Effect.gen(function* () {
 				const session = yield* Session.empty;
-				const events = yield* Stream.runCollect(session.send("List files in src/"));
+				const fiber = yield* Effect.forkChild(Stream.runCollect(session.send("List files in src/")));
+				yield* advancePastRetryDelays(2);
+				const events = yield* Fiber.join(fiber);
 
 				// Consumer only sees events from the successful attempt (textStart, text-delta, textEnd, finish — 4 raw + trailing Finish).
 				expect(events.map((e) => e._tag)).toEqual(["LlmPart", "LlmPart", "LlmPart", "LlmPart", "Finish"]);
@@ -151,7 +154,9 @@ describe("realistic e2e: retry sequence preserves once-per-send invariants", () 
 	it.effect("4 transient errors (initial + 3 retries) exhaust the cap and propagate", () =>
 		Effect.gen(function* () {
 			const session = yield* Session.empty;
-			const result = yield* Stream.runCollect(session.send("x")).pipe(Effect.exit);
+			const fiber = yield* Effect.forkChild(Stream.runCollect(session.send("x")).pipe(Effect.exit));
+			yield* advancePastRetryDelays(3);
+			const result = yield* Fiber.join(fiber);
 			expect(result._tag).toBe("Failure");
 
 			const state = yield* SubscriptionRef.get(session.state);
@@ -303,7 +308,11 @@ describe("realistic e2e: telemetry captures every retry attempt", () => {
 		Effect.gen(function* () {
 			const { tracer, spans } = recordingTracer();
 			const session = yield* Session.empty;
-			yield* Stream.runDrain(session.send("x")).pipe(Effect.provideService(Tracer.Tracer, tracer));
+			const fiber = yield* Effect.forkChild(
+				Stream.runDrain(session.send("x")).pipe(Effect.provideService(Tracer.Tracer, tracer)),
+			);
+			yield* advancePastRetryDelays(3);
+			yield* Fiber.join(fiber);
 
 			const names = spans.map((s) => s.name);
 			const sendSpans = names.filter((n) => n === "pi.Session.send");
@@ -832,7 +841,9 @@ describe("realistic e2e: retry counters are per-send, not global", () => {
 			const sessionA = yield* Session.empty;
 			const sessionB = yield* Session.empty;
 
-			yield* Stream.runDrain(sessionA.send("A"));
+			const fiberA = yield* Effect.forkChild(Stream.runDrain(sessionA.send("A")));
+			yield* advancePastRetryDelays(2);
+			yield* Fiber.join(fiberA);
 			yield* Stream.runDrain(sessionB.send("B"));
 
 			const stateA = yield* SubscriptionRef.get(sessionA.state);
@@ -867,7 +878,11 @@ describe("realistic e2e: full lifecycle composes every landed slice", () => {
 			Effect.gen(function* () {
 				const session = yield* Session.empty;
 				yield* Stream.runDrain(session.send(new NewPrompt({ prompt: "investigate" })));
-				yield* Stream.runDrain(session.send(new NewPrompt({ prompt: "again" })));
+				// Turn 2 hits one transient rate-limit — drive the TestClock past
+				// its backoff delay.
+				const fiber = yield* Effect.forkChild(Stream.runDrain(session.send(new NewPrompt({ prompt: "again" }))));
+				yield* advancePastRetryDelays(1);
+				yield* Fiber.join(fiber);
 				yield* Stream.runDrain(session.send(new Continue({})));
 				yield* Stream.runDrain(session.send(new Retry({})));
 

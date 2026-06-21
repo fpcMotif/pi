@@ -1135,7 +1135,7 @@ export interface ResolvedCommand extends RegisteredCommand {
 // ============================================================================
 
 /** Handler function type for events */
-// biome-ignore lint/suspicious/noConfusingVoidType: void allows bare return statements
+// oxlint-ignore lint/suspicious/noConfusingVoidType: void allows bare return statements
 export type ExtensionHandler<E, R = undefined> = (event: E, ctx: ExtensionContext) => Promise<R | void> | R | void;
 
 /**

@@ -5,7 +5,7 @@
 </p>
 <p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
-  <a href="https://www.npmjs.com/package/@earendil-works/pi-coding-agent"><img alt="npm" src="https://img.shields.io/npm/v/@earendil-works/pi-coding-agent?style=flat-square" /></a>
+  <a href="https://www.bunjs.com/package/@earendil-works/pi-coding-agent"><img alt="bun" src="https://img.shields.io/bun/v/@earendil-works/pi-coding-agent?style=flat-square" /></a>
 </p>
 <p align="center">
   <a href="https://pi.dev">pi.dev</a> domain graciously donated by
@@ -17,7 +17,7 @@
 
 ---
 
-Pi is a minimal terminal coding harness. Adapt pi to your workflows, not the other way around, without having to fork and modify pi internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Pi Packages](#pi-packages) and share them with others via npm or git.
+Pi is a minimal terminal coding harness. Adapt pi to your workflows, not the other way around, without having to fork and modify pi internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Pi Packages](#pi-packages) and share them with others via bun or git.
 
 Pi ships with powerful defaults but skips features like sub agents and plan mode. Instead, you can ask pi to build what you want or install a third party pi package that matches your workflow.
 
@@ -71,10 +71,10 @@ I regularly publish my own `pi-mono` work sessions here:
 curl -fsSL https://pi.dev/install.sh | sh
 ```
 
-Or with npm:
+Or with bun:
 
 ```bash
-npm install -g @earendil-works/pi-coding-agent
+bun install -g @earendil-works/pi-coding-agent
 ```
 
 Authenticate with an API key:
@@ -380,13 +380,13 @@ Place in `~/.pi/agent/themes/`, `.pi/themes/`, or a [pi package](#pi-packages) t
 
 ### Pi Packages
 
-Bundle and share extensions, skills, prompts, and themes via npm or git. Find packages on [npmjs.com](https://www.npmjs.com/search?q=keywords%3Api-package) or [Discord](https://discord.com/channels/1456806362351669492/1457744485428629628).
+Bundle and share extensions, skills, prompts, and themes via bun or git. Find packages on [bunjs.com](https://www.bunjs.com/search?q=keywords%3Api-package) or [Discord](https://discord.com/channels/1456806362351669492/1457744485428629628).
 
 > **Security:** Pi packages run with full system access. Extensions execute arbitrary code, and skills can instruct the model to perform any action including running executables. Review source code before installing third-party packages.
 
 ```bash
-pi install npm:@foo/pi-tools
-pi install npm:@foo/pi-tools@1.2.3      # pinned version
+pi install bun:@foo/pi-tools
+pi install bun:@foo/pi-tools@1.2.3      # pinned version
 pi install git:github.com/user/repo
 pi install git:github.com/user/repo@v1  # tag or commit
 pi install git:git@github.com:user/repo
@@ -395,18 +395,18 @@ pi install https://github.com/user/repo
 pi install https://github.com/user/repo@v1      # tag or commit
 pi install ssh://git@github.com/user/repo
 pi install ssh://git@github.com/user/repo@v1    # tag or commit
-pi remove npm:@foo/pi-tools
-pi uninstall npm:@foo/pi-tools          # alias for remove
+pi remove bun:@foo/pi-tools
+pi uninstall bun:@foo/pi-tools          # alias for remove
 pi list
 pi update                               # update pi and packages (skips pinned packages)
 pi update --extensions                  # update packages only
 pi update --self                        # update pi only
 pi update --self --force                # reinstall pi even if current
-pi update npm:@foo/pi-tools             # update one package
+pi update bun:@foo/pi-tools             # update one package
 pi config                               # enable/disable extensions, skills, prompts, themes
 ```
 
-Packages install to `~/.pi/agent/git/` (git) or global npm. Use `-l` for project-local installs (`.pi/git/`, `.pi/npm/`). Git packages install dependencies with `npm install --omit=dev` by default, so runtime deps must be listed under `dependencies`; when `npmCommand` is configured, git packages use plain `install` for compatibility with wrappers. If you use a Node version manager and want package installs to reuse a stable npm context, set `npmCommand` in `settings.json`, for example `["mise", "exec", "node@20", "--", "npm"]`.
+Packages install to `~/.pi/agent/git/` (git) or global bun. Use `-l` for project-local installs (`.pi/git/`, `.pi/bun/`). Git packages install dependencies with `bun install --omit=dev` by default, so runtime deps must be listed under `dependencies`; when `bunCommand` is configured, git packages use plain `install` for compatibility with wrappers. If you use a Node version manager and want package installs to reuse a stable bun context, set `bunCommand` in `settings.json`, for example `["mise", "exec", "node@20", "--", "bun"]`.
 
 Create a package by adding a `pi` key to `package.json`:
 
@@ -558,7 +558,7 @@ Available built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`
 
 | Option | Description |
 |--------|-------------|
-| `-e`, `--extension <source>` | Load extension from path, npm, or git (repeatable) |
+| `-e`, `--extension <source>` | Load extension from path, bun, or git (repeatable) |
 | `--no-extensions` | Disable extension discovery |
 | `--skill <path>` | Load skill (repeatable) |
 | `--no-skills` | Disable skill discovery |
@@ -648,6 +648,6 @@ MIT
 
 ## See Also
 
-- [@earendil-works/pi-ai](https://www.npmjs.com/package/@earendil-works/pi-ai): Core LLM toolkit
-- [@earendil-works/pi-agent-core](https://www.npmjs.com/package/@earendil-works/pi-agent-core): Agent framework
-- [@earendil-works/pi-tui](https://www.npmjs.com/package/@earendil-works/pi-tui): Terminal UI components
+- [@earendil-works/pi-ai](https://www.bunjs.com/package/@earendil-works/pi-ai): Core LLM toolkit
+- [@earendil-works/pi-agent-core](https://www.bunjs.com/package/@earendil-works/pi-agent-core): Agent framework
+- [@earendil-works/pi-tui](https://www.bunjs.com/package/@earendil-works/pi-tui): Terminal UI components

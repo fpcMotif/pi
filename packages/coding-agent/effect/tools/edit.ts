@@ -30,6 +30,7 @@ import {
 	restoreLineEndings,
 	stripBom,
 } from "./edit-diff.js";
+import { FsError, tryFs } from "./fs-effect.js";
 import { resolvePath } from "./path-resolution.js";
 
 /**
@@ -44,8 +45,8 @@ export class EditOperations extends Context.Service<
 	EditOperations,
 	{
 		readonly exists: (absolutePath: string) => Effect.Effect<boolean>;
-		readonly readTextFile: (absolutePath: string) => Effect.Effect<string, NodeJS.ErrnoException>;
-		readonly writeTextFile: (absolutePath: string, content: string) => Effect.Effect<void, NodeJS.ErrnoException>;
+		readonly readTextFile: (absolutePath: string) => Effect.Effect<string, FsError>;
+		readonly writeTextFile: (absolutePath: string, content: string) => Effect.Effect<void, FsError>;
 	}
 >()("pi-coding-agent/EditOperations") {}
 
@@ -54,16 +55,8 @@ export const EditOperationsLive: Layer.Layer<EditOperations> = Layer.succeed(
 	EditOperations,
 	EditOperations.of({
 		exists: (p) => Effect.sync(() => existsSync(p)),
-		readTextFile: (p) =>
-			Effect.try({
-				try: () => readFileSync(p, "utf-8"),
-				catch: (e) => e as NodeJS.ErrnoException,
-			}),
-		writeTextFile: (p, content) =>
-			Effect.try({
-				try: () => writeFileSync(p, content, "utf-8"),
-				catch: (e) => e as NodeJS.ErrnoException,
-			}),
+		readTextFile: (p) => tryFs(() => readFileSync(p, "utf-8")),
+		writeTextFile: (p, content) => tryFs(() => writeFileSync(p, content, "utf-8")),
 	}),
 );
 
@@ -74,7 +67,7 @@ const EditReplacement = Schema.Struct({
 
 const EditParameters = Schema.Struct({
 	path: Schema.String,
-	edits: Schema.Array(EditReplacement),
+	edits: Schema.NonEmptyArray(EditReplacement),
 });
 
 const EditResult = Schema.Struct({
@@ -90,7 +83,6 @@ const EditResult = Schema.Struct({
 
 /**
  * Every way an edit can fail, as a closed `reason` union:
- * - `invalid-input` — the `edits` array was empty.
  * - `not-found` — the target path does not exist.
  * - `read-failed` / `write-failed` — the underlying IO rejected.
  * - `empty-old-text` / `no-match` / `ambiguous-match` / `overlapping-edits` /
@@ -102,7 +94,6 @@ const EditResult = Schema.Struct({
 export class EditError extends Schema.TaggedErrorClass<EditError>()("EditError", {
 	path: Schema.String,
 	reason: Schema.Literals([
-		"invalid-input",
 		"not-found",
 		"read-failed",
 		"write-failed",
@@ -137,14 +128,6 @@ export const EditToolkit = Toolkit.make(Edit);
 export const editHandler = (cwd: string) =>
 	Effect.fn("edit")(function* (params: typeof EditParameters.Type) {
 		const target = resolvePath(cwd, params.path);
-
-		if (params.edits.length === 0) {
-			return yield* new EditError({
-				path: target,
-				reason: "invalid-input",
-				description: "Edit tool input is invalid: edits must contain at least one replacement.",
-			});
-		}
 
 		const ops = yield* EditOperations;
 

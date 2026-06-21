@@ -10,10 +10,10 @@ On linux or mac you can install Pi with curl:
 curl -fsSL https://pi.dev/install.sh | sh
 ```
 
-Or alternatively with npm:
+Or alternatively with bun:
 
 ```bash
-npm install -g @earendil-works/pi-coding-agent
+bun install -g @earendil-works/pi-coding-agent
 ```
 
 Then run it in a project directory:

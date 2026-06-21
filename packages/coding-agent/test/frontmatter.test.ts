@@ -45,6 +45,19 @@ describe("parseFrontmatter", () => {
 		const { frontmatter } = parseFrontmatter(input);
 		expect(frontmatter).toEqual({});
 	});
+
+	it("tolerates a leading UTF-8 BOM before the opening fence", () => {
+		const input = "﻿---\nname: bom\n---\nBody";
+		const { frontmatter, body } = parseFrontmatter<Record<string, string>>(input);
+		expect(frontmatter.name).toBe("bom");
+		expect(body).toBe("Body");
+	});
+
+	it("guards non-record YAML (a bare scalar) down to an empty object instead of casting", () => {
+		const input = "---\njust a scalar\n---\nBody";
+		const { frontmatter } = parseFrontmatter(input);
+		expect(frontmatter).toEqual({});
+	});
 });
 
 describe("stripFrontmatter", () => {

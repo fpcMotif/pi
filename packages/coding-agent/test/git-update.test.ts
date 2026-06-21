@@ -133,7 +133,7 @@ describe("DefaultPackageManager git update", () => {
 			};
 			managerWithInternals.runCommand = async (command, args, options) => {
 				executedCommands.push(`${command} ${args.join(" ")}`);
-				if (command === "npm") {
+				if (command === "bun") {
 					return;
 				}
 				const result = spawnSync(command, args, {
@@ -154,7 +154,7 @@ describe("DefaultPackageManager git update", () => {
 			expect(executedCommands).not.toContain("git reset --hard @{upstream}");
 			expect(executedCommands).not.toContain("git reset --hard origin/HEAD");
 			expect(executedCommands).not.toContain("git clean -fdx");
-			expect(executedCommands).not.toContain("npm install");
+			expect(executedCommands).not.toContain("bun install");
 		});
 
 		it("should update to latest commit when remote has new commits", async () => {

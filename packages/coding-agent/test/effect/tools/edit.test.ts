@@ -13,16 +13,18 @@
  * - CRLF line endings and a leading BOM round-trip through the edit.
  * - Failures propagate through the typed error channel as `EditError`:
  *   `not-found` (file missing), `read-failed` / `write-failed` (IO rejects),
- *   `no-match` (oldText absent), `ambiguous-match` (oldText not unique),
- *   `invalid-input` (empty edits array).
+ *   `no-match` (oldText absent), `ambiguous-match` (oldText not unique).
+ * - An empty edits array is rejected at parameter decode time by the
+ *   `Schema.NonEmptyArray` constraint, never reaching the handler.
  */
 
 import nodePath from "node:path";
 import { it } from "@effect/vitest";
-import { Cause, Effect, Layer, Ref } from "effect";
+import { Cause, Effect, Layer, Ref, Schema } from "effect";
 import { describe, expect } from "vitest";
 
-import { EditError, EditOperations, editHandler } from "../../../effect/tools/edit.js";
+import { Edit, EditError, EditOperations, editHandler } from "../../../effect/tools/edit.js";
+import { FsError } from "../../../effect/tools/fs-effect.js";
 
 const CWD = nodePath.resolve("/test-fs/work");
 const FILE = nodePath.join(CWD, "sample.ts");
@@ -43,11 +45,7 @@ interface StubOptions {
 	readonly writeFailures?: ReadonlyArray<string>;
 }
 
-const errnoLike = (msg: string): NodeJS.ErrnoException => {
-	const e = new Error(msg) as NodeJS.ErrnoException;
-	e.code = "EACCES";
-	return e;
-};
+const errnoLike = (msg: string): FsError => new FsError({ message: msg, code: "EACCES" });
 
 const stubEditOperations = (stateRef: Ref.Ref<StubState>, options: StubOptions = {}): Layer.Layer<EditOperations> => {
 	const readFailures = new Set(options.readFailures ?? []);
@@ -225,16 +223,9 @@ describe("Edit -- Effect-shaped tool", () => {
 		}),
 	);
 
-	it.effect("fails with EditError(invalid-input) when the edits array is empty", () =>
-		Effect.gen(function* () {
-			const state = yield* fresh({ [FILE]: "content" });
-			const exit = yield* Effect.exit(
-				editHandler(CWD)({ path: FILE, edits: [] }).pipe(Effect.provide(stubEditOperations(state))),
-			);
-			const failure = exit._tag === "Failure" ? Cause.findErrorOption(exit.cause) : undefined;
-			const error = failure?._tag === "Some" ? failure.value : undefined;
-			expect(error).toBeInstanceOf(EditError);
-			expect((error as EditError).reason).toBe("invalid-input");
-		}),
-	);
+	it("rejects an empty edits array at parameter decode time", () => {
+		const decode = Schema.decodeUnknownOption(Edit.parametersSchema);
+		expect(decode({ path: FILE, edits: [] })._tag).toBe("None");
+		expect(decode({ path: FILE, edits: [{ oldText: "a", newText: "b" }] })._tag).toBe("Some");
+	});
 });

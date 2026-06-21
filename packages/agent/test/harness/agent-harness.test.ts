@@ -150,7 +150,7 @@ describe("AgentHarness", () => {
 		};
 		const promptTemplate: PromptTemplate = {
 			name: "commit",
-			// biome-ignore lint/suspicious/noTemplateCurlyInString: $1, ${@:2:1}, $ARGUMENTS are prompt-template placeholders, not JS expressions
+			// oxlint-ignore lint/suspicious/noTemplateCurlyInString: $1, ${@:2:1}, $ARGUMENTS are prompt-template placeholders, not JS expressions
 			content: "Commit $1 and ${@:2:1} with $ARGUMENTS",
 		};
 		const harness = createHarness({

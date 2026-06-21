@@ -17,10 +17,11 @@
  *   `span.status.exit._tag`.
  */
 import { it } from "@effect/vitest";
-import { Effect, Stream, Tracer } from "effect";
+import { Effect, Fiber, Stream, Tracer } from "effect";
 import { AiError } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
 import { Session } from "../../effect/session.js";
+import { advancePastRetryDelays } from "../../test-support/advance-past-retry-delays.js";
 import { recordingTracer } from "../../test-support/recording-tracer.js";
 import { stubLanguageModelStreamScripted } from "../../test-support/stub-language-model-stream-scripted.js";
 
@@ -75,7 +76,11 @@ describe("Session.send emits Effect.withSpan telemetry on send + per attempt", (
 			const session = yield* Session.empty;
 			const { tracer, spans } = recordingTracer();
 
-			yield* Stream.runDrain(session.send("hello")).pipe(Effect.provideService(Tracer.Tracer, tracer));
+			const fiber = yield* Effect.forkChild(
+				Stream.runDrain(session.send("hello")).pipe(Effect.provideService(Tracer.Tracer, tracer)),
+			);
+			yield* advancePastRetryDelays(2);
+			yield* Fiber.join(fiber);
 
 			const attemptSpans = spans.filter((s) => s.name === "pi.Session.send.attempt");
 			expect(attemptSpans).toHaveLength(3);

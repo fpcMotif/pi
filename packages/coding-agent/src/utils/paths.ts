@@ -16,7 +16,7 @@ export function canonicalizePath(path: string): string {
 }
 
 /**
- * Returns true if the value is NOT a package source (npm:, git:, etc.)
+ * Returns true if the value is NOT a package source (bun:, git:, etc.)
  * or a URL protocol. Bare names and relative paths without ./ prefix
  * are considered local.
  */
@@ -24,7 +24,7 @@ export function isLocalPath(value: string): boolean {
 	const trimmed = value.trim();
 	// Known non-local prefixes
 	if (
-		trimmed.startsWith("npm:") ||
+		trimmed.startsWith("bun:") ||
 		trimmed.startsWith("git:") ||
 		trimmed.startsWith("github:") ||
 		trimmed.startsWith("http:") ||

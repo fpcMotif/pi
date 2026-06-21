@@ -164,7 +164,8 @@ describe("harness compaction", () => {
 
 	it("calculates total context tokens from usage", () => {
 		expect(calculateContextTokens(createMockUsage(1000, 500, 200, 100))).toBe(1800);
-		expect(calculateContextTokens({ ...createMockUsage(10, 5, 2, 1), totalTokens: 0 })).toBe(18);
+		// A legitimately reported totalTokens of 0 is honored, not replaced by the component sum.
+		expect(calculateContextTokens({ ...createMockUsage(10, 5, 2, 1), totalTokens: 0 })).toBe(0);
 	});
 
 	it("checks compaction threshold", () => {

@@ -17,7 +17,7 @@ pkg update && pkg upgrade
 pkg install nodejs termux-api git
 
 # Install pi
-npm install -g @earendil-works/pi-coding-agent
+bun install -g @earendil-works/pi-coding-agent
 
 # Create config directory
 mkdir -p ~/.pi/agent
@@ -121,7 +121,7 @@ termux-setup-storage
 
 ### Node.js installation issues
 
-If npm fails, try clearing the cache:
+If bun fails, try clearing the cache:
 ```bash
-npm cache clean --force
+bun cache clean --force
 ```

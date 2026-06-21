@@ -132,9 +132,9 @@ describe("SettingsManager", () => {
 				settingsPath,
 				JSON.stringify({
 					packages: [
-						"npm:simple-pkg",
+						"bun:simple-pkg",
 						{
-							source: "npm:shitty-extensions",
+							source: "bun:shitty-extensions",
 							extensions: ["extensions/oracle.ts"],
 							skills: [],
 						},
@@ -146,9 +146,9 @@ describe("SettingsManager", () => {
 
 			const packages = manager.getPackages();
 			expect(packages).toHaveLength(2);
-			expect(packages[0]).toBe("npm:simple-pkg");
+			expect(packages[0]).toBe("bun:simple-pkg");
 			expect(packages[1]).toEqual({
-				source: "npm:shitty-extensions",
+				source: "bun:shitty-extensions",
 				extensions: ["extensions/oracle.ts"],
 				skills: [],
 			});
@@ -246,7 +246,7 @@ describe("SettingsManager", () => {
 			expect(existsSync(join(projectDir, ".pi"))).toBe(false);
 
 			// Write a project-specific setting
-			manager.setProjectPackages([{ source: "npm:test-pkg" }]);
+			manager.setProjectPackages([{ source: "bun:test-pkg" }]);
 			await manager.flush();
 
 			// Now .pi folder should exist

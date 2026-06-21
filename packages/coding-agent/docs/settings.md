@@ -145,17 +145,17 @@ When a provider requests a retry delay longer than `retry.provider.maxRetryDelay
 |---------|------|---------|-------------|
 | `shellPath` | string | - | Custom shell path (e.g., for Cygwin on Windows) |
 | `shellCommandPrefix` | string | - | Prefix for every bash command (e.g., `"shopt -s expand_aliases"`) |
-| `npmCommand` | string[] | - | Command argv used for npm package lookup/install operations (e.g., `["mise", "exec", "node@20", "--", "npm"]`) |
+| `bunCommand` | string[] | - | Command argv used for bun package lookup/install operations (e.g., `["mise", "exec", "node@20", "--", "bun"]`) |
 
 ```json
 {
-  "npmCommand": ["mise", "exec", "node@20", "--", "npm"]
+  "bunCommand": ["mise", "exec", "node@20", "--", "bun"]
 }
 ```
 
-`npmCommand` is used for all npm package-manager operations, including installs, uninstalls, and dependency installs inside git packages. Use argv-style entries exactly as the process should be launched. When `npmCommand` is configured, git package dependency installs use plain `install` to avoid npm-specific flags in wrappers or alternate package managers.
+`bunCommand` is used for all bun package-manager operations, including installs, uninstalls, and dependency installs inside git packages. Use argv-style entries exactly as the process should be launched. When `bunCommand` is configured, git package dependency installs use plain `install` to avoid bun-specific flags in wrappers or alternate package managers.
 
-Normally the package manager's global modules location is queried using `root -g`. As a special case, if the first element of `npmCommand` is `"bun"`, the modules location will instead be queried with `pm bin -g`.
+Normally the package manager's global modules location is queried using `root -g`. As a special case, if the first element of `bunCommand` is `"bun"`, the modules location will instead be queried with `pm bin -g`.
 
 ### Sessions
 
@@ -195,7 +195,7 @@ Paths in `~/.pi/agent/settings.json` resolve relative to `~/.pi/agent`. Paths in
 
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
-| `packages` | array | `[]` | npm/git packages to load resources from |
+| `packages` | array | `[]` | bun/git packages to load resources from |
 | `extensions` | string[] | `[]` | Local extension file paths or directories |
 | `skills` | string[] | `[]` | Local skill file paths or directories |
 | `prompts` | string[] | `[]` | Local prompt template paths or directories |

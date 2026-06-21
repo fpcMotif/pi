@@ -24,12 +24,11 @@
  */
 import { Context, Effect, Layer, Schema } from "effect";
 import { Tool, Toolkit } from "effect/unstable/ai";
-import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import nodePath from "node:path";
-import { createInterface } from "node:readline";
 
 import { resolvePath } from "./path-resolution.js";
+import { spawnCollect } from "./spawn-collect.js";
 import { DEFAULT_MAX_BYTES, formatSize, truncateHead } from "./truncate.js";
 
 const DEFAULT_LIMIT = 1000;
@@ -76,7 +75,7 @@ export class FindOperations extends Context.Service<
 
 /** Run the local `fd` binary and collect up to `request.limit` matching paths. */
 const runFd = (request: FindSearchRequest): Effect.Effect<FindSearchOutcome, FindError> =>
-	Effect.callback<FindSearchOutcome, FindError>((resume) => {
+	Effect.suspend(() => {
 		const args = [
 			"--glob",
 			"--color=never",
@@ -100,53 +99,36 @@ const runFd = (request: FindSearchRequest): Effect.Effect<FindSearchOutcome, Fin
 		}
 		args.push("--", effectivePattern, request.searchPath);
 
-		const child = spawn("fd", args, { stdio: ["ignore", "pipe", "pipe"] });
-		const rl = createInterface({ input: child.stdout });
 		const rawLines: Array<string> = [];
-		let stderr = "";
-
-		child.stderr?.on("data", (chunk: Buffer) => {
-			stderr += chunk.toString();
-		});
-		rl.on("line", (line) => {
-			rawLines.push(line);
-		});
-
-		child.on("error", (error: NodeJS.ErrnoException) => {
-			rl.close();
-			resume(
-				Effect.fail(
-					new FindError({
-						reason: error.code === "ENOENT" ? "fd-unavailable" : "fd-failed",
-						description: `Failed to run fd: ${error.message}`,
-					}),
-				),
-			);
-		});
-
-		child.on("close", (code) => {
-			rl.close();
-			const paths = rawLines.map((line) => line.replace(/\r$/, "").trim()).filter((line) => line !== "");
-			// fd can exit non-zero on partial failures (e.g. permission denied) yet
-			// still have found files — only treat a non-zero exit *with no output* as
-			// a hard failure, matching the legacy tool.
-			if (code !== 0 && paths.length === 0) {
-				resume(
-					Effect.fail(
+		return spawnCollect({
+			command: "fd",
+			args,
+			mapSpawnError: (error, unavailable) =>
+				new FindError({
+					reason: unavailable ? "fd-unavailable" : "fd-failed",
+					description: `Failed to run fd: ${error.message}`,
+				}),
+			onLine: (line) => {
+				rawLines.push(line);
+			},
+		}).pipe(
+			Effect.flatMap((outcome) => {
+				const paths = rawLines.map((line) => line.replace(/\r$/, "").trim()).filter((line) => line !== "");
+				// fd can exit non-zero on partial failures (e.g. permission denied) yet
+				// still have found files — only treat a non-zero exit *with no output* as
+				// a hard failure, matching the legacy tool.
+				if (outcome.exitCode !== 0 && paths.length === 0) {
+					return Effect.fail(
 						new FindError({
 							reason: "fd-failed",
-							description: stderr.trim() === "" ? `fd exited with code ${code}` : stderr.trim(),
+							description:
+								outcome.stderr.trim() === "" ? `fd exited with code ${outcome.exitCode}` : outcome.stderr.trim(),
 						}),
-					),
-				);
-				return;
-			}
-			resume(Effect.succeed({ paths, limitReached: paths.length >= request.limit }));
-		});
-
-		return Effect.sync(() => {
-			if (!child.killed) child.kill();
-		});
+					);
+				}
+				return Effect.succeed({ paths, limitReached: paths.length >= request.limit });
+			}),
+		);
 	});
 
 /** Default `FindOperations` Layer: local Node filesystem + the `fd` binary on `PATH`. */
@@ -161,7 +143,7 @@ export const FindOperationsLive: Layer.Layer<FindOperations> = Layer.succeed(
 const FindParameters = Schema.Struct({
 	pattern: Schema.String,
 	path: Schema.optional(Schema.String),
-	limit: Schema.optional(Schema.Number),
+	limit: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isGreaterThan(0)))),
 });
 
 const FindResult = Schema.Struct({

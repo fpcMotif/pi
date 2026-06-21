@@ -9,11 +9,12 @@
  */
 import { OpenAiClient, OpenAiLanguageModel } from "@effect/ai-openai";
 import { it } from "@effect/vitest";
-import { Effect, Layer, Stream } from "effect";
+import { Effect, Fiber, Layer, Stream } from "effect";
 import { AiError, LanguageModel } from "effect/unstable/ai";
 import { describe, expect } from "vitest";
 
 import { Session } from "../../effect/session.js";
+import { advancePastRetryDelays } from "../../test-support/advance-past-retry-delays.js";
 import { stubHttpClient } from "../../test-support/stub-http-client.js";
 
 const openAiLayer = (status: number, body?: string) =>
@@ -63,9 +64,12 @@ describe("HTTP-driven error mapping", () => {
 			const session = yield* Session.empty;
 
 			// `Session.send` maps the upstream `AiError` to its pi-defined `LlmError`.
-			// A 429 is retryable, so this also exercises the retry path before the
-			// final error propagates.
-			const error = yield* Effect.flip(Stream.runDrain(session.send("hello")));
+			// A 429 is retryable, so this also exercises the retry path — including
+			// the exponential backoff sleeps (PI-EFX-06), driven via the TestClock —
+			// before the final error propagates.
+			const fiber = yield* Effect.forkChild(Effect.flip(Stream.runDrain(session.send("hello"))));
+			yield* advancePastRetryDelays(3);
+			const error = yield* Fiber.join(fiber);
 
 			expect(error._tag).toBe("LlmError");
 			expect(error._tag === "LlmError" && AiError.isAiError(error.aiError)).toBe(true);

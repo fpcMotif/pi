@@ -498,6 +498,39 @@ export async function main(args: string[], options?: MainOptions) {
 		parsed.sessionDir ??
 		(envSessionDir ? expandTildePath(envSessionDir) : undefined) ??
 		startupSettingsManager.getSessionDir();
+	if (parsed.events !== undefined && !parsed.effect) {
+		console.error(chalk.yellow("Warning: --events has no effect without --effect; legacy print mode emits the v1 shape."));
+	}
+
+	// ADR-0020: --effect routes print mode through the Effect lane, skipping
+	// the legacy AgentSessionRuntime entirely (no extensions, no SessionManager).
+	// --help / --list-models keep their legacy handling and win over the flag.
+	if (parsed.effect && !parsed.help && parsed.listModels === undefined) {
+		if (appMode !== "print" && appMode !== "json") {
+			console.error(chalk.red("Error: --effect supports print mode only (-p / --mode json)"));
+			process.exit(1);
+		}
+		const effectStdin = await readPipedStdin();
+		const effectInitial = await prepareInitialMessage(
+			parsed,
+			startupSettingsManager.getImageAutoResize(),
+			effectStdin,
+		);
+		const { runEffectPrintModeFromCli } = await import("./modes/print-effect/cli.js");
+		const exitCode = await runEffectPrintModeFromCli({
+			parsed,
+			appMode,
+			sessionDir,
+			...(effectInitial.initialMessage === undefined ? {} : { initialMessage: effectInitial.initialMessage }),
+			...(effectInitial.initialImages === undefined ? {} : { initialImages: effectInitial.initialImages }),
+		});
+		restoreStdout();
+		if (exitCode !== 0) {
+			process.exitCode = exitCode;
+		}
+		return;
+	}
+
 	let sessionManager = await createSessionManager(parsed, cwd, sessionDir, startupSettingsManager);
 	const missingSessionCwdIssue = getMissingSessionCwdIssue(sessionManager, cwd);
 	if (missingSessionCwdIssue) {

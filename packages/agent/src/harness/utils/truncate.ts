@@ -262,5 +262,16 @@ export function truncateLine(
 	if (line.length <= maxChars) {
 		return { text: line, wasTruncated: false };
 	}
-	return { text: `${line.slice(0, maxChars)}... [truncated]`, wasTruncated: true };
+	// Slice by whole code points so a surrogate pair straddling maxChars is never
+	// split into a lone surrogate. Array.from iterates by code point; if maxChars
+	// would land inside a surrogate pair we back off to the last whole code point.
+	const codePoints = Array.from(line);
+	let count = 0;
+	let kept = "";
+	for (const cp of codePoints) {
+		if (count + cp.length > maxChars) break;
+		kept += cp;
+		count += cp.length;
+	}
+	return { text: `${kept}... [truncated]`, wasTruncated: true };
 }

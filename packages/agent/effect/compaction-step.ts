@@ -1,7 +1,7 @@
 import { Effect, SubscriptionRef } from "effect";
 import { LanguageModel, Prompt } from "effect/unstable/ai";
 
-import { CompactionError } from "./agent-error.js";
+import { type AgentError, CompactionError } from "./agent-error.js";
 import { CompactionApplied } from "./agent-event.js";
 import { estimateTokens, splitHistory } from "./compaction.js";
 import { SessionState } from "./session-state.js";
@@ -34,6 +34,16 @@ export const SUMMARIZATION_INSTRUCTION =
 	"- Concrete actions the next assistant should take.";
 
 /**
+ * Result of a fired compaction: the event for the per-send stream plus the
+ * true post-commit snapshot (from `SubscriptionRef.updateAndGet`), so the
+ * caller needs no re-get after the step.
+ */
+export interface CompactionStepResult {
+	readonly event: CompactionApplied;
+	readonly state: SessionState;
+}
+
+/**
  * Step 1 of `Session.send`: compaction check, run AFTER the input-variant
  * history update on the post-input history.
  *
@@ -48,44 +58,62 @@ export const SUMMARIZATION_INSTRUCTION =
  * summary call) and re-injected at the head of the compacted history so
  * they keep their system-role placement.
  *
+ * **Commit + persist are one uninterruptible section** (PI-EFX-04): the
+ * `SubscriptionRef.updateAndGet` commit and the `options.persist` write are
+ * shielded via `Effect.uninterruptibleMask` so an interrupt cannot split the
+ * in-memory compacted state from its durable write. The slow summary call
+ * stays interruptible via `restore`.
+ *
  * A failed summarisation call surfaces as `CompactionError` in the caller's
  * error channel — distinct from the per-turn `LlmError`.
  */
 export const runCompactionStep = (
 	state: SubscriptionRef.SubscriptionRef<SessionState>,
 	postInput: SessionState,
-	options: { readonly compactionThreshold: number; readonly keepRecentTokens: number },
-): Effect.Effect<CompactionApplied | undefined, CompactionError, LanguageModel.LanguageModel> =>
-	Effect.gen(function* () {
-		const tokensBefore = estimateTokens(postInput.history);
-		if (tokensBefore <= options.compactionThreshold) {
-			return undefined;
-		}
+	options: {
+		readonly compactionThreshold: number;
+		readonly keepRecentTokens: number;
+		readonly persist: (state: SessionState) => Effect.Effect<void, AgentError>;
+	},
+): Effect.Effect<CompactionStepResult | undefined, AgentError, LanguageModel.LanguageModel> =>
+	Effect.uninterruptibleMask((restore) =>
+		Effect.gen(function* () {
+			const tokensBefore = estimateTokens(postInput.history);
+			if (tokensBefore <= options.compactionThreshold) {
+				return undefined;
+			}
 
-		const systemMessages = postInput.history.content.filter((m) => m.role === "system");
-		const bodyHistory = Prompt.fromMessages(postInput.history.content.filter((m) => m.role !== "system"));
-		const { toSummarize, toKeep } = splitHistory(bodyHistory, options.keepRecentTokens);
+			const systemMessages = postInput.history.content.filter((m) => m.role === "system");
+			const bodyHistory = Prompt.fromMessages(postInput.history.content.filter((m) => m.role !== "system"));
+			const { toSummarize, toKeep } = splitHistory(bodyHistory, options.keepRecentTokens);
 
-		const summary = yield* LanguageModel.generateText({
-			prompt: Prompt.concat(toSummarize, Prompt.make(SUMMARIZATION_INSTRUCTION)),
-		}).pipe(Effect.mapError((aiError) => new CompactionError({ cause: aiError })));
+			const summary = yield* restore(
+				LanguageModel.generateText({
+					prompt: Prompt.concat(toSummarize, Prompt.make(SUMMARIZATION_INSTRUCTION)),
+				}).pipe(Effect.mapError((aiError) => new CompactionError({ cause: aiError }))),
+			);
 
-		const compactedHistory = Prompt.fromMessages([
-			...systemMessages,
-			Prompt.makeMessage("user", {
-				content: [Prompt.makePart("text", { text: summary.text })],
-			}),
-			...toKeep.content,
-		]);
-		yield* SubscriptionRef.update(state, (s) =>
-			SessionState.with(s, {
-				history: compactedHistory,
-				compactionCount: s.compactionCount + 1,
-			}),
-		);
-		return new CompactionApplied({
-			tokensBefore,
-			tokensAfter: estimateTokens(compactedHistory),
-			summarizedMessageCount: toSummarize.content.length,
-		});
-	});
+			const compactedHistory = Prompt.fromMessages([
+				...systemMessages,
+				Prompt.makeMessage("user", {
+					content: [Prompt.makePart("text", { text: summary.text })],
+				}),
+				...toKeep.content,
+			]);
+			const compacted = yield* SubscriptionRef.updateAndGet(state, (s) =>
+				SessionState.with(s, {
+					history: compactedHistory,
+					compactionCount: s.compactionCount + 1,
+				}),
+			);
+			yield* options.persist(compacted);
+			return {
+				event: new CompactionApplied({
+					tokensBefore,
+					tokensAfter: estimateTokens(compactedHistory),
+					summarizedMessageCount: toSummarize.content.length,
+				}),
+				state: compacted,
+			};
+		}),
+	);

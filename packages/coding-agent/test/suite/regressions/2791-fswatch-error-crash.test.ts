@@ -87,7 +87,7 @@ process.exit(0);
 		let stderr = "";
 		let exitCode: number;
 		try {
-			_stdout = execFileSync("npx", ["tsx", scriptPath], {
+			_stdout = execFileSync("bunx", ["tsx", scriptPath], {
 				timeout: 10000,
 				encoding: "utf-8",
 				env: { ...process.env, PI_CODING_AGENT_DIR: agentDir },

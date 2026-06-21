@@ -406,9 +406,9 @@ describe("formatPromptTemplateInvocation", () => {
 			"three words",
 			"four\\five",
 		]);
-		// biome-ignore lint/suspicious/noTemplateCurlyInString: $@, ${@:n:m}, $1..$N are prompt-template placeholders, not JS expressions
+		// oxlint-ignore lint/suspicious/noTemplateCurlyInString: $@, ${@:n:m}, $1..$N are prompt-template placeholders, not JS expressions
 		expect(substituteArgs("$1|$3|${@:0:2}|${@:2}|$@|$ARGUMENTS", ["a", "b", "c"])).toBe("a|c|a b|b c|a b c|a b c");
-		// biome-ignore lint/suspicious/noTemplateCurlyInString: $4, ${@:5} are prompt-template placeholders
+		// oxlint-ignore lint/suspicious/noTemplateCurlyInString: $4, ${@:5} are prompt-template placeholders
 		expect(substituteArgs("$4|${@:5}", ["a"])).toBe("|");
 	});
 

@@ -3,7 +3,7 @@ export interface ResourceCollision {
 	name: string; // skill name, command/tool/flag name, prompt name, theme name
 	winnerPath: string;
 	loserPath: string;
-	winnerSource?: string; // e.g., "npm:foo", "git:...", "local"
+	winnerSource?: string; // e.g., "bun:foo", "git:...", "local"
 	loserSource?: string;
 }
 

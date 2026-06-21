@@ -4,6 +4,7 @@ import { defineConfig } from "vitest/config";
 const aiSrcIndex = fileURLToPath(new URL("../ai/src/index.ts", import.meta.url));
 const aiSrcOAuth = fileURLToPath(new URL("../ai/src/oauth.ts", import.meta.url));
 const agentSrcIndex = fileURLToPath(new URL("../agent/src/index.ts", import.meta.url));
+const agentEffectIndex = fileURLToPath(new URL("../agent/effect/index.ts", import.meta.url));
 const tuiSrcIndex = fileURLToPath(new URL("../tui/src/index.ts", import.meta.url));
 
 // ADR-0017: monorepo-wide 100% on all four v8 metrics. Covers both
@@ -48,16 +49,20 @@ export default defineConfig({
 				// CLI entry + interactive TUI mode + RPC mode — driven through
 				// real PTY + readline by `pi-test.sh` and the suite/regressions
 				// tests (those run the binary end-to-end). The unit suite stops
-				// at the boundary.
+				// at the boundary. Print mode is NOT excluded: it is pinned at
+				// its interface by test/print-mode.test.ts (ADR-0020 step 1).
 				"src/main.ts",
 				"src/cli.ts",
 				"src/cli/**",
 				"src/bun/cli.ts",
-				"src/modes/print-mode.ts",
 				"src/modes/interactive/**",
+				// Effect print-mode CLI glue (ADR-0020): touches real auth
+				// storage, on-disk model registry, and settings. The runner,
+				// layer composition, and fs store behind it are unit-covered.
+				"src/modes/print-effect/cli.ts",
 				"src/modes/rpc/**",
 				// Top-level CLI scaffolding (config, migrations, package-manager
-				// CLI wrapper) drives real npm + git interactions; covered by
+				// CLI wrapper) drives real bun + git interactions; covered by
 				// the per-feature integration tests.
 				"src/config.ts",
 				"src/migrations.ts",
@@ -146,6 +151,7 @@ export default defineConfig({
 			{ find: /^@earendil-works\/pi-ai$/, replacement: aiSrcIndex },
 			{ find: /^@earendil-works\/pi-ai\/oauth$/, replacement: aiSrcOAuth },
 			{ find: /^@earendil-works\/pi-agent-core$/, replacement: agentSrcIndex },
+			{ find: /^@earendil-works\/pi-agent-core\/effect$/, replacement: agentEffectIndex },
 			{ find: /^@earendil-works\/pi-tui$/, replacement: tuiSrcIndex },
 			{ find: /^@mariozechner\/pi-ai$/, replacement: aiSrcIndex },
 			{ find: /^@mariozechner\/pi-ai\/oauth$/, replacement: aiSrcOAuth },

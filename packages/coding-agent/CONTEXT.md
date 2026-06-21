@@ -26,7 +26,9 @@ Built-in tools — ADR-0010 slices, each a pure schema-only `Tool.make` with **z
 
 `effect/tools/index.ts` exports the `BuiltinToolkit` (`Toolkit.make` over all seven), `builtinHandlers(cwd)` / `builtinToolkitLayer(cwd)` (cwd-bound handler wiring), and `BuiltinOperationsLive` (every `*OperationsLive` merged). Tools declare their Service via `Tool.make`'s `dependencies: [...]` so the toolkit handler's allowed requirements include it. Shared pure truncation helpers are copied into `effect/tools/truncate.ts` (rewrite-lane counterpart of `src/core/tools/truncate.ts`).
 
-Deferred across the subprocess tools (follow-on slices): on-demand `rg`/`fd` download when absent from `PATH` (legacy `ensureTool`); for `bash` — throttled live-output streaming, the rolling-buffer + temp-file `OutputAccumulator`, the `BashSpawnHook` Service, full process-tree teardown. Not yet started: tool renderers (`modes/interactive/tool-renderers/` per ADR-0010), typed Stores (ADR-0012), the extension API (ADR-0014), and the CLI/modes rewrite.
+Deferred across the subprocess tools (follow-on slices): on-demand `rg`/`fd` download when absent from `PATH` (legacy `ensureTool`); for `bash` — throttled live-output streaming, the rolling-buffer + temp-file `OutputAccumulator`, the `BashSpawnHook` Service, full process-tree teardown. Not yet started: tool renderers (`modes/interactive/tool-renderers/` per ADR-0010), typed Stores (ADR-0012), and the extension API (ADR-0014).
+
+The CLI/modes rewrite has its **first production adapter** (ADR-0020): `src/modes/print-effect/` routes print mode through the Effect lane behind the experimental `--effect` flag — an ADR-0008 `ManagedRuntime` host resolving `CurrentSession` from `@earendil-works/pi-agent-core/effect`, durable persistence via `SessionStore` over a file-backed `KeyValueStore` in the parallel `~/.pi/agent/effect-sessions` namespace, and `--mode json` emitting the v2 `AgentEvent` schema (`--events v2`). Extensions are skipped with a stderr warning; built-in tools and the `--events v1` parity mapper are the next slices.
 
 ## Running (`effect/` lane)
 
@@ -59,6 +61,7 @@ bunx vitest --run test/effect            # run the Effect tracer bullets
 - **Prompt template** - A reusable prompt expansion file.
 - **Theme** - Terminal styling configuration consumed by interactive components.
 - **Pi package** - A distributable bundle of extensions, skills, prompt templates, and themes.
+- **Event schema version** - The print-mode JSON contract selected via `--events`: **v1** is the legacy `AgentSessionEvent` shape, **v2** is the ADR-0009 `AgentEvent` union. When the Effect lane serves print mode, v1 is produced by a mapper with documented-gaps parity (ADR-0020).
 - **Resource catalog** - The categorized discovery output for extension, skill, prompt template, and theme resources from already-installed packages, local paths, and extension-provided paths. It excludes package install/update/remove behavior.
 
 ## Relationships
